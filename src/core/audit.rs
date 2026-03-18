@@ -23,3 +23,19 @@ fn summarize_plan(plan: &ReconciliationPlan) -> String {
 pub fn summarize_actions(actions: &[PlanAction]) -> String {
     format!("{} actions", actions.len())
 }
+
+pub fn format_audit_record(record: &AuditRecord) -> String {
+    let mut output = String::new();
+    output.push_str(&format!("record {}\n", record.record_id));
+    output.push_str(&format!("run {}\n", record.run_id));
+    output.push_str(&format!("{}\n", record.plan_summary));
+    output.push_str(&format!(
+        "diffs {}\n",
+        record.diffs.len()
+    ));
+    output.push_str(&format!(
+        "actions {}\n",
+        record.actions_applied.len()
+    ));
+    output
+}

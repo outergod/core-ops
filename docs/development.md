@@ -14,4 +14,4 @@ Do not assume Rust tooling is installed globally.
 - Lint: `make lint`
 - Test: `make test`
 
-These commands run via `direnv exec .` to ensure the Nix shell is active.
+Assume the nix shell is already active, and do not run commands via `direnv exec`.

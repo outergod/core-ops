@@ -1,7 +1,9 @@
 use crate::core::diff::diff_workloads;
 use crate::core::errors::CoreError;
 use crate::core::planner::plan;
-use crate::core::types::{FailureClass, ReconcileMode, ReconcileRun, RunStatus};
+use crate::core::types::{
+    DiffItem, FailureClass, ReconcileMode, ReconcileRun, ReconciliationPlan, RunStatus,
+};
 
 pub struct ReconcileDependencies<'a> {
     pub load_desired: &'a dyn Fn() -> Result<crate::core::types::DesiredState, CoreError>,
@@ -9,6 +11,30 @@ pub struct ReconcileDependencies<'a> {
     pub apply_plan:
         &'a dyn Fn(&crate::core::types::ReconciliationPlan, &crate::core::types::DesiredState)
             -> Result<(), CoreError>,
+}
+
+pub struct PlanResult {
+    pub run: ReconcileRun,
+    pub plan: ReconciliationPlan,
+    pub diffs: Vec<DiffItem>,
+}
+
+pub fn reconcile_plan(deps: &ReconcileDependencies<'_>) -> Result<PlanResult, CoreError> {
+    let desired = (deps.load_desired)()?;
+    let observed = (deps.read_observed)()?;
+
+    let plan = plan(&desired, &observed)?;
+    let diffs = diff_workloads(&desired.workloads, &observed.workloads);
+
+    let run = ReconcileRun {
+        run_id: format!("run:{}", plan.plan_id),
+        mode: ReconcileMode::Plan,
+        status: RunStatus::Success,
+        failure_class: None,
+        summary: "planned".to_string(),
+    };
+
+    Ok(PlanResult { run, plan, diffs })
 }
 
 pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ReconcileRun, CoreError> {

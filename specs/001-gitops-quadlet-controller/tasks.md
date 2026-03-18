@@ -90,15 +90,15 @@ feature spec explicitly documents a justified exemption.
 
 ### Tests for User Story 2 (REQUIRED unless explicitly exempted) ⚠️
 
-- [ ] T021 [P] [US2] Integration test for dry-run plan in `tests/integration/test_plan.rs`
-- [ ] T022 [P] [US2] Unit test for audit record formatting in `tests/unit/test_audit.rs`
+- [X] T021 [P] [US2] Integration test for dry-run plan in `tests/integration/test_plan.rs`
+- [X] T022 [P] [US2] Unit test for audit record formatting in `tests/unit/test_audit.rs`
 
 ### Implementation for User Story 2
 
-- [ ] T023 [US2] Implement plan-only execution path in `src/core/reconcile.rs` (skip apply)
-- [ ] T024 [US2] Implement plan output formatting in `src/cli/plan.rs`
-- [ ] T025 [US2] Implement audit record writer in `src/io/audit.rs` (filesystem storage)
-- [ ] T026 [US2] Wire CLI plan and status commands in `src/cli/plan.rs` and `src/cli/status.rs`
+- [X] T023 [US2] Implement plan-only execution path in `src/core/reconcile.rs` (skip apply)
+- [X] T024 [US2] Implement plan output formatting in `src/cli/plan.rs`
+- [X] T025 [US2] Implement audit record writer in `src/io/audit.rs` (filesystem storage)
+- [X] T026 [US2] Wire CLI plan and status commands in `src/cli/plan.rs` and `src/cli/status.rs`
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 

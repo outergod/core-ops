@@ -1,0 +1,48 @@
+use core_ops::core::audit::{build_audit_record, format_audit_record};
+use core_ops::core::types::{
+    Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, ObservedState,
+    QuadletType, RestartPolicy, Workload,
+};
+use core_ops::core::planner::plan;
+
+fn desired_state() -> DesiredState {
+    DesiredState {
+        repository_ref: "repo".to_string(),
+        revision_id: "rev".to_string(),
+        workloads: vec![Workload {
+            name: "alpha".to_string(),
+            quadlet_type: QuadletType::Container,
+            quadlet_contents: "[Container]".to_string(),
+            systemd_unit_name: "alpha.container".to_string(),
+            enabled_state: EnabledState::Enabled,
+            restart_policy: RestartPolicy::Always,
+        }],
+        invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
+        boundaries: Boundaries {
+            scopes: vec![BoundaryScope::QuadletSystemd],
+        },
+    }
+}
+
+fn observed_state() -> ObservedState {
+    ObservedState {
+        observed_revision_id: None,
+        units: Vec::new(),
+        workloads: Vec::new(),
+        last_reconcile_id: None,
+        host_info: None,
+    }
+}
+
+#[test]
+fn audit_record_format_includes_plan_summary() {
+    let desired = desired_state();
+    let observed = observed_state();
+    let plan = plan(&desired, &observed).expect("plan");
+
+    let record = build_audit_record("run:plan", Vec::new(), &plan);
+    let output = format_audit_record(&record);
+
+    assert!(output.contains("plan "));
+    assert!(output.contains("actions"));
+}
