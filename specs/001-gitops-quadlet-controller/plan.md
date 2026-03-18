@@ -12,14 +12,15 @@ still enforces explicit reconciliation phases (plan → apply → verify), stron
 idempotence, dry-run, and safe apply. The MVP is a CLI with an optional
 long-running mode, uses only native primitives (Git, Quadlet, systemd), and
 defaults auditability to structured systemd journal events. Rich artifacts such
-as plans/reports are printed or explicitly exported on demand. Architectural
-risk is minimized by keeping the core pure and limiting moving parts, while
-deferring fleet, secrets, and host config.
+as plans/reports are printed or explicitly exported on demand. The controller
+MUST accept Git URLs (SSH/http(s)) or local paths as desired-state sources.
+Architectural risk is minimized by keeping the core pure and limiting moving
+parts, while deferring fleet, secrets, and host config.
 
 ## Technical Context
 
 **Language/Version**: Rust (stable toolchain)  
-**Primary Dependencies**: Git (CLI), systemd (systemctl), Podman/Quadlet generator, clap, thiserror, miette  
+**Primary Dependencies**: Git (CLI, URL clone/fetch), systemd (systemctl), Podman/Quadlet generator, clap, thiserror, miette  
 **Storage**: Files on disk (Quadlet unit files + reconciliation state cache); audit defaults to systemd journal  
 **Testing**: cargo test, integration tests with systemd/Quadlet behavior  
 **Target Platform**: Fedora CoreOS (single host)  

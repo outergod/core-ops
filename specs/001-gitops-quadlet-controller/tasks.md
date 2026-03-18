@@ -71,7 +71,7 @@ feature spec explicitly documents a justified exemption.
 
 ### Implementation for User Story 1
 
-- [X] T015 [P] [US1] Implement Git repo loader in `src/io/repo.rs` (clone/fetch + read Quadlet files)
+- [X] T015 [P] [US1] Implement Git repo loader in `src/io/repo.rs` (clone/fetch + read Quadlet files) [requires URL support]
 - [X] T016 [P] [US1] Implement Quadlet parser/loader in `src/io/quadlet.rs`
 - [X] T017 [P] [US1] Implement observed state reader in `src/io/observed.rs` (systemd/Quadlet discovery)
 - [X] T018 [US1] Implement apply adapter in `src/io/apply.rs` (write/remove Quadlet files, daemon-reload)
@@ -147,6 +147,13 @@ feature spec explicitly documents a justified exemption.
 ---
 
 ## Phase 8: Polish & Cross-Cutting Concerns
+ 
+## Phase 4.5: Git URL Support (US1 follow-up)
+
+**Goal**: Accept local paths or any valid Git URL (SSH/http(s)) as desired-state sources
+
+- [ ] T027A [US1] Add Git URL detection and clone/fetch logic in `src/io/repo.rs`
+- [ ] T027B [US1] Add tests for Git URL handling in `tests/integration/test_repo_load.rs`
 
 **Purpose**: Improvements that affect multiple user stories
 

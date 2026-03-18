@@ -87,6 +87,7 @@ surfaces a clear failure and retries do not worsen state.
 ## Clarifications
 
 ### Session 2026-03-18
+- Q: Must the controller accept Git URLs (SSH/http(s)) as desired-state sources? → A: Yes, any valid Git URL (SSH or http(s)) must be supported in addition to local paths
 - Q: Which CLI parser should the MVP use for subcommands, help, and validation? → A: Use clap derive for CLI parsing and polished help/validation
 - Q: What is the default Quadlet path behavior for MVP? → A: Default path is /etc/containers/systemd; override via CLI/config; if missing, fail with clear error; rootless/user paths are out of scope unless explicitly configured
 - Q: What is the default audit sink and handling of rich artifacts? → A: Default audit sink is structured systemd journal events; rich artifacts (plans/reports) are printed unless explicitly exported
@@ -95,8 +96,8 @@ surfaces a clear failure and retries do not worsen state.
 
 ### Functional Requirements
 
-- **FR-001**: System MUST treat a Git repository as the source of truth for desired
-  state.
+- **FR-001**: System MUST treat a Git repository (local path or any valid Git
+  URL, including SSH and http(s)) as the source of truth for desired state.
 - **FR-002**: System MUST represent desired state, observed state, diffs,
   reconciliation plans, and outcomes as explicit data.
 - **FR-003**: System MUST reconcile Quadlet-managed workloads on Fedora CoreOS
