@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use core_ops::cli::{apply as apply_cmd, plan as plan_cmd};
+use core_ops::cli::common as cli_common;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
 use core_ops::io::{audit as audit_io, observed, repo};
@@ -9,7 +10,7 @@ use log::LevelFilter;
 fn main() {
     init_logging();
     if let Err(err) = run() {
-        eprintln!("error: {}", err.message);
+        eprintln!("{}", cli_common::render_error(&err));
         std::process::exit(1);
     }
 }

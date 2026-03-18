@@ -122,14 +122,14 @@ feature spec explicitly documents a justified exemption.
 
 ### Tests for User Story 3 (REQUIRED unless explicitly exempted) ⚠️
 
-- [ ] T028 [P] [US3] Integration test for validation failure handling in `tests/integration/test_validation_fail.rs`
-- [ ] T029 [P] [US3] Integration test for transient failure retry in `tests/integration/test_retry.rs`
+- [X] T028 [P] [US3] Integration test for validation failure handling in `tests/integration/test_validation_fail.rs`
+- [X] T029 [P] [US3] Integration test for transient failure retry in `tests/integration/test_retry.rs`
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Implement failure classification and reporting in `src/core/errors.rs` and `src/cli/errors.rs`
-- [ ] T031 [US3] Implement retry policy in `src/core/retry.rs` (bounded, visible retries)
-- [ ] T032 [US3] Wire failure outputs to CLI in `src/cli/common.rs`
+- [X] T030 [US3] Implement failure classification and reporting in `src/core/errors.rs` and `src/cli/errors.rs`
+- [X] T031 [US3] Implement retry policy in `src/core/retry.rs` (bounded, visible retries)
+- [X] T032 [US3] Wire failure outputs to CLI in `src/cli/common.rs`
 
 **Checkpoint**: All user stories should now be independently functional
 

@@ -13,7 +13,19 @@ impl CoreError {
             message: message.into(),
         }
     }
+
+    pub fn is_retryable(&self) -> bool {
+        self.class == FailureClass::Transient
+    }
 }
+
+impl std::fmt::Display for CoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for CoreError {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ValidationErrorKind {
