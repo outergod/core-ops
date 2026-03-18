@@ -94,6 +94,7 @@ surfaces a clear failure and retries do not worsen state.
 - Q: Which CLI parser should the MVP use for subcommands, help, and validation? → A: Use clap derive for CLI parsing and polished help/validation
 - Q: What is the default Quadlet path behavior for MVP? → A: Default path is /etc/containers/systemd; override via CLI/config; if missing, fail with clear error; rootless/user paths are out of scope unless explicitly configured
 - Q: What is the default audit sink and handling of rich artifacts? → A: Default audit sink is structured systemd journal events; rich artifacts (plans/reports) are printed unless explicitly exported
+- Q: What does apply imply for unit lifecycle operations? → A: Apply always regenerates units (daemon-reload) and activates/deactivates plus starts/stops units as needed
 
 ## Requirements *(mandatory)*
 
@@ -132,6 +133,9 @@ surfaces a clear failure and retries do not worsen state.
   Fedora CoreOS hosts and reject or no-op any requests outside those boundaries.
 - **FR-012**: System MUST classify failures (validation, plan, apply, verify,
   transient) and document recovery expectations for each class.
+- **FR-013**: Applying state MUST regenerate systemd units (daemon-reload) and
+  enforce unit activation/deactivation and start/stop actions implied by the
+  plan.
 
 ### Reconciliation Invariants
 

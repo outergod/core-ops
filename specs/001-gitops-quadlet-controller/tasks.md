@@ -122,6 +122,24 @@ feature spec explicitly documents a justified exemption.
 
 ---
 
+## Phase 4.7: Unit Lifecycle Enforcement (US1 follow-up)
+
+**Goal**: Apply always regenerates units and enforces activation/deactivation and start/stop actions
+
+- [X] T041 [US1] Implement systemd unit enable/disable/start/stop actions in `src/io/apply.rs`
+- [X] T042 [P] [US1] Add integration test for unit lifecycle actions in `tests/integration/test_unit_lifecycle.rs`
+
+---
+
+## Phase 4.8: Boundary Enforcement (US1 follow-up)
+
+**Goal**: Reject any plan actions outside supported mutation boundaries
+
+- [X] T043 [US1] Enforce mutation boundaries for plan actions in `src/core/boundaries.rs`, `src/core/planner.rs`, and `src/io/apply.rs`
+- [X] T044 [P] [US1] Add unit tests for unsupported plan actions in `tests/unit/test_validation.rs`
+
+---
+
 ## Phase 5: Audit Sink Default (US2 follow-up)
 
 **Goal**: Default audit sink is the systemd journal; file export is explicit
@@ -145,7 +163,7 @@ feature spec explicitly documents a justified exemption.
 
 ### Implementation for User Story 3
 
-- [X] T030 [US3] Implement failure classification and reporting in `src/core/errors.rs` and `src/cli/errors.rs`
+- [X] T030 [US3] Implement failure classification and reporting in `src/core/errors.rs` and `src/cli/diagnostics.rs`
 - [X] T031 [US3] Implement retry policy in `src/core/retry.rs` (bounded, visible retries)
 - [X] T032 [US3] Wire failure outputs to CLI in `src/cli/common.rs`
 

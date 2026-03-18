@@ -61,10 +61,48 @@ fn init_git_repo(repo: &PathBuf) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
+fn write_systemctl_stub(dir: &PathBuf, log_path: &PathBuf) -> PathBuf {
+    let bin_path = dir.join("systemctl");
+    let script = format!(
+        "#!/bin/sh\n\n\
+echo \"$@\" >> \"{}\"\n\
+exit 0\n",
+        log_path.display()
+    );
+    fs::write(&bin_path, script).expect("write systemctl stub");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&bin_path).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&bin_path, perms).expect("chmod");
+    }
+    bin_path
+}
+
+struct PathGuard {
+    previous: String,
+}
+
+impl Drop for PathGuard {
+    fn drop(&mut self) {
+        std::env::set_var("PATH", &self.previous);
+    }
+}
+
 #[test]
 fn reconcile_apply_converges_to_desired_state() {
     let repo = temp_dir("core_ops_repo");
     let rev = init_git_repo(&repo);
+
+    let temp = temp_dir("core_ops_systemctl");
+    fs::create_dir_all(&temp).expect("systemctl temp");
+    let log_path = temp.join("systemctl.log");
+    write_systemctl_stub(&temp, &log_path);
+    let old_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{}", temp.display(), old_path);
+    std::env::set_var("PATH", new_path);
+    let _guard = PathGuard { previous: old_path };
 
     let host_quadlets = temp_dir("core_ops_host");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");

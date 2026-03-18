@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod boundaries;
 pub mod diff;
 pub mod errors;
 pub mod planner;

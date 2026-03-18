@@ -7,7 +7,7 @@ use crate::core::types::{PlanAction, PlanActionType, ReconciliationPlan, Workloa
 pub enum ApplyError {
     MissingQuadletDir(PathBuf),
     MissingWorkload(String),
-    SystemdReloadFailed(String),
+    SystemdCommandFailed(String),
     Io(std::io::Error),
 }
 
@@ -24,7 +24,7 @@ impl std::fmt::Display for ApplyError {
                 write!(f, "missing quadlet dir: {}", path.display())
             }
             ApplyError::MissingWorkload(name) => write!(f, "missing workload: {}", name),
-            ApplyError::SystemdReloadFailed(msg) => write!(f, "systemd reload failed: {}", msg),
+            ApplyError::SystemdCommandFailed(msg) => write!(f, "systemd command failed: {}", msg),
             ApplyError::Io(err) => write!(f, "apply io error: {}", err),
         }
     }
@@ -50,16 +50,14 @@ pub fn apply_plan(
 
     let mut files_written = Vec::new();
     let mut files_removed = Vec::new();
-    let mut needs_reload = false;
 
     for action in &plan.actions {
-        match action.action_type {
+        match &action.action_type {
             PlanActionType::WriteQuadlet => {
                 let workload = find_workload(desired_workloads, &action.target)?;
                 let path = quadlet_dir.join(&workload.systemd_unit_name);
                 fs::write(&path, &workload.quadlet_contents)?;
                 files_written.push(path.display().to_string());
-                needs_reload = true;
             }
             PlanActionType::RemoveQuadlet => {
                 for entry in fs::read_dir(quadlet_dir)? {
@@ -69,26 +67,37 @@ pub fn apply_plan(
                         if file_name.starts_with(&format!("{}.", action.target)) {
                             fs::remove_file(&path)?;
                             files_removed.push(path.display().to_string());
-                            needs_reload = true;
                         }
                     }
                 }
             }
-            _ => {
-                // No-op for unit enable/disable/start/stop/reload in the MVP adapter.
+            PlanActionType::EnableUnit => {
+                let workload = find_workload(desired_workloads, &action.target)?;
+                run_systemctl(&["enable", &workload.systemd_unit_name])?;
             }
-        }
-    }
-
-    if reload_systemd && needs_reload {
-        let output = std::process::Command::new("systemctl")
-            .arg("daemon-reload")
-            .output()
-            .map_err(|err| ApplyError::SystemdReloadFailed(err.to_string()))?;
-        if !output.status.success() {
-            return Err(ApplyError::SystemdReloadFailed(
-                String::from_utf8_lossy(&output.stderr).to_string(),
-            ));
+            PlanActionType::DisableUnit => {
+                let workload = find_workload(desired_workloads, &action.target)?;
+                run_systemctl(&["disable", &workload.systemd_unit_name])?;
+            }
+            PlanActionType::StartUnit => {
+                let workload = find_workload(desired_workloads, &action.target)?;
+                run_systemctl(&["start", &workload.systemd_unit_name])?;
+            }
+            PlanActionType::StopUnit => {
+                let workload = find_workload(desired_workloads, &action.target)?;
+                run_systemctl(&["stop", &workload.systemd_unit_name])?;
+            }
+            PlanActionType::ReloadSystemd => {
+                if reload_systemd {
+                    run_systemctl(&["daemon-reload"])?;
+                }
+            }
+            PlanActionType::Unknown(action) => {
+                return Err(ApplyError::SystemdCommandFailed(format!(
+                    "unsupported plan action: {}",
+                    action
+                )));
+            }
         }
     }
 
@@ -107,4 +116,17 @@ fn find_workload<'a>(
         .iter()
         .find(|workload| workload.name == name)
         .ok_or_else(|| ApplyError::MissingWorkload(name.to_string()))
+}
+
+fn run_systemctl(args: &[&str]) -> Result<(), ApplyError> {
+    let output = std::process::Command::new("systemctl")
+        .args(args)
+        .output()
+        .map_err(|err| ApplyError::SystemdCommandFailed(err.to_string()))?;
+    if !output.status.success() {
+        return Err(ApplyError::SystemdCommandFailed(
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ));
+    }
+    Ok(())
 }

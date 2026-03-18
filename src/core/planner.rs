@@ -1,3 +1,4 @@
+use crate::core::boundaries::enforce_plan_boundaries;
 use crate::core::diff::diff_workloads;
 use crate::core::errors::{CoreError, ValidationError};
 use crate::core::types::{
@@ -26,7 +27,7 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
             .unwrap_or_else(|| "none".to_string())
     );
 
-    Ok(ReconciliationPlan {
+    let plan = ReconciliationPlan {
         plan_id,
         desired_revision_id: desired.revision_id.clone(),
         observed_revision_id: observed.observed_revision_id.clone(),
@@ -37,7 +38,10 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
             SafetyCheck::DeterministicPlan,
         ],
         expected_outcomes: vec!["observed state converges to desired state".to_string()],
-    })
+    };
+
+    enforce_plan_boundaries(&plan)?;
+    Ok(plan)
 }
 
 fn actions_for_diff(kind: DiffKind, name: &str) -> Vec<PlanAction> {

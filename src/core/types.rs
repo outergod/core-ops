@@ -137,6 +137,7 @@ pub enum PlanActionType {
     ReloadSystemd,
     StartUnit,
     StopUnit,
+    Unknown(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
