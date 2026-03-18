@@ -7,6 +7,7 @@ use core_ops::core::reconcile::{reconcile_apply, ReconcileDependencies};
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::read_observed_state;
 use core_ops::io::repo::load_desired_state;
+use std::sync::{Mutex, OnceLock};
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -90,8 +91,14 @@ impl Drop for PathGuard {
     }
 }
 
+fn path_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 #[test]
 fn reconcile_apply_converges_to_desired_state() {
+    let _lock = path_lock().lock().expect("path lock");
     let repo = temp_dir("core_ops_repo");
     let rev = init_git_repo(&repo);
 

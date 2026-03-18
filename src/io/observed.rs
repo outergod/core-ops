@@ -59,7 +59,8 @@ fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, Obser
 
     let mut units = Vec::new();
     for workload in workloads {
-        match query_unit_state(&workload.systemd_unit_name)? {
+        let unit_name = workload.systemd_unit_name.clone();
+        match query_unit_state(&unit_name)? {
             Some(unit) => units.push(unit),
             None => {}
         }

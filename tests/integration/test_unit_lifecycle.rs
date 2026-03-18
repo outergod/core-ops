@@ -5,6 +5,7 @@ use core_ops::core::types::{
     EnabledState, PlanAction, PlanActionType, ReconciliationPlan, RestartPolicy, Workload,
 };
 use core_ops::io::apply::apply_plan;
+use std::sync::{Mutex, OnceLock};
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -37,6 +38,7 @@ exit 0\n",
 
 #[test]
 fn apply_executes_unit_lifecycle_actions() {
+    let _lock = path_lock().lock().expect("path lock");
     let temp = temp_dir("core_ops_lifecycle");
     fs::create_dir_all(&temp).expect("temp dir");
 
@@ -81,10 +83,10 @@ fn apply_executes_unit_lifecycle_actions() {
 
     let log_contents = fs::read_to_string(&log_path).expect("read log");
     assert!(log_contents.contains("daemon-reload"));
-    assert!(log_contents.contains("enable alpha.container"));
-    assert!(log_contents.contains("start alpha.container"));
-    assert!(log_contents.contains("stop alpha.container"));
-    assert!(log_contents.contains("disable alpha.container"));
+    assert!(log_contents.contains("enable alpha.service"));
+    assert!(log_contents.contains("disable alpha.service"));
+    assert!(log_contents.contains("start alpha.service"));
+    assert!(log_contents.contains("stop alpha.service"));
 }
 
 fn action(action_type: PlanActionType, target: &str) -> PlanAction {
@@ -98,6 +100,11 @@ fn action(action_type: PlanActionType, target: &str) -> PlanAction {
 
 struct PathGuard {
     previous: String,
+}
+
+fn path_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
 }
 
 impl Drop for PathGuard {

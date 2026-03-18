@@ -72,20 +72,29 @@ pub fn apply_plan(
                 }
             }
             PlanActionType::EnableUnit => {
-                let workload = find_workload(desired_workloads, &action.target)?;
-                run_systemctl(&["enable", &workload.systemd_unit_name])?;
+                if let Some(unit) =
+                    unit_name_for_enable_disable(desired_workloads, quadlet_dir, &action.target)?
+                {
+                    run_systemctl_ignoring(&["enable", &unit], &["transient or generated"])?;
+                }
             }
             PlanActionType::DisableUnit => {
-                let workload = find_workload(desired_workloads, &action.target)?;
-                run_systemctl(&["disable", &workload.systemd_unit_name])?;
+                if let Some(unit) =
+                    unit_name_for_enable_disable(desired_workloads, quadlet_dir, &action.target)?
+                {
+                    run_systemctl_ignoring(
+                        &["disable", &unit],
+                        &["transient or generated", "does not exist"],
+                    )?;
+                }
             }
             PlanActionType::StartUnit => {
-                let workload = find_workload(desired_workloads, &action.target)?;
-                run_systemctl(&["start", &workload.systemd_unit_name])?;
+                let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &action.target)?;
+                run_systemctl(&["start", &unit])?;
             }
             PlanActionType::StopUnit => {
-                let workload = find_workload(desired_workloads, &action.target)?;
-                run_systemctl(&["stop", &workload.systemd_unit_name])?;
+                let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &action.target)?;
+                run_systemctl(&["stop", &unit])?;
             }
             PlanActionType::ReloadSystemd => {
                 if reload_systemd {
@@ -129,4 +138,78 @@ fn run_systemctl(args: &[&str]) -> Result<(), ApplyError> {
         ));
     }
     Ok(())
+}
+
+fn run_systemctl_ignoring(
+    args: &[&str],
+    ignore_substrings: &[&str],
+) -> Result<(), ApplyError> {
+    let output = std::process::Command::new("systemctl")
+        .args(args)
+        .output()
+        .map_err(|err| ApplyError::SystemdCommandFailed(err.to_string()))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for needle in ignore_substrings {
+        if stderr.contains(needle) {
+            log::warn!("systemctl {} ignored: {}", args.join(" "), stderr.trim_end());
+            return Ok(());
+        }
+    }
+    Err(ApplyError::SystemdCommandFailed(stderr.to_string()))
+}
+
+fn unit_name_for_enable_disable(
+    workloads: &[Workload],
+    quadlet_dir: &Path,
+    target: &str,
+) -> Result<Option<String>, ApplyError> {
+    if let Some(workload) = workloads.iter().find(|w| w.name == target) {
+        return Ok(Some(service_unit_name(&workload.systemd_unit_name)));
+    }
+
+    for entry in fs::read_dir(quadlet_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
+            if file_name.starts_with(&format!("{target}.")) {
+                return Ok(Some(service_unit_name(file_name)));
+            }
+        }
+    }
+
+    log::warn!("unable to resolve quadlet unit for target {}", target);
+    Ok(None)
+}
+
+fn unit_name_for_start_stop(
+    workloads: &[Workload],
+    quadlet_dir: &Path,
+    target: &str,
+) -> Result<String, ApplyError> {
+    if let Some(workload) = workloads.iter().find(|w| w.name == target) {
+        return Ok(service_unit_name(&workload.systemd_unit_name));
+    }
+
+    for entry in fs::read_dir(quadlet_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
+            if file_name.starts_with(&format!("{target}.")) {
+                return Ok(service_unit_name(file_name));
+            }
+        }
+    }
+
+    Ok(format!("{target}.service"))
+}
+
+fn service_unit_name(unit_file: &str) -> String {
+    let stem = Path::new(unit_file)
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or(unit_file);
+    format!("{stem}.service")
 }
