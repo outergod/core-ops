@@ -4,8 +4,10 @@ use core_ops::cli::{apply as apply_cmd, plan as plan_cmd};
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
 use core_ops::io::{audit as audit_io, observed, repo};
+use log::LevelFilter;
 
 fn main() {
+    init_logging();
     if let Err(err) = run() {
         eprintln!("error: {}", err.message);
         std::process::exit(1);
@@ -29,18 +31,37 @@ fn run() -> Result<(), CoreError> {
             };
 
             let output = plan_cmd::plan(&deps)?;
-            let audit_path = audit_io::write_audit_record(&audit_dir, &output.audit_record)
-                .map_err(map_plan_error)?;
+            audit_io::emit_journal_event(&output.audit_event).map_err(map_plan_error)?;
+            if let Some(dir) = audit_dir {
+                let audit_path = audit_io::write_audit_record(&dir, &output.audit_record)
+                    .map_err(map_plan_error)?;
+                println!("audit {}", audit_path);
+            }
 
             println!("{}", output.summary);
-            println!("audit {}", audit_path);
             Ok(())
         }
         "apply" => {
             let (repo_path, rev, quadlet_dir, audit_dir) = parse_plan_args(args)?;
 
             let run = apply_cmd::apply(&repo_path, &rev, &quadlet_dir)?;
-            let _ = audit_dir;
+            let event = core_ops::core::audit::build_audit_event(&run, None);
+            audit_io::emit_journal_event(&event).map_err(map_apply_error)?;
+            if let Some(dir) = audit_dir {
+                let record = core_ops::core::audit::build_audit_record(
+                    &run.run_id,
+                    Vec::new(),
+                    &core_ops::core::types::ReconciliationPlan {
+                        plan_id: "apply".to_string(),
+                        desired_revision_id: rev.clone(),
+                        observed_revision_id: None,
+                        actions: Vec::new(),
+                        safety_checks: Vec::new(),
+                        expected_outcomes: Vec::new(),
+                    },
+                );
+                let _ = audit_io::write_audit_record(&dir, &record).map_err(map_apply_error)?;
+            }
 
             println!("{}", run.summary);
             Ok(())
@@ -60,7 +81,7 @@ fn run() -> Result<(), CoreError> {
 
 fn parse_plan_args(
     mut args: impl Iterator<Item = String>,
-) -> Result<(PathBuf, String, PathBuf, PathBuf), CoreError> {
+) -> Result<(PathBuf, String, PathBuf, Option<PathBuf>), CoreError> {
     let mut repo_path: Option<PathBuf> = None;
     let mut rev: Option<String> = None;
     let mut quadlet_dir: Option<PathBuf> = None;
@@ -88,11 +109,6 @@ fn parse_plan_args(
         core_ops::core::types::FailureClass::Validation,
         "missing --quadlet-dir".to_string(),
     ))?;
-    let audit_dir = audit_dir.ok_or_else(|| CoreError::new(
-        core_ops::core::types::FailureClass::Validation,
-        "missing --audit-dir".to_string(),
-    ))?;
-
     Ok((repo_path, rev, quadlet_dir, audit_dir))
 }
 
@@ -116,6 +132,19 @@ fn usage() -> String {
     "usage: core-ops <plan|apply|status> [args]".to_string()
 }
 
+fn init_logging() {
+    if systemd_journal_logger::connected_to_journal() {
+        if let Ok(logger) = systemd_journal_logger::JournalLog::new() {
+            let _ = logger.install();
+            log::set_max_level(LevelFilter::Info);
+        }
+    }
+}
+
 fn map_plan_error<E: std::fmt::Display>(err: E) -> CoreError {
     CoreError::new(core_ops::core::types::FailureClass::Plan, err.to_string())
+}
+
+fn map_apply_error<E: std::fmt::Display>(err: E) -> CoreError {
+    CoreError::new(core_ops::core::types::FailureClass::Apply, err.to_string())
 }

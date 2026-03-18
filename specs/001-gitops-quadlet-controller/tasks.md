@@ -110,7 +110,7 @@ feature spec explicitly documents a justified exemption.
 
 **Independent Test**: Run plan and confirm structured audit events are emitted without requiring file persistence
 
-- [ ] T027 [US2] Implement structured audit sink to systemd journal, make file export optional, and fix CLI wiring in `src/io/audit.rs`, `src/cli/plan.rs`, and `src/main.rs`
+- [X] T027 [US2] Implement structured audit sink to systemd journal, make file export optional, and fix CLI wiring in `src/io/audit.rs`, `src/cli/plan.rs`, and `src/main.rs`
 
 ---
 

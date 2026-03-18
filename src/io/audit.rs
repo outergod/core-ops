@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::core::audit::format_audit_record;
+use crate::core::audit::{format_audit_event_json, format_audit_record, AuditEvent};
 use crate::core::types::AuditRecord;
 
 #[derive(Debug)]
@@ -32,4 +32,10 @@ pub fn write_audit_record(dir: &Path, record: &AuditRecord) -> Result<String, Au
     let body = format_audit_record(record);
     fs::write(&path, body)?;
     Ok(path.display().to_string())
+}
+
+pub fn emit_journal_event(event: &AuditEvent) -> Result<(), AuditError> {
+    let payload = format_audit_event_json(event);
+    log::info!(target: "audit", "{}", payload);
+    Ok(())
 }

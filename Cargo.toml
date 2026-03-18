@@ -3,6 +3,10 @@ name = "core-ops"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+log = { version = "0.4", features = ["kv"] }
+systemd-journal-logger = "2.2.2"
+
 [lib]
 path = "src/lib.rs"
 

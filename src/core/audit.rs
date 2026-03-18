@@ -1,4 +1,4 @@
-use crate::core::types::{AuditRecord, DiffItem, PlanAction, ReconciliationPlan};
+use crate::core::types::{AuditRecord, DiffItem, PlanAction, ReconcileRun, ReconciliationPlan};
 
 pub fn build_audit_record(run_id: &str, diffs: Vec<DiffItem>, plan: &ReconciliationPlan) -> AuditRecord {
     AuditRecord {
@@ -38,4 +38,42 @@ pub fn format_audit_record(record: &AuditRecord) -> String {
         record.actions_applied.len()
     ));
     output
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuditEvent {
+    pub run_id: String,
+    pub plan_id: Option<String>,
+    pub action_count: usize,
+    pub summary: String,
+}
+
+pub fn build_audit_event(run: &ReconcileRun, plan: Option<&ReconciliationPlan>) -> AuditEvent {
+    AuditEvent {
+        run_id: run.run_id.clone(),
+        plan_id: plan.map(|p| p.plan_id.clone()),
+        action_count: plan.map(|p| p.actions.len()).unwrap_or(0),
+        summary: run.summary.clone(),
+    }
+}
+
+pub fn format_audit_event_json(event: &AuditEvent) -> String {
+    let plan_id = match &event.plan_id {
+        Some(plan_id) => format!("\"{}\"", escape_json(plan_id)),
+        None => "null".to_string(),
+    };
+    format!(
+        "{{\"run_id\":\"{}\",\"plan_id\":{},\"action_count\":{},\"summary\":\"{}\"}}",
+        escape_json(&event.run_id),
+        plan_id,
+        event.action_count,
+        escape_json(&event.summary)
+    )
+}
+
+fn escape_json(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('\"', "\\\"")
+        .replace('\n', "\\n")
 }
