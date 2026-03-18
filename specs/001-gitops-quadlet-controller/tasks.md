@@ -30,9 +30,9 @@ feature spec explicitly documents a justified exemption.
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project structure per implementation plan in `src/` and `tests/`
-- [ ] T002 Initialize Rust project in `Cargo.toml` and `src/main.rs`
-- [ ] T003 [P] Configure formatting/linting in `rustfmt.toml` and `.clippy.toml`
+- [X] T001 Create project structure per implementation plan in `src/` and `tests/`
+- [X] T002 Initialize Rust project in `Cargo.toml` and `src/main.rs`
+- [X] T003 [P] Configure formatting/linting in `rustfmt.toml` and `.clippy.toml`
 
 ---
 
