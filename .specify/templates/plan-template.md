@@ -31,7 +31,17 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- Functional core and imperative shell boundaries are explicit; side effects are isolated.
+- Desired/observed state, reconciliation plans, and outcomes are represented as data.
+- Abstractions are minimal and justified; complexity tracking added if needed.
+- Effects, assumptions, and failure modes are explicit in interfaces and returns.
+- Idempotence and convergence strategy are defined, including retry behavior.
+- Open standards and native interfaces are preferred; deviations justified.
+- Observability plan covers diffs, plans, actions, failures, and dry-run/audit needs.
+- Safe defaults are documented; destructive actions require explicit intent.
+- Compatibility impact is assessed; breaking changes are documented with migration.
+- Test strategy covers invariants, external behavior, convergence, and failures.
+- Modules are structured to be regenerable from specs and tests.
 
 ## Project Structure
 

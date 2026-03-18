@@ -100,6 +100,23 @@
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 - **[Entity 2]**: [What it represents, relationships to other entities]
 
+## Constitution Alignment *(mandatory)*
+
+<!--
+  ACTION REQUIRED: Show how this spec adheres to the constitution. Be explicit
+  about boundaries, idempotence, observability, safety, compatibility, and tests.
+-->
+
+- **Functional core vs. side effects**: [Pure logic vs. imperative shell boundaries]
+- **Declarative state model**: [Desired/observed/plan/outcome data structures]
+- **Idempotence & convergence**: [How retries and reapplication behave]
+- **Explicit effects/failures**: [Failure modes and assumptions surfaced]
+- **Observability**: [Diffs, plans, actions, diagnostics, dry-run/audit]
+- **Safe defaults**: [Risky actions require explicit intent]
+- **Compatibility**: [Backward-compatibility strategy and migrations]
+- **Test contract**: [Invariants, external behavior, convergence, failure tests]
+- **Regenerability**: [How specs/tests enable safe regeneration]
+
 ## Success Criteria *(mandatory)*
 
 <!--
