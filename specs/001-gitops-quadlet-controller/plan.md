@@ -19,7 +19,7 @@ deferring fleet, secrets, and host config.
 ## Technical Context
 
 **Language/Version**: Rust (stable toolchain)  
-**Primary Dependencies**: Git (CLI), systemd (systemctl), Podman/Quadlet generator  
+**Primary Dependencies**: Git (CLI), systemd (systemctl), Podman/Quadlet generator, clap, thiserror, miette  
 **Storage**: Files on disk (Quadlet unit files + reconciliation state cache); audit defaults to systemd journal  
 **Testing**: cargo test, integration tests with systemd/Quadlet behavior  
 **Target Platform**: Fedora CoreOS (single host)  
@@ -83,6 +83,8 @@ planning/validation), `io` (filesystem/systemd/Git interactions), and `cli`
 - Avoid background daemons by default; support a periodic loop only if needed.
 - Use filesystem state and systemd queries; no external services or databases.
 - Default audit sink is systemd journal; rich artifacts are ephemeral unless exported.
+- Use clap derive for CLI parsing, thiserror for typed errors, and miette for
+  user-facing diagnostics without coupling core logic to CLI types.
 - Default to read-only plan; apply requires explicit operator intent.
 - Defer parallelism and concurrency controls unless required for correctness.
 

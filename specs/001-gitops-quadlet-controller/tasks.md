@@ -135,14 +135,25 @@ feature spec explicitly documents a justified exemption.
 
 ---
 
-## Phase 7: Polish & Cross-Cutting Concerns
+## Phase 7: CLI Conventions & Diagnostics (MVP alignment)
+
+**Goal**: Adopt clap + thiserror + miette for polished CLI parsing and errors
+
+- [ ] T033 [P] Add CLI dependencies in `Cargo.toml` (clap derive, thiserror, miette)
+- [ ] T034 [US2] Define clap-based CLI structs and subcommands in `src/cli/args.rs`
+- [ ] T035 [US2] Map core errors to miette diagnostics in `src/cli/diagnostics.rs`
+- [ ] T036 [US2] Wire `main.rs` to clap parsing and miette reporting
+
+---
+
+## Phase 8: Polish & Cross-Cutting Concerns
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T033 [P] Documentation updates in `docs/` (if created) or `README.md`
-- [ ] T034 Code cleanup and refactoring in `src/`
-- [ ] T035 [P] Additional unit tests for invariants in `tests/unit/test_invariants.rs`
-- [ ] T036 Run quickstart validation against `specs/001-gitops-quadlet-controller/quickstart.md`
+- [ ] T037 [P] Documentation updates in `docs/` (if created) or `README.md`
+- [ ] T038 Code cleanup and refactoring in `src/`
+- [ ] T039 [P] Additional unit tests for invariants in `tests/unit/test_invariants.rs`
+- [ ] T040 Run quickstart validation against `specs/001-gitops-quadlet-controller/quickstart.md`
 
 ---
 
