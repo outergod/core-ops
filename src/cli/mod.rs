@@ -1,1 +1,1 @@
-// CLI module placeholders for future command wiring.
+pub mod apply;

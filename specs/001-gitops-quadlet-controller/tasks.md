@@ -66,17 +66,17 @@ feature spec explicitly documents a justified exemption.
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T013 [P] [US1] Integration test for reconcile apply flow in `tests/integration/test_reconcile_apply.rs`
-- [ ] T014 [P] [US1] Integration test for desired state load from repo in `tests/integration/test_repo_load.rs`
+- [X] T013 [P] [US1] Integration test for reconcile apply flow in `tests/integration/test_reconcile_apply.rs`
+- [X] T014 [P] [US1] Integration test for desired state load from repo in `tests/integration/test_repo_load.rs`
 
 ### Implementation for User Story 1
 
-- [ ] T015 [P] [US1] Implement Git repo loader in `src/io/repo.rs` (clone/fetch + read Quadlet files)
-- [ ] T016 [P] [US1] Implement Quadlet parser/loader in `src/io/quadlet.rs`
-- [ ] T017 [P] [US1] Implement observed state reader in `src/io/observed.rs` (systemd/Quadlet discovery)
-- [ ] T018 [US1] Implement apply adapter in `src/io/apply.rs` (write/remove Quadlet files, daemon-reload)
-- [ ] T019 [US1] Implement reconcile flow wiring in `src/core/reconcile.rs` (validate → plan → apply → verify)
-- [ ] T020 [US1] Wire CLI apply command in `src/cli/apply.rs`
+- [X] T015 [P] [US1] Implement Git repo loader in `src/io/repo.rs` (clone/fetch + read Quadlet files)
+- [X] T016 [P] [US1] Implement Quadlet parser/loader in `src/io/quadlet.rs`
+- [X] T017 [P] [US1] Implement observed state reader in `src/io/observed.rs` (systemd/Quadlet discovery)
+- [X] T018 [US1] Implement apply adapter in `src/io/apply.rs` (write/remove Quadlet files, daemon-reload)
+- [X] T019 [US1] Implement reconcile flow wiring in `src/core/reconcile.rs` (validate → plan → apply → verify)
+- [X] T020 [US1] Wire CLI apply command in `src/cli/apply.rs`
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
