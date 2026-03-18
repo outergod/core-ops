@@ -74,7 +74,7 @@ fn reconcile_apply_converges_to_desired_state() {
         read_observed: &|| read_observed_state(&host_quadlets, Some("obs".to_string()))
             .map_err(map_io_error),
         apply_plan: &|plan, desired| {
-            apply_plan(plan, &desired.workloads, &host_quadlets)
+            apply_plan(plan, &desired.workloads, &host_quadlets, false)
                 .map(|_| ())
                 .map_err(map_io_error)
         },

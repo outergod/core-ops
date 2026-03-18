@@ -7,6 +7,7 @@ use crate::core::types::{PlanAction, PlanActionType, ReconciliationPlan, Workloa
 pub enum ApplyError {
     MissingQuadletDir(PathBuf),
     MissingWorkload(String),
+    SystemdReloadFailed(String),
     Io(std::io::Error),
 }
 
@@ -23,6 +24,7 @@ impl std::fmt::Display for ApplyError {
                 write!(f, "missing quadlet dir: {}", path.display())
             }
             ApplyError::MissingWorkload(name) => write!(f, "missing workload: {}", name),
+            ApplyError::SystemdReloadFailed(msg) => write!(f, "systemd reload failed: {}", msg),
             ApplyError::Io(err) => write!(f, "apply io error: {}", err),
         }
     }
@@ -40,6 +42,7 @@ pub fn apply_plan(
     plan: &ReconciliationPlan,
     desired_workloads: &[Workload],
     quadlet_dir: &Path,
+    reload_systemd: bool,
 ) -> Result<ApplyOutcome, ApplyError> {
     if !quadlet_dir.exists() {
         return Err(ApplyError::MissingQuadletDir(quadlet_dir.to_path_buf()));
@@ -47,6 +50,7 @@ pub fn apply_plan(
 
     let mut files_written = Vec::new();
     let mut files_removed = Vec::new();
+    let mut needs_reload = false;
 
     for action in &plan.actions {
         match action.action_type {
@@ -55,6 +59,7 @@ pub fn apply_plan(
                 let path = quadlet_dir.join(&workload.systemd_unit_name);
                 fs::write(&path, &workload.quadlet_contents)?;
                 files_written.push(path.display().to_string());
+                needs_reload = true;
             }
             PlanActionType::RemoveQuadlet => {
                 for entry in fs::read_dir(quadlet_dir)? {
@@ -64,6 +69,7 @@ pub fn apply_plan(
                         if file_name.starts_with(&format!("{}.", action.target)) {
                             fs::remove_file(&path)?;
                             files_removed.push(path.display().to_string());
+                            needs_reload = true;
                         }
                     }
                 }
@@ -71,6 +77,18 @@ pub fn apply_plan(
             _ => {
                 // No-op for unit enable/disable/start/stop/reload in the MVP adapter.
             }
+        }
+    }
+
+    if reload_systemd && needs_reload {
+        let output = std::process::Command::new("systemctl")
+            .arg("daemon-reload")
+            .output()
+            .map_err(|err| ApplyError::SystemdReloadFailed(err.to_string()))?;
+        if !output.status.success() {
+            return Err(ApplyError::SystemdReloadFailed(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ));
         }
     }
 

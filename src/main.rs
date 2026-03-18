@@ -20,7 +20,7 @@ fn run() -> Result<(), CoreError> {
 
     match command.as_str() {
         "plan" => {
-            let (repo_source, rev, quadlet_dir, audit_dir) = parse_plan_args(args)?;
+            let (repo_source, rev, quadlet_dir, audit_dir, _no_reload) = parse_plan_args(args)?;
 
             let deps = ReconcileDependencies {
                 load_desired: &|| repo::load_desired_state(&repo_source, &rev).map_err(map_plan_error),
@@ -42,9 +42,9 @@ fn run() -> Result<(), CoreError> {
             Ok(())
         }
         "apply" => {
-            let (repo_source, rev, quadlet_dir, audit_dir) = parse_plan_args(args)?;
+            let (repo_source, rev, quadlet_dir, audit_dir, no_reload) = parse_plan_args(args)?;
 
-            let run = apply_cmd::apply(&repo_source, &rev, &quadlet_dir)?;
+            let run = apply_cmd::apply(&repo_source, &rev, &quadlet_dir, !no_reload)?;
             let event = core_ops::core::audit::build_audit_event(&run, None);
             audit_io::emit_journal_event(&event).map_err(map_apply_error)?;
             if let Some(dir) = audit_dir {
@@ -81,11 +81,12 @@ fn run() -> Result<(), CoreError> {
 
 fn parse_plan_args(
     mut args: impl Iterator<Item = String>,
-) -> Result<(String, String, PathBuf, Option<PathBuf>), CoreError> {
+) -> Result<(String, String, PathBuf, Option<PathBuf>, bool), CoreError> {
     let mut repo_source: Option<String> = None;
     let mut rev: Option<String> = None;
     let mut quadlet_dir: Option<PathBuf> = None;
     let mut audit_dir: Option<PathBuf> = None;
+    let mut no_reload = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -93,6 +94,7 @@ fn parse_plan_args(
             "--rev" => rev = args.next(),
             "--quadlet-dir" => quadlet_dir = args.next().map(PathBuf::from),
             "--audit-dir" => audit_dir = args.next().map(PathBuf::from),
+            "--no-reload" => no_reload = true,
             _ => {}
         }
     }
@@ -106,7 +108,7 @@ fn parse_plan_args(
         "missing --rev".to_string(),
     ))?;
     let quadlet_dir = quadlet_dir.unwrap_or_else(|| PathBuf::from("/etc/containers/systemd"));
-    Ok((repo_source, rev, quadlet_dir, audit_dir))
+    Ok((repo_source, rev, quadlet_dir, audit_dir, no_reload))
 }
 
 fn parse_status_args(
