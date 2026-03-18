@@ -84,6 +84,11 @@ surfaces a clear failure and retries do not worsen state.
 - Image registry management, artifact promotion, or deployment pipelines.
 - Policy enforcement beyond the declared mutation boundaries.
 
+## Clarifications
+
+### Session 2026-03-18
+- Q: What is the default audit sink and handling of rich artifacts? → A: Default audit sink is structured systemd journal events; rich artifacts (plans/reports) are printed unless explicitly exported
+
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
@@ -95,8 +100,9 @@ surfaces a clear failure and retries do not worsen state.
 - **FR-003**: System MUST reconcile Quadlet-managed workloads on Fedora CoreOS
   within supported mutation boundaries.
 - **FR-004**: System MUST provide a dry-run/plan mode that does not apply changes.
-- **FR-005**: System MUST expose clear diagnostics and audit records for decisions,
-  changes, and failures.
+- **FR-005**: System MUST emit structured audit events to the system journal by
+  default, and treat rich artifacts (plans/reports) as non-persistent output
+  unless explicitly exported.
 - **FR-006**: Reconciliation MUST be safe to repeat and converge without unintended
   changes.
 - **FR-007**: System MUST handle invalid configuration and partial failures

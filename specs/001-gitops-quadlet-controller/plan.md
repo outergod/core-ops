@@ -11,14 +11,16 @@ Deliver the smallest viable controller for a single Fedora CoreOS host that
 still enforces explicit reconciliation phases (plan → apply → verify), strong
 idempotence, dry-run, and safe apply. The MVP is a CLI with an optional
 long-running mode, uses only native primitives (Git, Quadlet, systemd), and
-stores state on disk. Architectural risk is minimized by keeping the core pure
-and limiting moving parts, while deferring fleet, secrets, and host config.
+defaults auditability to structured systemd journal events. Rich artifacts such
+as plans/reports are printed or explicitly exported on demand. Architectural
+risk is minimized by keeping the core pure and limiting moving parts, while
+deferring fleet, secrets, and host config.
 
 ## Technical Context
 
 **Language/Version**: Rust (stable toolchain)  
 **Primary Dependencies**: Git (CLI), systemd (systemctl), Podman/Quadlet generator  
-**Storage**: Files on disk (Quadlet unit files + reconciliation state cache)  
+**Storage**: Files on disk (Quadlet unit files + reconciliation state cache); audit defaults to systemd journal  
 **Testing**: cargo test, integration tests with systemd/Quadlet behavior  
 **Target Platform**: Fedora CoreOS (single host)  
 **Project Type**: CLI (with optional long-running loop)  
@@ -80,6 +82,7 @@ planning/validation), `io` (filesystem/systemd/Git interactions), and `cli`
 - Keep the reconcile loop simple: validate → plan → apply → verify.
 - Avoid background daemons by default; support a periodic loop only if needed.
 - Use filesystem state and systemd queries; no external services or databases.
+- Default audit sink is systemd journal; rich artifacts are ephemeral unless exported.
 - Default to read-only plan; apply requires explicit operator intent.
 - Defer parallelism and concurrency controls unless required for correctness.
 

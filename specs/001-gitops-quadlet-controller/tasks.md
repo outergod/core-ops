@@ -104,7 +104,17 @@ feature spec explicitly documents a justified exemption.
 
 ---
 
-## Phase 5: User Story 3 - Safe retry and failure handling (Priority: P3)
+## Phase 5: Audit Sink Default (US2 follow-up)
+
+**Goal**: Default audit sink is the systemd journal; file export is explicit
+
+**Independent Test**: Run plan and confirm structured audit events are emitted without requiring file persistence
+
+- [ ] T027 [US2] Implement structured audit sink to systemd journal, make file export optional, and fix CLI wiring in `src/io/audit.rs`, `src/cli/plan.rs`, and `src/main.rs`
+
+---
+
+## Phase 6: User Story 3 - Safe retry and failure handling (Priority: P3)
 
 **Goal**: Provide explicit failure reporting and safe retries without compounding changes
 
@@ -112,27 +122,27 @@ feature spec explicitly documents a justified exemption.
 
 ### Tests for User Story 3 (REQUIRED unless explicitly exempted) ⚠️
 
-- [ ] T027 [P] [US3] Integration test for validation failure handling in `tests/integration/test_validation_fail.rs`
-- [ ] T028 [P] [US3] Integration test for transient failure retry in `tests/integration/test_retry.rs`
+- [ ] T028 [P] [US3] Integration test for validation failure handling in `tests/integration/test_validation_fail.rs`
+- [ ] T029 [P] [US3] Integration test for transient failure retry in `tests/integration/test_retry.rs`
 
 ### Implementation for User Story 3
 
-- [ ] T029 [US3] Implement failure classification and reporting in `src/core/errors.rs` and `src/cli/errors.rs`
-- [ ] T030 [US3] Implement retry policy in `src/core/retry.rs` (bounded, visible retries)
-- [ ] T031 [US3] Wire failure outputs to CLI in `src/cli/common.rs`
+- [ ] T030 [US3] Implement failure classification and reporting in `src/core/errors.rs` and `src/cli/errors.rs`
+- [ ] T031 [US3] Implement retry policy in `src/core/retry.rs` (bounded, visible retries)
+- [ ] T032 [US3] Wire failure outputs to CLI in `src/cli/common.rs`
 
 **Checkpoint**: All user stories should now be independently functional
 
 ---
 
-## Phase 6: Polish & Cross-Cutting Concerns
+## Phase 7: Polish & Cross-Cutting Concerns
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T032 [P] Documentation updates in `docs/` (if created) or `README.md`
-- [ ] T033 Code cleanup and refactoring in `src/`
-- [ ] T034 [P] Additional unit tests for invariants in `tests/unit/test_invariants.rs`
-- [ ] T035 Run quickstart validation against `specs/001-gitops-quadlet-controller/quickstart.md`
+- [ ] T033 [P] Documentation updates in `docs/` (if created) or `README.md`
+- [ ] T034 Code cleanup and refactoring in `src/`
+- [ ] T035 [P] Additional unit tests for invariants in `tests/unit/test_invariants.rs`
+- [ ] T036 Run quickstart validation against `specs/001-gitops-quadlet-controller/quickstart.md`
 
 ---
 
