@@ -76,7 +76,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
         Commands::Status(args) => {
             let audit_file = args.audit_file;
             let contents = std::fs::read_to_string(&audit_file).map_err(map_plan_error)?;
-            println!("{}", contents.trim_end());
+            println!("{}", core_ops::cli::status::format_status_text(&contents));
             Ok(())
         }
     }
