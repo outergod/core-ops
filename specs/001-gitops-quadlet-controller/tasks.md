@@ -42,15 +42,15 @@ feature spec explicitly documents a justified exemption.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Define core domain types in `src/core/types.rs` (DesiredState, Workload, ObservedState, PlanAction, ReconciliationPlan, ReconcileRun, AuditRecord)
-- [ ] T005 Implement validation rules in `src/core/validation.rs` (Quadlet types, boundaries, invariants)
-- [ ] T006 Implement diffing model in `src/core/diff.rs` (desired vs observed, stable identifiers)
-- [ ] T007 Implement planning logic in `src/core/planner.rs` (validate → plan; idempotent action list)
-- [ ] T008 Define failure classes and error types in `src/core/errors.rs`
-- [ ] T009 Implement audit record structures in `src/core/audit.rs` (plan summary, actions, outcomes)
-- [ ] T010 [P] Add unit tests for domain types and invariants in `tests/unit/test_types.rs`
-- [ ] T011 [P] Add unit tests for validation rules in `tests/unit/test_validation.rs`
-- [ ] T012 [P] Add unit tests for diffing and planning logic in `tests/unit/test_planner.rs`
+- [X] T004 Define core domain types in `src/core/types.rs` (DesiredState, Workload, ObservedState, PlanAction, ReconciliationPlan, ReconcileRun, AuditRecord)
+- [X] T005 Implement validation rules in `src/core/validation.rs` (Quadlet types, boundaries, invariants)
+- [X] T006 Implement diffing model in `src/core/diff.rs` (desired vs observed, stable identifiers)
+- [X] T007 Implement planning logic in `src/core/planner.rs` (validate → plan; idempotent action list)
+- [X] T008 Define failure classes and error types in `src/core/errors.rs`
+- [X] T009 Implement audit record structures in `src/core/audit.rs` (plan summary, actions, outcomes)
+- [X] T010 [P] Add unit tests for domain types and invariants in `tests/unit/test_types.rs`
+- [X] T011 [P] Add unit tests for validation rules in `tests/unit/test_validation.rs`
+- [X] T012 [P] Add unit tests for diffing and planning logic in `tests/unit/test_planner.rs`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
