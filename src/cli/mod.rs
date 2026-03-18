@@ -1,5 +1,6 @@
+pub mod args;
 pub mod common;
-pub mod errors;
+pub mod diagnostics;
 pub mod apply;
 pub mod plan;
 pub mod status;

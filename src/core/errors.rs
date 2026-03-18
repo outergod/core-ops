@@ -1,6 +1,8 @@
 use crate::core::types::FailureClass;
+use thiserror::Error;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[error("{message}")]
 pub struct CoreError {
     pub class: FailureClass,
     pub message: String,
@@ -19,14 +21,6 @@ impl CoreError {
     }
 }
 
-impl std::fmt::Display for CoreError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl std::error::Error for CoreError {}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ValidationErrorKind {
     MissingInvariant,
@@ -36,7 +30,8 @@ pub enum ValidationErrorKind {
     UnsupportedQuadletType,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[error("{message}")]
 pub struct ValidationError {
     pub kind: ValidationErrorKind,
     pub message: String,

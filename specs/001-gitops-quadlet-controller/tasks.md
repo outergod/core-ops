@@ -157,10 +157,10 @@ feature spec explicitly documents a justified exemption.
 
 **Goal**: Adopt clap + thiserror + miette for polished CLI parsing and errors
 
-- [ ] T033 [P] Add CLI dependencies in `Cargo.toml` (clap derive, thiserror, miette)
-- [ ] T034 [US2] Define clap-based CLI structs and subcommands in `src/cli/args.rs`
-- [ ] T035 [US2] Map core errors to miette diagnostics in `src/cli/diagnostics.rs`
-- [ ] T036 [US2] Wire `main.rs` to clap parsing and miette reporting
+- [X] T033 [P] Add CLI dependencies in `Cargo.toml` (clap derive, thiserror, miette)
+- [X] T034 [US2] Define clap-based CLI structs and subcommands in `src/cli/args.rs`
+- [X] T035 [US2] Map core errors to miette diagnostics in `src/cli/diagnostics.rs`
+- [X] T036 [US2] Wire `main.rs` to clap parsing and miette reporting
 
 ---
 

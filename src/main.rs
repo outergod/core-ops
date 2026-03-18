@@ -1,27 +1,29 @@
-use std::path::PathBuf;
-
+use core_ops::cli::args::{Cli, Commands};
+use core_ops::cli::diagnostics as cli_diagnostics;
 use core_ops::cli::{apply as apply_cmd, plan as plan_cmd};
-use core_ops::cli::common as cli_common;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
 use core_ops::io::{audit as audit_io, observed, repo};
 use log::LevelFilter;
+use clap::Parser;
 
 fn main() {
     init_logging();
-    if let Err(err) = run() {
-        eprintln!("{}", cli_common::render_error(&err));
+    let cli = Cli::parse();
+    if let Err(err) = run(cli) {
+        let report = cli_diagnostics::report_from_error(err);
+        eprintln!("{:?}", report);
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<(), CoreError> {
-    let mut args = std::env::args().skip(1);
-    let command = args.next().unwrap_or_default();
-
-    match command.as_str() {
-        "plan" => {
-            let (repo_source, rev, quadlet_dir, audit_dir, _no_reload) = parse_plan_args(args)?;
+fn run(cli: Cli) -> Result<(), CoreError> {
+    match cli.command {
+        Commands::Plan(args) => {
+            let repo_source = args.repo;
+            let rev = args.rev;
+            let quadlet_dir = args.quadlet_dir;
+            let audit_dir = args.audit_dir;
 
             let deps = ReconcileDependencies {
                 load_desired: &|| repo::load_desired_state(&repo_source, &rev).map_err(map_plan_error),
@@ -42,8 +44,12 @@ fn run() -> Result<(), CoreError> {
             println!("{}", output.summary);
             Ok(())
         }
-        "apply" => {
-            let (repo_source, rev, quadlet_dir, audit_dir, no_reload) = parse_plan_args(args)?;
+        Commands::Apply(args) => {
+            let repo_source = args.repo;
+            let rev = args.rev;
+            let quadlet_dir = args.quadlet_dir;
+            let audit_dir = args.audit_dir;
+            let no_reload = args.no_reload;
 
             let run = apply_cmd::apply(&repo_source, &rev, &quadlet_dir, !no_reload)?;
             let event = core_ops::core::audit::build_audit_event(&run, None);
@@ -67,69 +73,13 @@ fn run() -> Result<(), CoreError> {
             println!("{}", run.summary);
             Ok(())
         }
-        "status" => {
-            let audit_file = parse_status_args(args)?;
+        Commands::Status(args) => {
+            let audit_file = args.audit_file;
             let contents = std::fs::read_to_string(&audit_file).map_err(map_plan_error)?;
             println!("{}", contents.trim_end());
             Ok(())
         }
-        _ => Err(CoreError::new(
-            core_ops::core::types::FailureClass::Validation,
-            usage(),
-        )),
     }
-}
-
-fn parse_plan_args(
-    mut args: impl Iterator<Item = String>,
-) -> Result<(String, String, PathBuf, Option<PathBuf>, bool), CoreError> {
-    let mut repo_source: Option<String> = None;
-    let mut rev: Option<String> = None;
-    let mut quadlet_dir: Option<PathBuf> = None;
-    let mut audit_dir: Option<PathBuf> = None;
-    let mut no_reload = false;
-
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--repo" => repo_source = args.next(),
-            "--rev" => rev = args.next(),
-            "--quadlet-dir" => quadlet_dir = args.next().map(PathBuf::from),
-            "--audit-dir" => audit_dir = args.next().map(PathBuf::from),
-            "--no-reload" => no_reload = true,
-            _ => {}
-        }
-    }
-
-    let repo_source = repo_source.ok_or_else(|| CoreError::new(
-        core_ops::core::types::FailureClass::Validation,
-        "missing --repo".to_string(),
-    ))?;
-    let rev = rev.ok_or_else(|| CoreError::new(
-        core_ops::core::types::FailureClass::Validation,
-        "missing --rev".to_string(),
-    ))?;
-    let quadlet_dir = quadlet_dir.unwrap_or_else(|| PathBuf::from("/etc/containers/systemd"));
-    Ok((repo_source, rev, quadlet_dir, audit_dir, no_reload))
-}
-
-fn parse_status_args(
-    mut args: impl Iterator<Item = String>,
-) -> Result<PathBuf, CoreError> {
-    let mut audit_file: Option<PathBuf> = None;
-    while let Some(arg) = args.next() {
-        if arg == "--audit-file" {
-            audit_file = args.next().map(PathBuf::from);
-        }
-    }
-
-    audit_file.ok_or_else(|| CoreError::new(
-        core_ops::core::types::FailureClass::Validation,
-        "missing --audit-file".to_string(),
-    ))
-}
-
-fn usage() -> String {
-    "usage: core-ops <plan|apply|status> [args]".to_string()
 }
 
 fn init_logging() {
