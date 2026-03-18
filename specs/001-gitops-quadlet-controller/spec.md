@@ -68,6 +68,8 @@ surfaces a clear failure and retries do not worsen state.
 
 ### Edge Cases
 
+- Repository contains unknown/unsupported file extensions (warn only).
+- Repository contains dotfiles (ignored silently).
 - Desired state references unsupported mutations on Fedora CoreOS.
 - Git repository is temporarily unavailable or unreadable.
 - Partial application succeeds but verification fails.
@@ -87,6 +89,7 @@ surfaces a clear failure and retries do not worsen state.
 ## Clarifications
 
 ### Session 2026-03-18
+- Q: How should unknown extensions and dotfiles be handled? → A: Unknown/unsupported extensions emit a warning only; dotfiles are ignored with no warning
 - Q: Must the controller accept Git URLs (SSH/http(s)) as desired-state sources? → A: Yes, any valid Git URL (SSH or http(s)) must be supported in addition to local paths
 - Q: Which CLI parser should the MVP use for subcommands, help, and validation? → A: Use clap derive for CLI parsing and polished help/validation
 - Q: What is the default Quadlet path behavior for MVP? → A: Default path is /etc/containers/systemd; override via CLI/config; if missing, fail with clear error; rootless/user paths are out of scope unless explicitly configured
@@ -100,6 +103,9 @@ surfaces a clear failure and retries do not worsen state.
   URL, including SSH and http(s)) as the source of truth for desired state.
 - **FR-002**: System MUST represent desired state, observed state, diffs,
   reconciliation plans, and outcomes as explicit data.
+- **FR-002A**: Unknown/unsupported file extensions in the source repo MUST be
+  ignored with a logged warning; dotfiles MUST be ignored silently without
+  warnings.
 - **FR-003**: System MUST reconcile Quadlet-managed workloads on Fedora CoreOS
   within supported mutation boundaries, assuming /etc/containers/systemd as the
   default system-level Quadlet path for MVP. The default MAY be overridden via

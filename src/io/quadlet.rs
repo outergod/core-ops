@@ -37,8 +37,20 @@ pub fn read_quadlet_dir(dir: &Path) -> Result<Vec<Workload>, QuadletError> {
         if path.is_dir() {
             continue;
         }
-        let workload = load_quadlet_file(&path)?;
-        workloads.push(workload);
+        let file_name = match path.file_name().and_then(|name| name.to_str()) {
+            Some(name) => name,
+            None => continue,
+        };
+        if file_name.starts_with('.') {
+            continue;
+        }
+        match load_quadlet_file(&path) {
+            Ok(workload) => workloads.push(workload),
+            Err(QuadletError::UnsupportedExtension(ext)) => {
+                log::warn!("unsupported quadlet extension: {}", ext);
+            }
+            Err(err) => return Err(err),
+        }
     }
 
     Ok(workloads)

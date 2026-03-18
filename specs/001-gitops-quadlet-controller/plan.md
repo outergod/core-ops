@@ -86,6 +86,8 @@ planning/validation), `io` (filesystem/systemd/Git interactions), and `cli`
 - Default audit sink is systemd journal; rich artifacts are ephemeral unless exported.
 - Use clap derive for CLI parsing, thiserror for typed errors, and miette for
   user-facing diagnostics without coupling core logic to CLI types.
+- Ignore dotfiles; warn (but do not fail) on unsupported file extensions when
+  loading desired state.
 - Default to read-only plan; apply requires explicit operator intent.
 - Defer parallelism and concurrency controls unless required for correctness.
 

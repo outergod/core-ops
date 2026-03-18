@@ -79,3 +79,19 @@ fn loads_desired_state_from_git_url_fixture() {
 
     assert!(!desired.workloads.is_empty());
 }
+
+#[test]
+fn ignores_dotfiles_and_warns_on_unknown_extensions() {
+    let repo = temp_repo();
+    let rev = init_git_repo(&repo);
+    let quadlets = repo.join("quadlets");
+
+    std::fs::write(quadlets.join(".ignored.container"), "[Container]\nImage=alpine")
+        .expect("write dotfile");
+    std::fs::write(quadlets.join("readme.txt"), "ignore me").expect("write unknown");
+
+    let desired = load_desired_state(repo.to_str().unwrap(), &rev).expect("load desired");
+
+    assert_eq!(desired.workloads.len(), 1);
+    assert_eq!(desired.workloads[0].name, "alpha");
+}

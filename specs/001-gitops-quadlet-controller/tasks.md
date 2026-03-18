@@ -155,6 +155,15 @@ feature spec explicitly documents a justified exemption.
 - [X] T027A [US1] Add Git URL detection and clone/fetch logic in `src/io/repo.rs`
 - [X] T027B [US1] Add tests for Git URL handling in `tests/integration/test_repo_load.rs`
 
+---
+
+## Phase 4.6: Repo File Filtering (US1 follow-up)
+
+**Goal**: Ignore dotfiles and warn on unsupported extensions without failing
+
+- [X] T027C [US1] Update quadlet loader to ignore dotfiles and warn on unsupported extensions in `src/io/quadlet.rs`
+- [X] T027D [US1] Add tests for dotfile ignore and unknown extension warnings in `tests/integration/test_repo_load.rs`
+
 **Purpose**: Improvements that affect multiple user stories
 
 - [ ] T037 [P] Documentation updates in `docs/` (if created) or `README.md`
