@@ -152,8 +152,8 @@ feature spec explicitly documents a justified exemption.
 
 **Goal**: Accept local paths or any valid Git URL (SSH/http(s)) as desired-state sources
 
-- [ ] T027A [US1] Add Git URL detection and clone/fetch logic in `src/io/repo.rs`
-- [ ] T027B [US1] Add tests for Git URL handling in `tests/integration/test_repo_load.rs`
+- [X] T027A [US1] Add Git URL detection and clone/fetch logic in `src/io/repo.rs`
+- [X] T027B [US1] Add tests for Git URL handling in `tests/integration/test_repo_load.rs`
 
 **Purpose**: Improvements that affect multiple user stories
 

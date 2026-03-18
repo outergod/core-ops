@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 log = { version = "0.4", features = ["kv"] }
 systemd-journal-logger = "2.2.2"
+tempfile = "3.10.1"
 
 [lib]
 path = "src/lib.rs"
