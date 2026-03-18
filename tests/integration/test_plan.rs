@@ -31,6 +31,7 @@ fn plan_does_not_apply_changes() {
     .expect("write quadlet");
 
     let host_quadlets = temp_dir("core_ops_host_plan");
+    fs::create_dir_all(&host_quadlets).expect("create host quadlets");
 
     let deps = ReconcileDependencies {
         load_desired: &|| load_desired_state(&repo, "rev-1").map_err(map_io_error),
@@ -47,7 +48,7 @@ fn plan_does_not_apply_changes() {
 
     assert_eq!(result.run.summary, "planned");
     assert!(result.plan.actions.len() >= 1);
-    assert!(!host_quadlets.exists() || fs::read_dir(&host_quadlets).unwrap().next().is_none());
+    assert!(fs::read_dir(&host_quadlets).unwrap().next().is_none());
 }
 
 fn map_io_error<E: std::fmt::Display>(err: E) -> CoreError {

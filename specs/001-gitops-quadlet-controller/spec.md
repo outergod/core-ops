@@ -87,6 +87,7 @@ surfaces a clear failure and retries do not worsen state.
 ## Clarifications
 
 ### Session 2026-03-18
+- Q: What is the default Quadlet path behavior for MVP? → A: Default path is /etc/containers/systemd; override via CLI/config; if missing, fail with clear error; rootless/user paths are out of scope unless explicitly configured
 - Q: What is the default audit sink and handling of rich artifacts? → A: Default audit sink is structured systemd journal events; rich artifacts (plans/reports) are printed unless explicitly exported
 
 ## Requirements *(mandatory)*
@@ -98,7 +99,11 @@ surfaces a clear failure and retries do not worsen state.
 - **FR-002**: System MUST represent desired state, observed state, diffs,
   reconciliation plans, and outcomes as explicit data.
 - **FR-003**: System MUST reconcile Quadlet-managed workloads on Fedora CoreOS
-  within supported mutation boundaries.
+  within supported mutation boundaries, assuming /etc/containers/systemd as the
+  default system-level Quadlet path for MVP. The default MAY be overridden via
+  explicit CLI/config; if the path is missing, the controller MUST fail with a
+  clear error. Rootless/user-scoped paths are out of scope unless explicitly
+  configured.
 - **FR-004**: System MUST provide a dry-run/plan mode that does not apply changes.
 - **FR-005**: System MUST emit structured audit events to the system journal by
   default, and treat rich artifacts (plans/reports) as non-persistent output

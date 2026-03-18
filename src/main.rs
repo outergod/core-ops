@@ -105,10 +105,7 @@ fn parse_plan_args(
         core_ops::core::types::FailureClass::Validation,
         "missing --rev".to_string(),
     ))?;
-    let quadlet_dir = quadlet_dir.ok_or_else(|| CoreError::new(
-        core_ops::core::types::FailureClass::Validation,
-        "missing --quadlet-dir".to_string(),
-    ))?;
+    let quadlet_dir = quadlet_dir.unwrap_or_else(|| PathBuf::from("/etc/containers/systemd"));
     Ok((repo_path, rev, quadlet_dir, audit_dir))
 }
 

@@ -1,10 +1,11 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::core::types::{ObservedState, Workload};
 use crate::io::quadlet::{read_quadlet_dir, QuadletError};
 
 #[derive(Debug)]
 pub enum ObservedError {
+    MissingQuadletDir(PathBuf),
     Quadlet(QuadletError),
 }
 
@@ -17,6 +18,9 @@ impl From<QuadletError> for ObservedError {
 impl std::fmt::Display for ObservedError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ObservedError::MissingQuadletDir(path) => {
+                write!(f, "missing quadlet dir: {}", path.display())
+            }
             ObservedError::Quadlet(err) => write!(f, "observed state error: {}", err),
         }
     }
@@ -28,11 +32,11 @@ pub fn read_observed_state(
     quadlet_dir: &Path,
     observed_revision_id: Option<String>,
 ) -> Result<ObservedState, ObservedError> {
-    let workloads: Vec<Workload> = if quadlet_dir.exists() {
-        read_quadlet_dir(quadlet_dir)?
-    } else {
-        Vec::new()
-    };
+    if !quadlet_dir.exists() {
+        return Err(ObservedError::MissingQuadletDir(quadlet_dir.to_path_buf()));
+    }
+
+    let workloads: Vec<Workload> = read_quadlet_dir(quadlet_dir)?;
 
     Ok(ObservedState {
         observed_revision_id,

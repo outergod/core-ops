@@ -31,6 +31,7 @@ fn reconcile_apply_converges_to_desired_state() {
     .expect("write quadlet");
 
     let host_quadlets = temp_dir("core_ops_host");
+    fs::create_dir_all(&host_quadlets).expect("create host quadlets");
 
     let deps = ReconcileDependencies {
         load_desired: &|| load_desired_state(&repo, "rev-1").map_err(map_io_error),

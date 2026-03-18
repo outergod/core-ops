@@ -1,10 +1,11 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::core::types::{PlanAction, PlanActionType, ReconciliationPlan, Workload};
 
 #[derive(Debug)]
 pub enum ApplyError {
+    MissingQuadletDir(PathBuf),
     MissingWorkload(String),
     Io(std::io::Error),
 }
@@ -18,6 +19,9 @@ impl From<std::io::Error> for ApplyError {
 impl std::fmt::Display for ApplyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ApplyError::MissingQuadletDir(path) => {
+                write!(f, "missing quadlet dir: {}", path.display())
+            }
             ApplyError::MissingWorkload(name) => write!(f, "missing workload: {}", name),
             ApplyError::Io(err) => write!(f, "apply io error: {}", err),
         }
@@ -37,7 +41,9 @@ pub fn apply_plan(
     desired_workloads: &[Workload],
     quadlet_dir: &Path,
 ) -> Result<ApplyOutcome, ApplyError> {
-    fs::create_dir_all(quadlet_dir)?;
+    if !quadlet_dir.exists() {
+        return Err(ApplyError::MissingQuadletDir(quadlet_dir.to_path_buf()));
+    }
 
     let mut files_written = Vec::new();
     let mut files_removed = Vec::new();
