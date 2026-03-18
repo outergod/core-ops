@@ -11,17 +11,29 @@ CoreOS host with safe, observable changes.
 
 ## Steps
 
-1. Prepare a Git repository with valid Quadlet unit files under the agreed
-   repository directory.
-2. Run the controller in plan mode and review the proposed actions and diffs.
-3. If the plan is acceptable, run the controller in apply mode with explicit
-   operator intent.
+1. Prepare a Git repository with valid Quadlet unit files under `quadlets/`.
+2. Run plan mode with an explicit revision:
+
+   ```bash
+   core-ops plan --repo <git-url-or-path> --rev <branch|tag|commit>
+   ```
+
+3. If the plan is acceptable, apply it:
+
+   ```bash
+   core-ops apply --repo <git-url-or-path> --rev <branch|tag|commit>
+   ```
+
 4. Review the reconciliation outcome and audit output to confirm convergence.
 
 ## What to Expect
 
+- The controller reads Quadlet files from the repo `quadlets/` directory.
+- The default system Quadlet path is `/etc/containers/systemd` unless overridden
+  with `--quadlet-dir`.
 - The controller writes Quadlet files to the system location and reloads systemd.
 - Generated systemd units are enabled/disabled or started/stopped as needed.
+- Audit events are emitted to the systemd journal when available.
 - All changes are visible via audit output and status reporting.
 
 ## Non-Goals (MVP)

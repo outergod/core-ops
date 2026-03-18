@@ -168,10 +168,10 @@ feature spec explicitly documents a justified exemption.
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T037 [P] Documentation updates in `docs/` (if created) or `README.md`
-- [ ] T038 Code cleanup and refactoring in `src/`
-- [ ] T039 [P] Additional unit tests for invariants in `tests/unit/test_invariants.rs`
-- [ ] T040 Run quickstart validation against `specs/001-gitops-quadlet-controller/quickstart.md`
+- [X] T037 [P] Documentation updates in `docs/` (if created) or `README.md`
+- [X] T038 Code cleanup and refactoring in `src/`
+- [X] T039 [P] Additional unit tests for invariants in `tests/unit/test_invariants.rs`
+- [X] T040 Run quickstart validation against `specs/001-gitops-quadlet-controller/quickstart.md`
 
 ---
 

@@ -10,8 +10,8 @@ Do not assume Rust tooling is installed globally.
 
 ## Common Commands
 
-- Format: `make fmt`
-- Lint: `make lint`
-- Test: `make test`
+- Format: `cargo fmt` (or `make fmt`)
+- Lint: `cargo clippy --all-targets --all-features -- -D warnings` (or `make lint`)
+- Test: `cargo test` (or `make test`)
 
 Assume the nix shell is already active, and do not run commands via `direnv exec`.

@@ -1,5 +1,5 @@
 use core_ops::cli::args::{Cli, Commands};
-use core_ops::cli::diagnostics as cli_diagnostics;
+use core_ops::cli::common as cli_common;
 use core_ops::cli::{apply as apply_cmd, plan as plan_cmd};
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
@@ -11,7 +11,7 @@ fn main() {
     init_logging();
     let cli = Cli::parse();
     if let Err(err) = run(cli) {
-        let report = cli_diagnostics::report_from_error(err);
+        let report = cli_common::report_error(err);
         eprintln!("{:?}", report);
         std::process::exit(1);
     }

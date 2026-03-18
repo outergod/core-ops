@@ -3,10 +3,10 @@ SHELL := /bin/sh
 .PHONY: fmt lint test
 
 fmt:
-	direnv exec . cargo fmt
+	cargo fmt
 
 lint:
-	direnv exec . cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy --all-targets --all-features -- -D warnings
 
 test:
-	direnv exec . cargo test
+	cargo test
