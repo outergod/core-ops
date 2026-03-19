@@ -51,7 +51,8 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let audit_dir = args.audit_dir;
             let no_reload = args.no_reload;
 
-            let run = apply_cmd::apply(&repo_source, &rev, &quadlet_dir, !no_reload)?;
+            let (run, report) =
+                apply_cmd::apply_with_report(&repo_source, &rev, &quadlet_dir, !no_reload)?;
             let event = core_ops::core::audit::build_audit_event(&run, None);
             audit_io::emit_journal_event(&event).map_err(map_apply_error)?;
             if let Some(dir) = audit_dir {
@@ -70,6 +71,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                 let _ = audit_io::write_audit_record(&dir, &record).map_err(map_apply_error)?;
             }
 
+            println!("{}", report);
             println!("{}", run.summary);
             Ok(())
         }

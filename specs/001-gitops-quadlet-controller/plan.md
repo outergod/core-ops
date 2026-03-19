@@ -16,6 +16,8 @@ as plans/reports are printed or explicitly exported on demand. The controller
 MUST accept Git URLs (SSH/http(s)) or local paths as desired-state sources.
 Applying state always implies regenerating systemd units (daemon-reload) and
 activating/deactivating plus starting/stopping units as required by the plan.
+Apply output MUST include a rich, operator-facing report (diffs/actions), not
+just a short summary, consistent with plan output behavior.
 Architectural risk is minimized by keeping the core pure and limiting moving
 parts, while deferring fleet, secrets, and host config.
 

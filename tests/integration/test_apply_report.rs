@@ -2,11 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use core_ops::core::errors::CoreError;
-use core_ops::core::reconcile::{reconcile_apply, ReconcileDependencies};
-use core_ops::io::apply::apply_plan;
-use core_ops::io::observed::read_observed_state;
-use core_ops::io::repo::load_desired_state;
+use core_ops::cli::apply::apply_with_report;
 use crate::integration::env_lock::path_lock;
 
 fn temp_dir(prefix: &str) -> PathBuf {
@@ -93,42 +89,27 @@ impl Drop for PathGuard {
 
 
 #[test]
-fn reconcile_apply_converges_to_desired_state() {
+fn apply_report_includes_diffs_and_actions() {
     let _lock = path_lock().lock().expect("path lock");
-    let repo = temp_dir("core_ops_repo");
+    let repo = temp_dir("core_ops_repo_apply_report");
     let rev = init_git_repo(&repo);
 
-    let temp = temp_dir("core_ops_systemctl");
-    fs::create_dir_all(&temp).expect("systemctl temp");
-    let log_path = temp.join("systemctl.log");
-    write_systemctl_stub(&temp, &log_path);
+    let systemctl = temp_dir("core_ops_systemctl_apply_report");
+    fs::create_dir_all(&systemctl).expect("systemctl dir");
+    let log_path = systemctl.join("systemctl.log");
+    write_systemctl_stub(&systemctl, &log_path);
     let old_path = std::env::var("PATH").unwrap_or_default();
-    let new_path = format!("{}:{}", temp.display(), old_path);
+    let new_path = format!("{}:{}", systemctl.display(), old_path);
     std::env::set_var("PATH", new_path);
     let _guard = PathGuard { previous: old_path };
 
-    let host_quadlets = temp_dir("core_ops_host");
+    let host_quadlets = temp_dir("core_ops_host_apply_report");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
 
-    let deps = ReconcileDependencies {
-        load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
-        read_observed: &|| read_observed_state(&host_quadlets, Some("obs".to_string()))
-            .map_err(map_io_error),
-        apply_plan: &|plan, desired| {
-            apply_plan(plan, &desired.workloads, &host_quadlets, false)
-                .map(|_| ())
-                .map_err(map_io_error)
-        },
-    };
+    let (_run, report) =
+        apply_with_report(repo.to_str().unwrap(), &rev, &host_quadlets, false)
+            .expect("apply report");
 
-    let run = reconcile_apply(&deps).expect("reconcile apply");
-
-    assert_eq!(run.summary, "converged");
-}
-
-fn map_io_error<E: std::fmt::Display>(err: E) -> CoreError {
-    CoreError {
-        class: core_ops::core::types::FailureClass::Apply,
-        message: err.to_string(),
-    }
+    assert!(report.contains("diffs"));
+    assert!(report.contains("actions"));
 }

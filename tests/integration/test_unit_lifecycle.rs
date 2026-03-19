@@ -5,7 +5,7 @@ use core_ops::core::types::{
     EnabledState, PlanAction, PlanActionType, ReconciliationPlan, RestartPolicy, Workload,
 };
 use core_ops::io::apply::apply_plan;
-use std::sync::{Mutex, OnceLock};
+use crate::integration::env_lock::path_lock;
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -102,10 +102,6 @@ struct PathGuard {
     previous: String,
 }
 
-fn path_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
 
 impl Drop for PathGuard {
     fn drop(&mut self) {

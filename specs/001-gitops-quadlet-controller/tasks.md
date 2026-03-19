@@ -140,6 +140,15 @@ feature spec explicitly documents a justified exemption.
 
 ---
 
+## Phase 4.9: Apply Report Output (US2 follow-up)
+
+**Goal**: Apply prints a detailed, operator-facing report (diffs + actions) similar to plan
+
+- [ ] T045 [US2] Extend apply execution to emit a rich report in `src/cli/apply.rs` and `src/cli/plan.rs` (shared formatter)
+- [ ] T046 [P] [US2] Add integration test for apply report output in `tests/integration/test_apply_report.rs`
+
+---
+
 ## Phase 5: Audit Sink Default (US2 follow-up)
 
 **Goal**: Default audit sink is the systemd journal; file export is explicit
