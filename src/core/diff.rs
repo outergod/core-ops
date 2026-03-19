@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 use crate::core::types::{DiffItem, DiffKind, Workload};
 
 pub fn diff_workloads(desired: &[Workload], observed: &[Workload]) -> Vec<DiffItem> {
-    let desired_map = index_by_name(desired);
-    let observed_map = index_by_name(observed);
+    let desired_map = index_by_unit_name(desired);
+    let observed_map = index_by_unit_name(observed);
 
     let mut names = BTreeSet::new();
     for name in desired_map.keys() {
@@ -41,10 +41,10 @@ pub fn diff_workloads(desired: &[Workload], observed: &[Workload]) -> Vec<DiffIt
     diffs
 }
 
-fn index_by_name(workloads: &[Workload]) -> std::collections::BTreeMap<String, Workload> {
+fn index_by_unit_name(workloads: &[Workload]) -> std::collections::BTreeMap<String, Workload> {
     let mut map = std::collections::BTreeMap::new();
     for workload in workloads {
-        map.insert(workload.name.clone(), workload.clone());
+        map.insert(workload.systemd_unit_name.clone(), workload.clone());
     }
     map
 }

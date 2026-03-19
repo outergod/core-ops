@@ -89,6 +89,7 @@ fn parse_quadlet_name(file_name: &str) -> Result<(String, QuadletType), QuadletE
 
     let quadlet_type = match ext {
         "container" => QuadletType::Container,
+        "socket" => QuadletType::Socket,
         "pod" => QuadletType::Pod,
         "volume" => QuadletType::Volume,
         "network" => QuadletType::Network,

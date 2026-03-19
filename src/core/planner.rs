@@ -2,15 +2,16 @@ use crate::core::boundaries::enforce_plan_boundaries;
 use crate::core::diff::diff_workloads;
 use crate::core::errors::{CoreError, ValidationError};
 use crate::core::types::{
-    DiffKind, FailureClass, PlanAction, PlanActionType, ReconciliationPlan,
-    SafetyCheck, DesiredState, ObservedState,
+    DiffItem, DiffKind, FailureClass, PlanAction, PlanActionType, QuadletType,
+    ReconciliationPlan, SafetyCheck, DesiredState, ObservedState,
 };
 use crate::core::validation::validate_desired_state;
 
 pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<ReconciliationPlan, CoreError> {
     validate_desired_state(desired).map_err(map_validation_error)?;
 
-    let diffs = diff_workloads(&desired.workloads, &observed.workloads);
+    let mut diffs = diff_workloads(&desired.workloads, &observed.workloads);
+    order_diffs(&mut diffs);
     let mut actions = Vec::new();
 
     for diff in &diffs {
@@ -61,6 +62,51 @@ fn actions_for_diff(kind: DiffKind, name: &str) -> Vec<PlanAction> {
             action(PlanActionType::ReloadSystemd, name),
             action(PlanActionType::StartUnit, name),
         ],
+    }
+}
+
+fn order_diffs(diffs: &mut [DiffItem]) {
+    diffs.sort_by(|a, b| {
+        let a_key = ordering_key(a);
+        let b_key = ordering_key(b);
+        a_key.cmp(&b_key)
+    });
+}
+
+fn ordering_key(diff: &DiffItem) -> (u8, String) {
+    let quadlet_type = diff
+        .desired
+        .as_ref()
+        .or(diff.observed.as_ref())
+        .map(|w| w.quadlet_type.clone());
+
+    let order = match diff.kind {
+        DiffKind::Remove => reverse_order_for_type(quadlet_type),
+        _ => order_for_type(quadlet_type),
+    };
+
+    (order, diff.name.clone())
+}
+
+fn order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
+    match quadlet_type {
+        Some(QuadletType::Volume) => 0,
+        Some(QuadletType::Container) => 1,
+        Some(QuadletType::Socket) => 2,
+        Some(QuadletType::Pod) => 3,
+        Some(QuadletType::Network) => 4,
+        None => 5,
+    }
+}
+
+fn reverse_order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
+    match quadlet_type {
+        Some(QuadletType::Socket) => 0,
+        Some(QuadletType::Container) => 1,
+        Some(QuadletType::Volume) => 2,
+        Some(QuadletType::Pod) => 3,
+        Some(QuadletType::Network) => 4,
+        None => 5,
     }
 }
 

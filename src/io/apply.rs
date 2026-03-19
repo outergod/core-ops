@@ -60,15 +60,22 @@ pub fn apply_plan(
                 files_written.push(path.display().to_string());
             }
             PlanActionType::RemoveQuadlet => {
+                let mut removed = false;
                 for entry in fs::read_dir(quadlet_dir)? {
                     let entry = entry?;
                     let path = entry.path();
                     if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
-                        if file_name.starts_with(&format!("{}.", action.target)) {
+                        if file_name == action.target
+                            || file_name.starts_with(&format!("{}.", action.target))
+                        {
                             fs::remove_file(&path)?;
                             files_removed.push(path.display().to_string());
+                            removed = true;
                         }
                     }
+                }
+                if !removed {
+                    return Err(ApplyError::MissingWorkload(action.target.clone()));
                 }
             }
             PlanActionType::EnableUnit => {
@@ -118,7 +125,7 @@ fn find_workload<'a>(
 ) -> Result<&'a Workload, ApplyError> {
     workloads
         .iter()
-        .find(|workload| workload.name == name)
+        .find(|workload| workload.systemd_unit_name == name || workload.name == name)
         .ok_or_else(|| ApplyError::MissingWorkload(name.to_string()))
 }
 
@@ -141,7 +148,10 @@ fn unit_name_for_start_stop(
     quadlet_dir: &Path,
     target: &str,
 ) -> Result<String, ApplyError> {
-    if let Some(workload) = workloads.iter().find(|w| w.name == target) {
+    if let Some(workload) = workloads
+        .iter()
+        .find(|w| w.systemd_unit_name == target || w.name == target)
+    {
         return Ok(service_unit_name(&workload.systemd_unit_name));
     }
 
@@ -149,13 +159,13 @@ fn unit_name_for_start_stop(
         let entry = entry?;
         let path = entry.path();
         if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
-            if file_name.starts_with(&format!("{target}.")) {
+            if file_name == target || file_name.starts_with(&format!("{target}.")) {
                 return Ok(service_unit_name(file_name));
             }
         }
     }
 
-    Ok(format!("{target}.service"))
+    Ok(service_unit_name(target))
 }
 
 fn service_unit_name(unit_file: &str) -> String {

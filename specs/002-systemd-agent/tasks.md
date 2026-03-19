@@ -40,15 +40,15 @@ feature spec explicitly documents a justified exemption.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Extend artifact types to include socket and volume in `src/core/types.rs`
-- [ ] T005 Update Quadlet loader to parse socket and volume artifacts in `src/io/quadlet.rs`
-- [ ] T006 Update diffing to handle mixed artifact types in `src/core/diff.rs`
-- [ ] T007 Add ordering policy (Volume → Container → Socket) to planning in `src/core/planner.rs`
-- [ ] T008 Add verification result model for artifact checks in `src/core/types.rs`
-- [ ] T009 Define run lock interface and errors in `src/core/errors.rs` and `src/core/types.rs`
-- [ ] T010 Implement run lock adapter in `src/io/lock.rs`
-- [ ] T011 [P] Add unit tests for ordering rules in `tests/unit/test_planner.rs`
-- [ ] T012 [P] Add unit tests for quadlet type parsing in `tests/unit/test_types.rs`
+- [X] T004 Extend artifact types to include socket and volume in `src/core/types.rs`
+- [X] T005 Update Quadlet loader to parse socket and volume artifacts in `src/io/quadlet.rs`
+- [X] T006 Update diffing to handle mixed artifact types in `src/core/diff.rs`
+- [X] T007 Add ordering policy (Volume → Container → Socket) to planning in `src/core/planner.rs`
+- [X] T008 Add verification result model for artifact checks in `src/core/types.rs`
+- [X] T009 Define run lock interface and errors in `src/core/errors.rs` and `src/core/types.rs`
+- [X] T010 Implement run lock adapter in `src/io/lock.rs`
+- [X] T011 [P] Add unit tests for ordering rules in `tests/unit/test_planner.rs`
+- [X] T012 [P] Add unit tests for quadlet type parsing in `tests/unit/test_types.rs`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
