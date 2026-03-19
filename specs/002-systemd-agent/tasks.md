@@ -28,9 +28,9 @@ feature spec explicitly documents a justified exemption.
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Add systemd unit templates for agent service and timer in `specs/002-systemd-agent/contracts/systemd/`
-- [ ] T002 [P] Document agent deployment in `specs/002-systemd-agent/quickstart.md`
-- [ ] T003 [P] Add agent configuration notes in `docs/development.md`
+- [X] T001 Add systemd unit templates for agent service and timer in `specs/002-systemd-agent/contracts/systemd/`
+- [X] T002 [P] Document agent deployment in `specs/002-systemd-agent/quickstart.md`
+- [X] T003 [P] Add agent configuration notes in `docs/development.md`
 
 ---
 
@@ -64,13 +64,15 @@ feature spec explicitly documents a justified exemption.
 
 - [ ] T013 [P] [US1] Integration test for single-run lock behavior in `tests/integration/test_agent_lock.rs`
 - [ ] T014 [P] [US1] Integration test for systemd unit templates presence in `tests/integration/test_systemd_units.rs`
+- [ ] T015 [P] [US1] Integration test for service-triggered run in `tests/integration/test_agent_service.rs`
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Implement agent run entrypoint (oneshot) in `src/cli/agent.rs`
-- [ ] T016 [US1] Wire systemd timer/service invocation into CLI in `src/main.rs`
-- [ ] T017 [US1] Implement run lock acquire/release in `src/io/lock.rs`
-- [ ] T018 [US1] Emit journald audit events for agent runs in `src/io/audit.rs`
+- [ ] T016 [US1] Implement agent run entrypoint (oneshot) in `src/cli/agent.rs`
+- [ ] T017 [US1] Wire systemd timer/service invocation into CLI in `src/main.rs`
+- [ ] T018 [US1] Implement run lock acquire/release in `src/io/lock.rs`
+- [ ] T019 [US1] Emit journald audit events for agent runs in `src/io/audit.rs`
+- [ ] T020 [US1] Render operator-facing run report in `src/cli/agent.rs` and `src/cli/report.rs`
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -84,14 +86,14 @@ feature spec explicitly documents a justified exemption.
 
 ### Tests for User Story 2 (REQUIRED unless explicitly exempted) ⚠️
 
-- [ ] T019 [P] [US2] Integration test for socket+volume reconciliation in `tests/integration/test_quadlet_artifacts.rs`
-- [ ] T020 [P] [US2] Integration test for ordering (volume before container before socket) in `tests/integration/test_ordering.rs`
+- [ ] T021 [P] [US2] Integration test for socket+volume reconciliation in `tests/integration/test_quadlet_artifacts.rs`
+- [ ] T022 [P] [US2] Integration test for ordering (volume before container before socket) in `tests/integration/test_ordering.rs`
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] Extend observed state loading for socket and volume artifacts in `src/io/observed.rs`
-- [ ] T022 [US2] Extend apply adapter for socket and volume artifacts in `src/io/apply.rs`
-- [ ] T023 [US2] Update plan output to include artifact type in reports in `src/cli/report.rs`
+- [ ] T023 [US2] Extend observed state loading for socket and volume artifacts in `src/io/observed.rs`
+- [ ] T024 [US2] Extend apply adapter for socket and volume artifacts in `src/io/apply.rs`
+- [ ] T025 [US2] Update plan output to include artifact type in reports in `src/cli/report.rs`
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -105,14 +107,14 @@ feature spec explicitly documents a justified exemption.
 
 ### Tests for User Story 3 (REQUIRED unless explicitly exempted) ⚠️
 
-- [ ] T024 [P] [US3] Integration test for verification failures in `tests/integration/test_verification.rs`
-- [ ] T025 [P] [US3] Integration test for journald audit content in `tests/integration/test_journald_audit.rs`
+- [ ] T026 [P] [US3] Integration test for verification failures in `tests/integration/test_verification.rs`
+- [ ] T027 [P] [US3] Integration test for journald audit content in `tests/integration/test_journald_audit.rs`
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Implement verification checks using systemd unit state in `src/core/verify.rs`
-- [ ] T027 [US3] Wire verification into reconcile flow in `src/core/reconcile.rs`
-- [ ] T028 [US3] Extend audit record with verification results in `src/core/audit.rs`
+- [ ] T028 [US3] Implement verification checks using systemd unit state in `src/core/verify.rs`
+- [ ] T029 [US3] Wire verification into reconcile flow in `src/core/reconcile.rs`
+- [ ] T030 [US3] Extend audit record with verification results in `src/core/audit.rs`
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -122,10 +124,16 @@ feature spec explicitly documents a justified exemption.
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T029 [P] Documentation updates in `specs/002-systemd-agent/quickstart.md`
-- [ ] T030 Code cleanup and refactoring in `src/`
-- [ ] T031 [P] Additional unit tests for artifact verification in `tests/unit/test_verification.rs`
-- [ ] T032 Run quickstart.md validation against `specs/002-systemd-agent/quickstart.md`
+- [ ] T031 [P] Documentation updates in `specs/002-systemd-agent/quickstart.md`
+- [ ] T032 Refactor verification flow for clarity in `src/core/verify.rs` and `src/core/reconcile.rs`
+- [ ] T033 [P] Additional unit tests for artifact verification in `tests/unit/test_verification.rs`
+- [ ] T034 Run quickstart.md validation against `specs/002-systemd-agent/quickstart.md`
+- [ ] T035 [P] Integration test for idempotent repeated runs in `tests/integration/test_idempotence.rs`
+- [ ] T036 [P] Integration test for performance budget (50 artifacts within 2 minutes) in `tests/integration/test_performance.rs`
+- [ ] T037 [P] Integration test for git repository unavailable error in `tests/integration/test_repo_unavailable.rs`
+- [ ] T038 [P] Integration test for journald unavailable diagnostics in `tests/integration/test_journald_unavailable.rs`
+- [ ] T039 [P] Define expected behavior and test recovery after host reboot during reconcile in `tests/integration/test_reboot_recovery.rs`
+- [ ] T040 [P] Integration test for per-artifact verification rules in `tests/integration/test_verification_rules.rs`
 
 ---
 

@@ -26,6 +26,30 @@ native system primitives and avoiding generic host configuration management.
 **Constraints**: No host configuration management beyond Quadlet/systemd/container scope; explicit failures; journald observability  
 **Scale/Scope**: Single host, tens of artifacts, no fleet orchestration
 
+## Declarative State Model
+
+Desired state is sourced from the Git repository’s Quadlet definitions, observed
+state is derived from the host’s systemd-managed artifacts, and reconciliation
+plans represent ordered actions required to converge. Runs persist their plan,
+actions, and outcomes as explicit data structures surfaced through audit output.
+
+## Idempotence Strategy
+
+Reconciliation is designed to be safe to repeat: applying the same desired state
+does not introduce additional changes, and repeated runs converge to the same
+observed outcome. The plan phase determines no-op results when desired and
+observed state already align, and apply actions are constructed to be stable on
+subsequent executions.
+
+## Phases
+
+1. **Setup**: Ship systemd unit templates and deployment guidance.
+2. **Foundational**: Add socket/volume types, ordering, verification model, and run lock.
+3. **User Story 1 (MVP)**: Unattended agent entrypoint, CLI wiring, journald audit, lock usage.
+4. **User Story 2**: Reconcile socket + volume artifacts end-to-end and report artifact types.
+5. **User Story 3**: Verification checks wired through reconcile and audit outputs.
+6. **Polish**: Documentation updates, performance/idempotence checks, targeted refactors.
+
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
@@ -74,6 +98,11 @@ tests/
 **Structure Decision**: Single project with `core` (pure planning/verification),
 `io` (Git/systemd/Quadlet side effects), and `cli` (entrypoints and reporting).
 Systemd service/timer definitions live in `specs/002-systemd-agent/contracts/`.
+
+## Compatibility Impact
+
+No breaking changes expected for existing container-only workflows; new artifact
+types and agent automation are additive.
 
 ## Complexity Tracking
 

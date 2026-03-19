@@ -99,7 +99,9 @@ As an operator, I want clear verification behavior and journal-based observabili
   Volume → Container → Socket ordering model.
 - **FR-005**: The controller MUST define explicit verification behavior for each
   supported Quadlet artifact type (container, socket, volume) using systemd unit
-  state checks (active/enabled where applicable).
+  state checks. Container and socket units MUST report active; volume artifacts
+  MUST report a loaded unit state when applicable. Enablement is not enforced by
+  the controller and remains driven by Quadlet [Install] semantics.
 - **FR-006**: The controller MUST remain limited to Quadlet/systemd/container
   scope and MUST NOT expand into generic host configuration management.
 - **FR-007**: Mounting existing host config directories into containers MAY be

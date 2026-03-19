@@ -15,3 +15,27 @@ Do not assume Rust tooling is installed globally.
 - Test: `cargo test` (or `make test`)
 
 Assume the nix shell is already active, and do not run commands via `direnv exec`.
+
+## Systemd Agent Configuration
+
+The host agent is designed to run as a oneshot service triggered by a timer.
+Use a systemd drop-in to configure the repo source and revision without editing
+unit files in place:
+
+```
+systemctl edit core-ops-agent.service
+```
+
+Suggested drop-in content:
+
+```
+[Service]
+Environment=CORE_OPS_REPO=ssh://git@github.com/your-org/quadlets.git
+Environment=CORE_OPS_REV=main
+Environment=CORE_OPS_QUADLET_DIR=/etc/containers/systemd
+```
+
+Apply changes with:
+
+- `systemctl daemon-reload`
+- `systemctl restart core-ops-agent.service`
