@@ -86,14 +86,14 @@ feature spec explicitly documents a justified exemption.
 
 ### Tests for User Story 2 (REQUIRED unless explicitly exempted) ⚠️
 
-- [ ] T021 [P] [US2] Integration test for socket+volume reconciliation in `tests/integration/test_quadlet_artifacts.rs`
-- [ ] T022 [P] [US2] Integration test for ordering (volume before container before socket) in `tests/integration/test_ordering.rs`
+- [X] T021 [P] [US2] Integration test for socket+volume reconciliation in `tests/integration/test_quadlet_artifacts.rs`
+- [X] T022 [P] [US2] Integration test for ordering (volume before container before socket) in `tests/integration/test_ordering.rs`
 
 ### Implementation for User Story 2
 
-- [ ] T023 [US2] Extend observed state loading for socket and volume artifacts in `src/io/observed.rs`
-- [ ] T024 [US2] Extend apply adapter for socket and volume artifacts in `src/io/apply.rs`
-- [ ] T025 [US2] Update plan output to include artifact type in reports in `src/cli/report.rs`
+- [X] T023 [US2] Extend observed state loading for socket and volume artifacts in `src/io/observed.rs`
+- [X] T024 [US2] Extend apply adapter for socket and volume artifacts in `src/io/apply.rs`
+- [X] T025 [US2] Update plan output to include artifact type in reports in `src/cli/report.rs`
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 

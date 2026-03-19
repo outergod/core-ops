@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::core::types::{PlanAction, PlanActionType, ReconciliationPlan, Workload};
+use crate::io::quadlet::systemd_unit_for_quadlet_file;
 
 #[derive(Debug)]
 pub enum ApplyError {
@@ -152,7 +153,7 @@ fn unit_name_for_start_stop(
         .iter()
         .find(|w| w.systemd_unit_name == target || w.name == target)
     {
-        return Ok(service_unit_name(&workload.systemd_unit_name));
+        return Ok(systemd_unit_for_quadlet_file(&workload.systemd_unit_name));
     }
 
     for entry in fs::read_dir(quadlet_dir)? {
@@ -160,18 +161,10 @@ fn unit_name_for_start_stop(
         let path = entry.path();
         if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
             if file_name == target || file_name.starts_with(&format!("{target}.")) {
-                return Ok(service_unit_name(file_name));
+                return Ok(systemd_unit_for_quadlet_file(file_name));
             }
         }
     }
 
-    Ok(service_unit_name(target))
-}
-
-fn service_unit_name(unit_file: &str) -> String {
-    let stem = Path::new(unit_file)
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or(unit_file);
-    format!("{stem}.service")
+    Ok(systemd_unit_for_quadlet_file(target))
 }

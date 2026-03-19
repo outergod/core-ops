@@ -1,6 +1,8 @@
 pub mod env_lock;
 mod test_agent_lock;
 mod test_agent_service;
+mod test_quadlet_artifacts;
+mod test_ordering;
 mod test_plan;
 mod test_apply_report;
 mod test_reconcile_apply;

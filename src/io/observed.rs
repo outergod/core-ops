@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::core::types::{EnabledState, ObservedState, ObservedUnit, UnitActiveState, Workload};
-use crate::io::quadlet::{read_quadlet_dir, QuadletError};
+use crate::io::quadlet::{read_quadlet_dir, systemd_unit_for_quadlet_file, QuadletError};
 
 #[derive(Debug)]
 pub enum ObservedError {
@@ -59,7 +59,7 @@ fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, Obser
 
     let mut units = Vec::new();
     for workload in workloads {
-        let unit_name = workload.systemd_unit_name.clone();
+        let unit_name = systemd_unit_for_quadlet_file(&workload.systemd_unit_name);
         match query_unit_state(&unit_name)? {
             Some(unit) => units.push(unit),
             None => {}
