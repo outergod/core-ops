@@ -62,17 +62,17 @@ feature spec explicitly documents a justified exemption.
 
 ### Tests for User Story 1 (REQUIRED unless explicitly exempted) ⚠️
 
-- [ ] T013 [P] [US1] Integration test for single-run lock behavior in `tests/integration/test_agent_lock.rs`
-- [ ] T014 [P] [US1] Integration test for systemd unit templates presence in `tests/integration/test_systemd_units.rs`
-- [ ] T015 [P] [US1] Integration test for service-triggered run in `tests/integration/test_agent_service.rs`
+- [X] T013 [P] [US1] Integration test for single-run lock behavior in `tests/integration/test_agent_lock.rs`
+- [X] T014 [P] [US1] Integration test for systemd unit templates presence in `tests/integration/test_systemd_units.rs`
+- [X] T015 [P] [US1] Integration test for service-triggered run in `tests/integration/test_agent_service.rs`
 
 ### Implementation for User Story 1
 
-- [ ] T016 [US1] Implement agent run entrypoint (oneshot) in `src/cli/agent.rs`
-- [ ] T017 [US1] Wire systemd timer/service invocation into CLI in `src/main.rs`
-- [ ] T018 [US1] Implement run lock acquire/release in `src/io/lock.rs`
-- [ ] T019 [US1] Emit journald audit events for agent runs in `src/io/audit.rs`
-- [ ] T020 [US1] Render operator-facing run report in `src/cli/agent.rs` and `src/cli/report.rs`
+- [X] T016 [US1] Implement agent run entrypoint (oneshot) in `src/cli/agent.rs`
+- [X] T017 [US1] Wire systemd timer/service invocation into CLI in `src/main.rs`
+- [X] T018 [US1] Implement run lock acquire/release in `src/io/lock.rs`
+- [X] T019 [US1] Emit journald audit events for agent runs in `src/io/audit.rs`
+- [X] T020 [US1] Render operator-facing run report in `src/cli/agent.rs` and `src/cli/report.rs`
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 

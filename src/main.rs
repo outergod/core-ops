@@ -1,11 +1,13 @@
 use core_ops::cli::args::{Cli, Commands};
 use core_ops::cli::common as cli_common;
 use core_ops::cli::{apply as apply_cmd, plan as plan_cmd};
+use core_ops::cli::agent as agent_cmd;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
 use core_ops::io::{audit as audit_io, observed, repo};
 use log::LevelFilter;
 use clap::Parser;
+use std::path::PathBuf;
 
 fn main() {
     init_logging();
@@ -75,6 +77,34 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             println!("{}", run.summary);
             Ok(())
         }
+        Commands::Agent(args) => {
+            let repo = resolve_env(args.repo, "CORE_OPS_REPO")?;
+            let rev = resolve_env(args.rev, "CORE_OPS_REV")?;
+            let quadlet_dir = args
+                .quadlet_dir
+                .or_else(|| std::env::var_os("CORE_OPS_QUADLET_DIR").map(PathBuf::from))
+                .unwrap_or_else(|| PathBuf::from("/etc/containers/systemd"));
+            let audit_dir = args
+                .audit_dir
+                .or_else(|| std::env::var_os("CORE_OPS_AUDIT_DIR").map(PathBuf::from));
+            let lock_path = args
+                .lock_path
+                .or_else(|| std::env::var_os("CORE_OPS_LOCK_PATH").map(PathBuf::from));
+
+            let config = agent_cmd::AgentConfig {
+                repo,
+                rev,
+                quadlet_dir,
+                audit_dir,
+                reload_systemd: !args.no_reload,
+                lock_path,
+            };
+
+            let output = agent_cmd::run_agent(&config)?;
+            println!("{}", output.report);
+            println!("{}", output.run.summary);
+            Ok(())
+        }
         Commands::Status(args) => {
             let audit_file = args.audit_file;
             let contents = std::fs::read_to_string(&audit_file).map_err(map_plan_error)?;
@@ -99,4 +129,19 @@ fn map_plan_error<E: std::fmt::Display>(err: E) -> CoreError {
 
 fn map_apply_error<E: std::fmt::Display>(err: E) -> CoreError {
     CoreError::new(core_ops::core::types::FailureClass::Apply, err.to_string())
+}
+
+fn resolve_env(value: Option<String>, key: &str) -> Result<String, CoreError> {
+    if let Some(value) = value {
+        return Ok(value);
+    }
+    if let Ok(value) = std::env::var(key) {
+        if !value.is_empty() {
+            return Ok(value);
+        }
+    }
+    Err(CoreError::new(
+        core_ops::core::types::FailureClass::Apply,
+        format!("missing required value for {key}"),
+    ))
 }

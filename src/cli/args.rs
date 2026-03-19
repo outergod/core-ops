@@ -15,6 +15,8 @@ pub enum Commands {
     Plan(PlanArgs),
     /// Apply a reconciliation plan to the host.
     Apply(ApplyArgs),
+    /// Run the agent once (intended for systemd service execution).
+    Agent(AgentArgs),
     /// Display a stored audit record.
     Status(StatusArgs),
 }
@@ -49,6 +51,28 @@ pub struct ApplyArgs {
     /// Optional directory for persisted audit records.
     #[arg(long)]
     pub audit_dir: Option<PathBuf>,
+    /// Skip systemd daemon-reload after applying changes.
+    #[arg(long)]
+    pub no_reload: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct AgentArgs {
+    /// Source repository (local path or Git URL).
+    #[arg(long)]
+    pub repo: Option<String>,
+    /// Git revision (branch, tag, or commit).
+    #[arg(long)]
+    pub rev: Option<String>,
+    /// System-level Quadlet directory.
+    #[arg(long)]
+    pub quadlet_dir: Option<PathBuf>,
+    /// Optional directory for persisted audit records.
+    #[arg(long)]
+    pub audit_dir: Option<PathBuf>,
+    /// Path to the run lock file.
+    #[arg(long)]
+    pub lock_path: Option<PathBuf>,
     /// Skip systemd daemon-reload after applying changes.
     #[arg(long)]
     pub no_reload: bool,
