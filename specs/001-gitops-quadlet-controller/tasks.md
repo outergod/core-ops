@@ -124,9 +124,9 @@ feature spec explicitly documents a justified exemption.
 
 ## Phase 4.7: Unit Lifecycle Enforcement (US1 follow-up)
 
-**Goal**: Apply always regenerates units and enforces activation/deactivation and start/stop actions
+**Goal**: Apply always regenerates units and enforces start/stop actions
 
-- [X] T041 [US1] Implement systemd unit enable/disable/start/stop actions in `src/io/apply.rs`
+- [X] T041 [US1] Implement systemd unit start/stop actions in `src/io/apply.rs`
 - [X] T042 [P] [US1] Add integration test for unit lifecycle actions in `tests/integration/test_unit_lifecycle.rs`
 
 ---

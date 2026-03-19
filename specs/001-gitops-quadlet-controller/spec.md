@@ -95,6 +95,7 @@ surfaces a clear failure and retries do not worsen state.
 - Q: What is the default Quadlet path behavior for MVP? → A: Default path is /etc/containers/systemd; override via CLI/config; if missing, fail with clear error; rootless/user paths are out of scope unless explicitly configured
 - Q: What is the default audit sink and handling of rich artifacts? → A: Default audit sink is structured systemd journal events; rich artifacts (plans/reports) are printed unless explicitly exported
 - Q: What does apply imply for unit lifecycle operations? → A: Apply always regenerates units (daemon-reload) and activates/deactivates plus starts/stops units as needed
+- Q: How are enable/disable semantics handled for Quadlet-generated services? → A: Enable/disable is expressed via the Quadlet file [Install] section; the controller MUST NOT run systemctl enable/disable on generated services
 
 ## Requirements *(mandatory)*
 
@@ -134,8 +135,9 @@ surfaces a clear failure and retries do not worsen state.
 - **FR-012**: System MUST classify failures (validation, plan, apply, verify,
   transient) and document recovery expectations for each class.
 - **FR-013**: Applying state MUST regenerate systemd units (daemon-reload) and
-  enforce unit activation/deactivation and start/stop actions implied by the
-  plan.
+  enforce unit start/stop actions implied by the plan. Enable/disable semantics
+  MUST be expressed via Quadlet [Install] sections, not systemctl enable/disable
+  of generated services.
 
 ### Reconciliation Invariants
 
@@ -150,8 +152,9 @@ surfaces a clear failure and retries do not worsen state.
 
 ### Supported Mutation Boundaries (Fedora CoreOS)
 
-- **In scope**: Quadlet unit files, related systemd unit enable/disable state,
-  and container lifecycle actions derived from Quadlet definitions.
+- **In scope**: Quadlet unit files and container lifecycle actions derived from
+  Quadlet definitions (start/stop). Enablement is handled via Quadlet [Install]
+  sections and generator behavior.
 - **Out of scope**: Base OS mutation, package installation, kernel/system
   configuration, non-Quadlet systemd service changes, and secret management.
 - **Rejected operations**: Any requested change that implies host mutation

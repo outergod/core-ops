@@ -18,6 +18,8 @@ Applying state always implies regenerating systemd units (daemon-reload) and
 activating/deactivating plus starting/stopping units as required by the plan.
 Apply output MUST include a rich, operator-facing report (diffs/actions), not
 just a short summary, consistent with plan output behavior.
+Enablement is expressed via Quadlet [Install] sections; the controller MUST NOT
+invoke systemctl enable/disable on generated services.
 Architectural risk is minimized by keeping the core pure and limiting moving
 parts, while deferring fleet, secrets, and host config.
 

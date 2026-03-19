@@ -32,7 +32,8 @@ CoreOS host with safe, observable changes.
 - The default system Quadlet path is `/etc/containers/systemd` unless overridden
   with `--quadlet-dir`.
 - The controller writes Quadlet files to the system location and reloads systemd.
-- Generated systemd units are enabled/disabled or started/stopped as needed.
+- Generated systemd units are started/stopped as needed.
+- Enablement is expressed via Quadlet [Install] sections, not systemctl enable.
 - Audit events are emitted to the systemd journal when available.
 - All changes are visible via audit output and status reporting.
 

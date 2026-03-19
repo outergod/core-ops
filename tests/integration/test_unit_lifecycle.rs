@@ -69,10 +69,8 @@ fn apply_executes_unit_lifecycle_actions() {
         actions: vec![
             action(PlanActionType::WriteQuadlet, "alpha"),
             action(PlanActionType::ReloadSystemd, "alpha"),
-            action(PlanActionType::EnableUnit, "alpha"),
             action(PlanActionType::StartUnit, "alpha"),
             action(PlanActionType::StopUnit, "alpha"),
-            action(PlanActionType::DisableUnit, "alpha"),
         ],
         safety_checks: Vec::new(),
         expected_outcomes: Vec::new(),
@@ -83,8 +81,6 @@ fn apply_executes_unit_lifecycle_actions() {
 
     let log_contents = fs::read_to_string(&log_path).expect("read log");
     assert!(log_contents.contains("daemon-reload"));
-    assert!(log_contents.contains("enable alpha.service"));
-    assert!(log_contents.contains("disable alpha.service"));
     assert!(log_contents.contains("start alpha.service"));
     assert!(log_contents.contains("stop alpha.service"));
 }

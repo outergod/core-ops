@@ -49,12 +49,10 @@ fn actions_for_diff(kind: DiffKind, name: &str) -> Vec<PlanAction> {
         DiffKind::Add => vec![
             action(PlanActionType::WriteQuadlet, name),
             action(PlanActionType::ReloadSystemd, name),
-            action(PlanActionType::EnableUnit, name),
             action(PlanActionType::StartUnit, name),
         ],
         DiffKind::Remove => vec![
             action(PlanActionType::StopUnit, name),
-            action(PlanActionType::DisableUnit, name),
             action(PlanActionType::RemoveQuadlet, name),
             action(PlanActionType::ReloadSystemd, name),
         ],

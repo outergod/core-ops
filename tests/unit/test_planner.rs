@@ -50,9 +50,8 @@ fn plan_is_deterministic_by_name_order() {
         "alpha".to_string(),
         "alpha".to_string(),
         "alpha".to_string(),
-        "alpha".to_string(),
     ];
-    assert_eq!(&targets[..4], &alpha_prefix[..]);
+    assert_eq!(&targets[..3], &alpha_prefix[..]);
 }
 
 #[test]

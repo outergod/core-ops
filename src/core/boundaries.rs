@@ -24,8 +24,6 @@ fn is_supported_action(action_type: &PlanActionType) -> bool {
         action_type,
         PlanActionType::WriteQuadlet
             | PlanActionType::RemoveQuadlet
-            | PlanActionType::EnableUnit
-            | PlanActionType::DisableUnit
             | PlanActionType::ReloadSystemd
             | PlanActionType::StartUnit
             | PlanActionType::StopUnit
