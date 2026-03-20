@@ -9,18 +9,18 @@
 
 Deliver a systemd-managed host agent that runs unattended via a oneshot service
 triggered by a timer, emits journald audit events by default, and reconciles
-container, socket, and volume Quadlet artifacts with explicit ordering and
-verification. Generated units are not enabled/disabled by the controller; Quadlet
-[Install] semantics govern enablement. The agent preserves functional-core/
-imperative-shell boundaries, explicit failure reporting, idempotence, and
-observability while staying within native system primitives and avoiding generic
-host configuration management.
+container/volume Quadlet artifacts alongside native systemd socket units with
+explicit ordering and verification. Generated units are not enabled/disabled by
+the controller; Quadlet [Install] semantics govern enablement. The agent
+preserves functional-core/imperative-shell boundaries, explicit failure
+reporting, idempotence, and observability while staying within native system
+primitives and avoiding generic host configuration management.
 
 ## Technical Context
 
 **Language/Version**: Rust (stable toolchain)  
 **Primary Dependencies**: Git (CLI), systemd (systemctl), Quadlet generator, clap, thiserror, miette, journald logger  
-**Storage**: Files on disk (Quadlet unit files + optional reconciliation state)  
+**Storage**: Files on disk (Quadlet unit files + systemd socket units + optional reconciliation state)  
 **Testing**: cargo test (unit + integration)  
 **Target Platform**: Fedora CoreOS (single host)  
 **Project Type**: CLI + systemd service/timer agent  

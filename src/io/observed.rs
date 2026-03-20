@@ -1,8 +1,15 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::core::types::{EnabledState, ObservedState, ObservedUnit, UnitActiveState, Workload};
-use crate::io::quadlet::{read_quadlet_dir, QuadletError};
+use crate::core::types::{
+    EnabledState, ObservedState, ObservedUnit, QuadletType, RestartPolicy, UnitActiveState,
+    Workload,
+};
+use crate::io::quadlet::{
+    normalize_socket_contents, parse_quadlet_name, read_quadlet_dir, QuadletError,
+    SOCKET_MANAGED_MARKER,
+};
+use crate::io::systemd::systemd_unit_dir;
 use crate::core::unit::systemd_unit_for_quadlet_file;
 
 #[derive(Debug)]
@@ -10,11 +17,18 @@ pub enum ObservedError {
     MissingQuadletDir(PathBuf),
     SystemdQueryFailed(String),
     Quadlet(QuadletError),
+    Io(std::io::Error),
 }
 
 impl From<QuadletError> for ObservedError {
     fn from(err: QuadletError) -> Self {
         ObservedError::Quadlet(err)
+    }
+}
+
+impl From<std::io::Error> for ObservedError {
+    fn from(err: std::io::Error) -> Self {
+        ObservedError::Io(err)
     }
 }
 
@@ -26,6 +40,7 @@ impl std::fmt::Display for ObservedError {
             }
             ObservedError::SystemdQueryFailed(msg) => write!(f, "systemd query failed: {}", msg),
             ObservedError::Quadlet(err) => write!(f, "observed state error: {}", err),
+            ObservedError::Io(err) => write!(f, "observed state io error: {}", err),
         }
     }
 }
@@ -40,7 +55,9 @@ pub fn read_observed_state(
         return Err(ObservedError::MissingQuadletDir(quadlet_dir.to_path_buf()));
     }
 
-    let workloads: Vec<Workload> = read_quadlet_dir(quadlet_dir)?;
+    let mut workloads: Vec<Workload> = read_quadlet_dir(quadlet_dir)?;
+    let socket_dir = systemd_unit_dir();
+    workloads.extend(read_socket_units(&socket_dir)?);
     let units = read_systemd_units(&workloads)?;
 
     Ok(ObservedState {
@@ -50,6 +67,50 @@ pub fn read_observed_state(
         last_reconcile_id: None,
         host_info: None,
     })
+}
+
+fn read_socket_units(dir: &Path) -> Result<Vec<Workload>, ObservedError> {
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut workloads = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            continue;
+        }
+        let file_name = match path.file_name().and_then(|name| name.to_str()) {
+            Some(name) => name,
+            None => continue,
+        };
+        if file_name.starts_with('.') {
+            continue;
+        }
+        if !file_name.ends_with(".socket") {
+            continue;
+        }
+        let contents = std::fs::read_to_string(&path)?;
+        if !contents.contains(SOCKET_MANAGED_MARKER) {
+            continue;
+        }
+        let (name, quadlet_type) = parse_quadlet_name(file_name)?;
+        if quadlet_type != QuadletType::Socket {
+            continue;
+        }
+        let normalized = normalize_socket_contents(&contents);
+        workloads.push(Workload {
+            name,
+            quadlet_type,
+            quadlet_contents: normalized,
+            systemd_unit_name: file_name.to_string(),
+            enabled_state: EnabledState::Enabled,
+            restart_policy: RestartPolicy::Always,
+        });
+    }
+
+    Ok(workloads)
 }
 
 fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, ObservedError> {

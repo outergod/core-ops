@@ -1,8 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::core::types::{PlanAction, PlanActionType, ReconciliationPlan, Workload};
+use crate::core::types::{PlanAction, PlanActionType, QuadletType, ReconciliationPlan, Workload};
 use crate::core::unit::systemd_unit_for_quadlet_file;
+use crate::io::systemd::systemd_unit_dir;
 
 #[derive(Debug)]
 pub enum ApplyError {
@@ -56,13 +57,15 @@ pub fn apply_plan(
         match &action.action_type {
             PlanActionType::WriteQuadlet => {
                 let workload = find_workload(desired_workloads, &action.target)?;
-                let path = quadlet_dir.join(&workload.systemd_unit_name);
+                let path = target_dir_for_workload(quadlet_dir, workload)
+                    .join(&workload.systemd_unit_name);
                 fs::write(&path, &workload.quadlet_contents)?;
                 files_written.push(path.display().to_string());
             }
             PlanActionType::RemoveQuadlet => {
+                let target_dir = target_dir_for_name(quadlet_dir, &action.target);
                 let mut removed = false;
-                for entry in fs::read_dir(quadlet_dir)? {
+                for entry in fs::read_dir(&target_dir)? {
                     let entry = entry?;
                     let path = entry.path();
                     if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
@@ -112,6 +115,25 @@ pub fn apply_plan(
         files_written,
         files_removed,
     })
+}
+
+fn target_dir_for_workload(quadlet_dir: &Path, workload: &Workload) -> PathBuf {
+    match workload.quadlet_type {
+        QuadletType::Socket => systemd_unit_dir(),
+        _ => quadlet_dir.to_path_buf(),
+    }
+}
+
+fn target_dir_for_name(quadlet_dir: &Path, target: &str) -> PathBuf {
+    if Path::new(target)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        == Some("socket")
+    {
+        systemd_unit_dir()
+    } else {
+        quadlet_dir.to_path_buf()
+    }
 }
 
 fn find_workload<'a>(

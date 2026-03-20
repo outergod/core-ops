@@ -136,6 +136,8 @@ feature spec explicitly documents a justified exemption.
 - [x] T040 [P] Integration test for per-artifact verification rules in `tests/integration/test_verification_rules.rs`
 - [x] T041 [P] Integration test ensuring apply does not call systemctl enable/disable for generated units in `tests/integration/test_no_enable_disable.rs`
 - [x] T042 Guard apply to skip enable/disable for generated units in `src/io/apply.rs`
+- [x] T043 [P] Write socket artifacts to the systemd unit directory in `src/io/apply.rs` and `src/io/systemd.rs`
+- [x] T044 [P] Load managed socket units from the systemd unit directory in `src/io/observed.rs` and `src/io/quadlet.rs`
 
 ---
 

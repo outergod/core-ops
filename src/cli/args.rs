@@ -32,6 +32,9 @@ pub struct PlanArgs {
     /// System-level Quadlet directory.
     #[arg(long, default_value = "/etc/containers/systemd")]
     pub quadlet_dir: PathBuf,
+    /// Systemd unit directory (defaults to /etc/systemd/system).
+    #[arg(long)]
+    pub systemd_unit_dir: Option<PathBuf>,
     /// Optional directory for persisted audit records.
     #[arg(long)]
     pub audit_dir: Option<PathBuf>,
@@ -48,6 +51,9 @@ pub struct ApplyArgs {
     /// System-level Quadlet directory.
     #[arg(long, default_value = "/etc/containers/systemd")]
     pub quadlet_dir: PathBuf,
+    /// Systemd unit directory (defaults to /etc/systemd/system).
+    #[arg(long)]
+    pub systemd_unit_dir: Option<PathBuf>,
     /// Optional directory for persisted audit records.
     #[arg(long)]
     pub audit_dir: Option<PathBuf>,
@@ -67,6 +73,9 @@ pub struct AgentArgs {
     /// System-level Quadlet directory.
     #[arg(long)]
     pub quadlet_dir: Option<PathBuf>,
+    /// Systemd unit directory (defaults to /etc/systemd/system).
+    #[arg(long)]
+    pub systemd_unit_dir: Option<PathBuf>,
     /// Optional directory for persisted audit records.
     #[arg(long)]
     pub audit_dir: Option<PathBuf>,

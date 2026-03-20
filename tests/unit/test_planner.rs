@@ -91,7 +91,6 @@ fn plan_orders_actions_by_quadlet_type() {
     let volume_prefix = vec![
         "volume.volume".to_string(),
         "volume.volume".to_string(),
-        "volume.volume".to_string(),
     ];
     let container_prefix = vec![
         "container.container".to_string(),
@@ -104,7 +103,7 @@ fn plan_orders_actions_by_quadlet_type() {
         "socket.socket".to_string(),
     ];
 
-    assert_eq!(&targets[..3], &volume_prefix[..]);
-    assert_eq!(&targets[3..6], &container_prefix[..]);
-    assert_eq!(&targets[6..9], &socket_prefix[..]);
+    assert_eq!(&targets[..2], &volume_prefix[..]);
+    assert_eq!(&targets[2..5], &container_prefix[..]);
+    assert_eq!(&targets[5..8], &socket_prefix[..]);
 }

@@ -23,6 +23,7 @@ timer on a Fedora CoreOS host.
      Environment=CORE_OPS_REPO=ssh://git@github.com/your-org/quadlets.git
      Environment=CORE_OPS_REV=main
      Environment=CORE_OPS_QUADLET_DIR=/etc/containers/systemd
+     Environment=CORE_OPS_SYSTEMD_UNIT_DIR=/etc/systemd/system
      ```
 3. Reload systemd and enable the timer:
    - `systemctl daemon-reload`
@@ -47,6 +48,7 @@ service unit:
 - `CORE_OPS_REPO` (required)
 - `CORE_OPS_REV` (required)
 - `CORE_OPS_QUADLET_DIR` (default `/etc/containers/systemd`)
+- `CORE_OPS_SYSTEMD_UNIT_DIR` (default `/etc/systemd/system`)
 - `CORE_OPS_AUDIT_DIR` (optional)
 - `CORE_OPS_LOCK_PATH` (optional)
 

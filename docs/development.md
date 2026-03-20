@@ -33,6 +33,7 @@ Suggested drop-in content:
 Environment=CORE_OPS_REPO=ssh://git@github.com/your-org/quadlets.git
 Environment=CORE_OPS_REV=main
 Environment=CORE_OPS_QUADLET_DIR=/etc/containers/systemd
+Environment=CORE_OPS_SYSTEMD_UNIT_DIR=/etc/systemd/system
 ```
 
 Apply changes with:

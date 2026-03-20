@@ -5,6 +5,7 @@ use core_ops::cli::agent as agent_cmd;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
 use core_ops::io::{audit as audit_io, observed, repo};
+use core_ops::io::systemd::SYSTEMD_UNIT_DIR_ENV;
 use log::LevelFilter;
 use clap::Parser;
 use std::path::PathBuf;
@@ -26,6 +27,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let rev = args.rev;
             let quadlet_dir = args.quadlet_dir;
             let audit_dir = args.audit_dir;
+            set_systemd_unit_dir(&args.systemd_unit_dir);
 
             let deps = ReconcileDependencies {
                 load_desired: &|| repo::load_desired_state(&repo_source, &rev).map_err(map_plan_error),
@@ -52,6 +54,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let quadlet_dir = args.quadlet_dir;
             let audit_dir = args.audit_dir;
             let no_reload = args.no_reload;
+            set_systemd_unit_dir(&args.systemd_unit_dir);
 
             let (result, report, plan) =
                 apply_cmd::apply_with_report(&repo_source, &rev, &quadlet_dir, !no_reload)?;
@@ -83,6 +86,12 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                 .quadlet_dir
                 .or_else(|| std::env::var_os("CORE_OPS_QUADLET_DIR").map(PathBuf::from))
                 .unwrap_or_else(|| PathBuf::from("/etc/containers/systemd"));
+            if let Some(systemd_unit_dir) = args
+                .systemd_unit_dir
+                .or_else(|| std::env::var_os(SYSTEMD_UNIT_DIR_ENV).map(PathBuf::from))
+            {
+                std::env::set_var(SYSTEMD_UNIT_DIR_ENV, systemd_unit_dir);
+            }
             let audit_dir = args
                 .audit_dir
                 .or_else(|| std::env::var_os("CORE_OPS_AUDIT_DIR").map(PathBuf::from));
@@ -143,4 +152,10 @@ fn resolve_env(value: Option<String>, key: &str) -> Result<String, CoreError> {
         core_ops::core::types::FailureClass::Apply,
         format!("missing required value for {key}"),
     ))
+}
+
+fn set_systemd_unit_dir(value: &Option<PathBuf>) {
+    if let Some(dir) = value {
+        std::env::set_var(SYSTEMD_UNIT_DIR_ENV, dir);
+    }
 }

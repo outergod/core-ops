@@ -15,7 +15,12 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
     let mut actions = Vec::new();
 
     for diff in &diffs {
-        let mut diff_actions = actions_for_diff(diff.kind.clone(), &diff.name);
+        let quadlet_type = diff
+            .desired
+            .as_ref()
+            .or(diff.observed.as_ref())
+            .map(|workload| workload.quadlet_type.clone());
+        let mut diff_actions = actions_for_diff(diff.kind.clone(), &diff.name, quadlet_type);
         actions.append(&mut diff_actions);
     }
 
@@ -45,23 +50,42 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
     Ok(plan)
 }
 
-fn actions_for_diff(kind: DiffKind, name: &str) -> Vec<PlanAction> {
+fn actions_for_diff(
+    kind: DiffKind,
+    name: &str,
+    quadlet_type: Option<QuadletType>,
+) -> Vec<PlanAction> {
+    let manage_unit = !matches!(quadlet_type, Some(QuadletType::Volume));
     match kind {
-        DiffKind::Add => vec![
-            action(PlanActionType::WriteQuadlet, name),
-            action(PlanActionType::ReloadSystemd, name),
-            action(PlanActionType::StartUnit, name),
-        ],
-        DiffKind::Remove => vec![
-            action(PlanActionType::StopUnit, name),
-            action(PlanActionType::RemoveQuadlet, name),
-            action(PlanActionType::ReloadSystemd, name),
-        ],
-        DiffKind::Change => vec![
-            action(PlanActionType::WriteQuadlet, name),
-            action(PlanActionType::ReloadSystemd, name),
-            action(PlanActionType::StartUnit, name),
-        ],
+        DiffKind::Add => {
+            let mut actions = vec![
+                action(PlanActionType::WriteQuadlet, name),
+                action(PlanActionType::ReloadSystemd, name),
+            ];
+            if manage_unit {
+                actions.push(action(PlanActionType::StartUnit, name));
+            }
+            actions
+        }
+        DiffKind::Remove => {
+            let mut actions = Vec::new();
+            if manage_unit {
+                actions.push(action(PlanActionType::StopUnit, name));
+            }
+            actions.push(action(PlanActionType::RemoveQuadlet, name));
+            actions.push(action(PlanActionType::ReloadSystemd, name));
+            actions
+        }
+        DiffKind::Change => {
+            let mut actions = vec![
+                action(PlanActionType::WriteQuadlet, name),
+                action(PlanActionType::ReloadSystemd, name),
+            ];
+            if manage_unit {
+                actions.push(action(PlanActionType::StartUnit, name));
+            }
+            actions
+        }
     }
 }
 

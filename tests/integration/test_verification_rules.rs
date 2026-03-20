@@ -6,6 +6,7 @@ use core_ops::core::reconcile::{reconcile_apply, ReconcileDependencies};
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::read_observed_state;
 use core_ops::io::repo::load_desired_state;
+use core_ops::io::systemd::SYSTEMD_UNIT_DIR_ENV;
 use crate::integration::env_lock::path_lock;
 
 fn temp_dir(prefix: &str) -> PathBuf {
@@ -116,6 +117,9 @@ fn verification_rules_accept_volume_inactive() {
 
     let host_quadlets = temp.join("host_quadlets");
     fs::create_dir_all(&host_quadlets).expect("host quadlets");
+    let systemd_units = temp.join("systemd_units");
+    fs::create_dir_all(&systemd_units).expect("systemd units");
+    let _systemd_guard = EnvGuard::set(SYSTEMD_UNIT_DIR_ENV, &systemd_units);
 
     let deps = ReconcileDependencies {
         load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
@@ -152,5 +156,30 @@ struct PathGuard {
 impl Drop for PathGuard {
     fn drop(&mut self) {
         std::env::set_var("PATH", &self.previous);
+    }
+}
+
+struct EnvGuard {
+    key: String,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl EnvGuard {
+    fn set(key: &str, value: &PathBuf) -> Self {
+        let previous = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self {
+            key: key.to_string(),
+            previous,
+        }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(value) => std::env::set_var(&self.key, value),
+            None => std::env::remove_var(&self.key),
+        }
     }
 }
