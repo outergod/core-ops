@@ -8,7 +8,13 @@ pub fn verify_state(desired: &DesiredState, observed: &ObservedState) -> Vec<Ver
     desired
         .workloads
         .iter()
-        .map(|workload| verify_workload(workload.quadlet_type.clone(), &workload.systemd_unit_name, observed))
+        .map(|workload| {
+            verify_workload(
+                workload.quadlet_type.clone(),
+                &workload.systemd_unit_name,
+                observed,
+            )
+        })
         .collect()
 }
 
@@ -24,35 +30,31 @@ fn verify_workload(
         .find(|unit| unit.unit_name == unit_name);
 
     match (quadlet_type, unit) {
-        (QuadletType::Volume, Some(_)) => VerificationResult {
-            target: unit_name,
-            status: VerificationStatus::Success,
-            details: None,
-        },
-        (QuadletType::Volume, None) => VerificationResult {
-            target: unit_name,
-            status: VerificationStatus::Failure,
-            details: Some("volume unit not found".to_string()),
-        },
+        (QuadletType::Volume, Some(_)) => success(unit_name),
+        (QuadletType::Volume, None) => failure(unit_name, "volume unit not found"),
         (_, Some(unit)) => {
             if unit.active_state == UnitActiveState::Active {
-                VerificationResult {
-                    target: unit_name,
-                    status: VerificationStatus::Success,
-                    details: None,
-                }
+                success(unit_name)
             } else {
-                VerificationResult {
-                    target: unit_name,
-                    status: VerificationStatus::Failure,
-                    details: Some(format!("unit not active: {:?}", unit.active_state)),
-                }
+                failure(unit_name, &format!("unit not active: {:?}", unit.active_state))
             }
         }
-        (_, None) => VerificationResult {
-            target: unit_name,
-            status: VerificationStatus::Failure,
-            details: Some("unit not found".to_string()),
-        },
+        (_, None) => failure(unit_name, "unit not found"),
+    }
+}
+
+fn success(target: String) -> VerificationResult {
+    VerificationResult {
+        target,
+        status: VerificationStatus::Success,
+        details: None,
+    }
+}
+
+fn failure(target: String, details: &str) -> VerificationResult {
+    VerificationResult {
+        target,
+        status: VerificationStatus::Failure,
+        details: Some(details.to_string()),
     }
 }

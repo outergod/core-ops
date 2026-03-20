@@ -53,23 +53,20 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let audit_dir = args.audit_dir;
             let no_reload = args.no_reload;
 
-            let (result, report) =
+            let (result, report, plan) =
                 apply_cmd::apply_with_report(&repo_source, &rev, &quadlet_dir, !no_reload)?;
             let run = result.run;
-            let event = core_ops::core::audit::build_audit_event(&run, None);
+            let event = core_ops::core::audit::build_audit_event(
+                &run,
+                Some(&plan),
+                &result.verification_results,
+            );
             audit_io::emit_journal_event(&event).map_err(map_apply_error)?;
             if let Some(dir) = audit_dir {
                 let record = core_ops::core::audit::build_audit_record(
                     &run.run_id,
                     Vec::new(),
-                    &core_ops::core::types::ReconciliationPlan {
-                        plan_id: "apply".to_string(),
-                        desired_revision_id: rev.clone(),
-                        observed_revision_id: None,
-                        actions: Vec::new(),
-                        safety_checks: Vec::new(),
-                        expected_outcomes: Vec::new(),
-                    },
+                    &plan,
                     result.verification_results,
                 );
                 let _ = audit_io::write_audit_record(&dir, &record).map_err(map_apply_error)?;

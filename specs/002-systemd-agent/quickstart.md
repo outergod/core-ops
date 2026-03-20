@@ -35,8 +35,20 @@ timer on a Fedora CoreOS host.
 
 - Runs are scheduled by systemd timer and execute the oneshot service.
 - Journald contains structured audit events for each run.
-- Artifacts are reconciled in Volume → Container → Socket ordering.
+- Artifacts are reconciled in Volume → Container → Socket ordering, including
+  container, socket, and volume Quadlets.
 - Verification uses systemd unit state checks.
+
+## Environment Overrides
+
+You can override the agent configuration with environment variables on the
+service unit:
+
+- `CORE_OPS_REPO` (required)
+- `CORE_OPS_REV` (required)
+- `CORE_OPS_QUADLET_DIR` (default `/etc/containers/systemd`)
+- `CORE_OPS_AUDIT_DIR` (optional)
+- `CORE_OPS_LOCK_PATH` (optional)
 
 ## Non-Goals
 

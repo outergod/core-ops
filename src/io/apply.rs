@@ -80,16 +80,10 @@ pub fn apply_plan(
                 }
             }
             PlanActionType::EnableUnit => {
-                return Err(ApplyError::SystemdCommandFailed(
-                    "enable/disable is handled via Quadlet [Install], not systemctl enable"
-                        .to_string(),
-                ));
+                // Quadlet-generated units rely on [Install] processing; no enable call is needed.
             }
             PlanActionType::DisableUnit => {
-                return Err(ApplyError::SystemdCommandFailed(
-                    "enable/disable is handled via Quadlet [Install], not systemctl disable"
-                        .to_string(),
-                ));
+                // Quadlet-generated units rely on [Install] processing; no disable call is needed.
             }
             PlanActionType::StartUnit => {
                 let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &action.target)?;

@@ -60,11 +60,12 @@ fn audit_event_json_is_structured() {
         summary: "planned".to_string(),
     };
 
-    let event = build_audit_event(&run, Some(&plan));
+    let event = build_audit_event(&run, Some(&plan), &[]);
     let json = format_audit_event_json(&event);
 
     assert!(json.contains("\"run_id\""));
     assert!(json.contains("\"plan_id\""));
     assert!(json.contains("\"action_count\""));
+    assert!(json.contains("\"status\""));
     assert!(json.contains("\"summary\""));
 }

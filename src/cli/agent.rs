@@ -44,13 +44,13 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         .release(guard)
         .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()));
 
-    let (result, report) = result?;
+    let (result, report, plan) = result?;
     let run = result.run;
     if let Err(err) = release_result {
         return Err(err);
     }
 
-    let event = build_audit_event(&run, None);
+    let event = build_audit_event(&run, Some(&plan), &result.verification_results);
     audit_io::emit_journal_event(&event)
         .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
 
@@ -58,14 +58,7 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         let record = crate::core::audit::build_audit_record(
             &run.run_id,
             Vec::new(),
-            &crate::core::types::ReconciliationPlan {
-                plan_id: "agent".to_string(),
-                desired_revision_id: config.rev.clone(),
-                observed_revision_id: None,
-                actions: Vec::new(),
-                safety_checks: Vec::new(),
-                expected_outcomes: Vec::new(),
-            },
+            &plan,
             result.verification_results,
         );
         let _ = audit_io::write_audit_record(dir, &record)

@@ -124,16 +124,18 @@ feature spec explicitly documents a justified exemption.
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T031 [P] Documentation updates in `specs/002-systemd-agent/quickstart.md`
-- [ ] T032 Refactor verification flow for clarity in `src/core/verify.rs` and `src/core/reconcile.rs`
-- [ ] T033 [P] Additional unit tests for artifact verification in `tests/unit/test_verification.rs`
-- [ ] T034 Run quickstart.md validation against `specs/002-systemd-agent/quickstart.md`
-- [ ] T035 [P] Integration test for idempotent repeated runs in `tests/integration/test_idempotence.rs`
-- [ ] T036 [P] Integration test for performance budget (50 artifacts within 2 minutes) in `tests/integration/test_performance.rs`
-- [ ] T037 [P] Integration test for git repository unavailable error in `tests/integration/test_repo_unavailable.rs`
-- [ ] T038 [P] Integration test for journald unavailable diagnostics in `tests/integration/test_journald_unavailable.rs`
-- [ ] T039 [P] Define expected behavior and test recovery after host reboot during reconcile in `tests/integration/test_reboot_recovery.rs`
-- [ ] T040 [P] Integration test for per-artifact verification rules in `tests/integration/test_verification_rules.rs`
+- [x] T031 [P] Documentation updates in `specs/002-systemd-agent/quickstart.md`
+- [x] T032 Refactor verification flow for clarity in `src/core/verify.rs` and `src/core/reconcile.rs`
+- [x] T033 [P] Additional unit tests for artifact verification in `tests/unit/test_verification.rs`
+- [x] T034 Run quickstart.md validation against `specs/002-systemd-agent/quickstart.md`
+- [x] T035 [P] Integration test for idempotent repeated runs in `tests/integration/test_idempotence.rs`
+- [x] T036 [P] Integration test for performance budget (50 artifacts within 2 minutes) in `tests/integration/test_performance.rs`
+- [x] T037 [P] Integration test for git repository unavailable error in `tests/integration/test_repo_unavailable.rs`
+- [x] T038 [P] Integration test for journald unavailable diagnostics in `tests/integration/test_journald_unavailable.rs`
+- [x] T039 [P] Define expected behavior and test recovery after host reboot during reconcile in `tests/integration/test_reboot_recovery.rs`
+- [x] T040 [P] Integration test for per-artifact verification rules in `tests/integration/test_verification_rules.rs`
+- [x] T041 [P] Integration test ensuring apply does not call systemctl enable/disable for generated units in `tests/integration/test_no_enable_disable.rs`
+- [x] T042 Guard apply to skip enable/disable for generated units in `src/io/apply.rs`
 
 ---
 

@@ -10,7 +10,7 @@
 ### Session 2026-03-19
 - Q: Which systemd automation mode should the agent ship for unattended runs? → A: Provide both a oneshot service and a timer (timer triggers service)
 - Q: What ordering should apply across volume/container/socket artifacts? → A: Volume → Container → Socket ordering
-- Q: What verification approach should be used per artifact type? → A: Verify by systemd unit state (active/enabled where applicable)
+- Q: What verification approach should be used per artifact type? → A: Verify by systemd unit state (active for container/socket; loaded for volume). Do not enable/disable generated units.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -100,8 +100,9 @@ As an operator, I want clear verification behavior and journal-based observabili
 - **FR-005**: The controller MUST define explicit verification behavior for each
   supported Quadlet artifact type (container, socket, volume) using systemd unit
   state checks. Container and socket units MUST report active; volume artifacts
-  MUST report a loaded unit state when applicable. Enablement is not enforced by
-  the controller and remains driven by Quadlet [Install] semantics.
+  MUST report a loaded unit state when applicable. The controller MUST NOT run
+  enable/disable for generated units; enablement remains driven by Quadlet
+  [Install] semantics.
 - **FR-006**: The controller MUST remain limited to Quadlet/systemd/container
   scope and MUST NOT expand into generic host configuration management.
 - **FR-007**: Mounting existing host config directories into containers MAY be
@@ -148,7 +149,7 @@ As an operator, I want clear verification behavior and journal-based observabili
   to 50 Quadlet artifacts.
 - **SC-002**: 100% of runs emit a journald audit event with plan summary and
   outcome status.
-- **SC-003**: 90% of operators can identify a failed run’s cause within 2 minutes
-  using journald logs alone.
+- **SC-003**: 100% of failed runs emit a journald audit event containing run_id,
+  plan summary, failed artifact list, and failure reason.
 - **SC-004**: Reapplying the same desired state results in zero unintended
   changes across three consecutive scheduled runs.

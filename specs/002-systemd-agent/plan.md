@@ -10,9 +10,11 @@
 Deliver a systemd-managed host agent that runs unattended via a oneshot service
 triggered by a timer, emits journald audit events by default, and reconciles
 container, socket, and volume Quadlet artifacts with explicit ordering and
-verification. The agent preserves functional-core/imperative-shell boundaries,
-explicit failure reporting, idempotence, and observability while staying within
-native system primitives and avoiding generic host configuration management.
+verification. Generated units are not enabled/disabled by the controller; Quadlet
+[Install] semantics govern enablement. The agent preserves functional-core/
+imperative-shell boundaries, explicit failure reporting, idempotence, and
+observability while staying within native system primitives and avoiding generic
+host configuration management.
 
 ## Technical Context
 
