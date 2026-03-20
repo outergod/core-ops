@@ -1,0 +1,3 @@
+[Container]
+Image=example/vector:latest
+ContainerName=vector

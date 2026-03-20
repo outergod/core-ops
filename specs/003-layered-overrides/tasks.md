@@ -22,8 +22,8 @@ description: "Task list for layered overrides feature"
 
 **Purpose**: Project initialization and test fixture scaffolding
 
-- [ ] T001 Create layered overrides fixture repo in `tests/fixtures/layered_overrides/README.md`
-- [ ] T002 [P] Add fixture service/host files under `tests/fixtures/layered_overrides/services/` and `tests/fixtures/layered_overrides/hosts/`
+- [X] T001 Create layered overrides fixture repo in `tests/fixtures/layered_overrides/README.md`
+- [X] T002 [P] Add fixture service/host files under `tests/fixtures/layered_overrides/services/` and `tests/fixtures/layered_overrides/hosts/`
 
 ---
 
@@ -33,14 +33,14 @@ description: "Task list for layered overrides feature"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 Define layered override data structures in `src/core/types.rs`
-- [ ] T004 Implement host identity selection config (CLI/env) in `src/cli/args.rs`
-- [ ] T005 Wire host identity override into runtime config in `src/main.rs`
-- [ ] T006 Implement repository loader for `services/` and `hosts/<host>/host.yaml` in `src/io/repo.rs`
-- [ ] T007 Implement base/overlay drop-in discovery helpers in `src/io/repo.rs`
-- [ ] T008 Add validation rules for service selection + drop-in targets in `src/core/validation.rs`
-- [ ] T009 Add evaluation pipeline module scaffold in `src/core/evaluate.rs`
-- [ ] T010 Export evaluation module from `src/core/mod.rs`
+- [X] T003 Define layered override data structures in `src/core/types.rs`
+- [X] T004 Implement host identity selection config (CLI/env) in `src/cli/args.rs`
+- [X] T005 Wire host identity override into runtime config in `src/main.rs`
+- [X] T006 Implement repository loader for `services/` and `hosts/<host>/host.yaml` in `src/io/repo.rs`
+- [X] T007 Implement base/overlay drop-in discovery helpers in `src/io/repo.rs`
+- [X] T008 Add validation rules for service selection + drop-in targets in `src/core/validation.rs`
+- [X] T009 Add evaluation pipeline module scaffold in `src/core/evaluate.rs`
+- [X] T010 Export evaluation module from `src/core/mod.rs`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -116,9 +116,12 @@ description: "Task list for layered overrides feature"
 
 **Purpose**: Documentation, validation, and maintenance tasks
 
-- [ ] T029 [P] Update quickstart validation to include layered override fixtures in `tests/integration/test_quickstart_validation.rs`
-- [ ] T030 [P] Update developer documentation for layered overrides in `docs/development.md`
-- [ ] T031 Run quickstart validation and integration tests referenced in `specs/003-layered-overrides/quickstart.md`
+- [ ] T029 [P] Add performance benchmark for evaluation overhead in `tests/integration/test_performance.rs`
+- [ ] T030 [P] Add test that rejects templating placeholders in configs in `tests/unit/test_no_templating.rs`
+- [ ] T031 [P] Add validation test for Quadlet vs systemd drop-in distinction in `tests/unit/test_dropin_types.rs`
+- [ ] T032 [P] Update quickstart validation to include layered override fixtures in `tests/integration/test_quickstart_validation.rs`
+- [ ] T033 [P] Update developer documentation for layered overrides in `docs/development.md`
+- [ ] T034 Run quickstart validation and integration tests referenced in `specs/003-layered-overrides/quickstart.md`
 
 ---
 
@@ -147,7 +150,7 @@ description: "Task list for layered overrides feature"
 
 - T002 can run in parallel with T001
 - Unit tests (T011, T018, T024) can run in parallel with their paired integration tests (T012, T019, T025)
-- Documentation updates (T029, T030) can run in parallel
+- Documentation updates (T032, T033) can run in parallel
 
 ---
 

@@ -1,12 +1,46 @@
 use std::collections::HashSet;
 
 use crate::core::errors::{ValidationError, ValidationErrorKind};
-use crate::core::types::{Boundaries, BoundaryScope, DesiredState, Invariant, Workload};
+use crate::core::types::{
+    ArtifactSource, Boundaries, BoundaryScope, DesiredState, DropInSource, HostDeclaration,
+    Invariant, ServiceCatalog, Workload,
+};
 
 pub fn validate_desired_state(desired: &DesiredState) -> Result<(), ValidationError> {
     validate_invariants(&desired.invariants)?;
     validate_boundaries(&desired.boundaries)?;
     validate_workloads(&desired.workloads)?;
+    Ok(())
+}
+
+pub fn validate_service_selection(
+    host: &HostDeclaration,
+    catalog: &ServiceCatalog,
+) -> Result<(), ValidationError> {
+    for service in &host.services {
+        if !catalog.services.contains_key(service) {
+            return Err(ValidationError::new(
+                ValidationErrorKind::UndefinedServiceSelection,
+                format!("undefined service selection: {}", service),
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_dropin_targets(
+    dropins: &[DropInSource],
+    artifacts: &[ArtifactSource],
+) -> Result<(), ValidationError> {
+    let targets: HashSet<String> = artifacts.iter().map(|a| a.name.clone()).collect();
+    for dropin in dropins {
+        if !targets.contains(&dropin.target) {
+            return Err(ValidationError::new(
+                ValidationErrorKind::MissingArtifactTarget,
+                format!("drop-in target does not exist: {}", dropin.target),
+            ));
+        }
+    }
     Ok(())
 }
 

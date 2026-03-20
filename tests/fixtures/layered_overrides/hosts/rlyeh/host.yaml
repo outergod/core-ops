@@ -1,0 +1,4 @@
+host: rlyeh
+services:
+  - traefik
+  - vector

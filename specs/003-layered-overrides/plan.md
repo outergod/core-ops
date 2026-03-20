@@ -16,7 +16,7 @@ for invalid overlays or undefined services.
 ## Technical Context
 
 **Language/Version**: Rust (stable toolchain)
-**Primary Dependencies**: Git (CLI), systemd (systemctl), Quadlet generator, clap, thiserror, miette, journald logger
+**Primary Dependencies**: Git (CLI), systemd (systemctl), Quadlet generator, clap, thiserror, miette, journald logger, serde, serde_yaml, libc
 **Storage**: Files on disk (repository layout + evaluated desired state in memory)
 **Testing**: cargo test (unit + integration)
 **Target Platform**: Fedora CoreOS (single host)

@@ -28,6 +28,8 @@ pub enum ValidationErrorKind {
     DuplicateWorkload,
     DuplicateUnitName,
     UnsupportedQuadletType,
+    UndefinedServiceSelection,
+    MissingArtifactTarget,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
