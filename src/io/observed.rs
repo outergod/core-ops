@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::core::types::{EnabledState, ObservedState, ObservedUnit, UnitActiveState, Workload};
-use crate::io::quadlet::{read_quadlet_dir, systemd_unit_for_quadlet_file, QuadletError};
+use crate::io::quadlet::{read_quadlet_dir, QuadletError};
+use crate::core::unit::systemd_unit_for_quadlet_file;
 
 #[derive(Debug)]
 pub enum ObservedError {

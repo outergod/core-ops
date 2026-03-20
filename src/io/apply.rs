@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::core::types::{PlanAction, PlanActionType, ReconciliationPlan, Workload};
-use crate::io::quadlet::systemd_unit_for_quadlet_file;
+use crate::core::unit::systemd_unit_for_quadlet_file;
 
 #[derive(Debug)]
 pub enum ApplyError {

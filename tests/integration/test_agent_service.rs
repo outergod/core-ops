@@ -59,7 +59,22 @@ fn init_git_repo(repo: &PathBuf) -> String {
 
 fn write_systemctl_stub(dir: &PathBuf) {
     let bin_path = dir.join("systemctl");
-    let script = "#!/bin/sh\nexit 0\n";
+    let script = r#"#!/bin/sh
+case "$1" in
+  is-system-running)
+    echo "running"
+    exit 0
+    ;;
+  show)
+    echo "ActiveState=active"
+    echo "UnitFileState=enabled"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+"#;
     fs::write(&bin_path, script).expect("write systemctl stub");
     #[cfg(unix)]
     {

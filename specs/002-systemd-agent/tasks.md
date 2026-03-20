@@ -107,14 +107,14 @@ feature spec explicitly documents a justified exemption.
 
 ### Tests for User Story 3 (REQUIRED unless explicitly exempted) ⚠️
 
-- [ ] T026 [P] [US3] Integration test for verification failures in `tests/integration/test_verification.rs`
-- [ ] T027 [P] [US3] Integration test for journald audit content in `tests/integration/test_journald_audit.rs`
+- [X] T026 [P] [US3] Integration test for verification failures in `tests/integration/test_verification.rs`
+- [X] T027 [P] [US3] Integration test for journald audit content in `tests/integration/test_journald_audit.rs`
 
 ### Implementation for User Story 3
 
-- [ ] T028 [US3] Implement verification checks using systemd unit state in `src/core/verify.rs`
-- [ ] T029 [US3] Wire verification into reconcile flow in `src/core/reconcile.rs`
-- [ ] T030 [US3] Extend audit record with verification results in `src/core/audit.rs`
+- [X] T028 [US3] Implement verification checks using systemd unit state in `src/core/verify.rs`
+- [X] T029 [US3] Wire verification into reconcile flow in `src/core/reconcile.rs`
+- [X] T030 [US3] Extend audit record with verification results in `src/core/audit.rs`
 
 **Checkpoint**: All user stories should now be independently functional
 

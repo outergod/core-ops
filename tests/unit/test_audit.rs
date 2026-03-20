@@ -40,7 +40,7 @@ fn audit_record_format_includes_plan_summary() {
     let observed = observed_state();
     let plan = plan(&desired, &observed).expect("plan");
 
-    let record = build_audit_record("run:plan", Vec::new(), &plan);
+    let record = build_audit_record("run:plan", Vec::new(), &plan, Vec::new());
     let output = format_audit_record(&record);
 
     assert!(output.contains("plan "));

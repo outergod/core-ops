@@ -106,7 +106,7 @@ fn apply_report_includes_diffs_and_actions() {
     let host_quadlets = temp_dir("core_ops_host_apply_report");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
 
-    let (_run, report) =
+    let (_result, report) =
         apply_with_report(repo.to_str().unwrap(), &rev, &host_quadlets, false)
             .expect("apply report");
 

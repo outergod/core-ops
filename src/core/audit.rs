@@ -1,13 +1,20 @@
-use crate::core::types::{AuditRecord, DiffItem, PlanAction, ReconcileRun, ReconciliationPlan};
+use crate::core::types::{
+    AuditRecord, DiffItem, PlanAction, ReconcileRun, ReconciliationPlan, VerificationResult,
+};
 
-pub fn build_audit_record(run_id: &str, diffs: Vec<DiffItem>, plan: &ReconciliationPlan) -> AuditRecord {
+pub fn build_audit_record(
+    run_id: &str,
+    diffs: Vec<DiffItem>,
+    plan: &ReconciliationPlan,
+    verification_results: Vec<VerificationResult>,
+) -> AuditRecord {
     AuditRecord {
         record_id: format!("audit:{}", run_id),
         run_id: run_id.to_string(),
         diffs,
         plan_summary: summarize_plan(plan),
         actions_applied: plan.actions.clone(),
-        verification_results: Vec::new(),
+        verification_results,
         operator_messages: Vec::new(),
     }
 }
@@ -36,6 +43,10 @@ pub fn format_audit_record(record: &AuditRecord) -> String {
     output.push_str(&format!(
         "actions {}\n",
         record.actions_applied.len()
+    ));
+    output.push_str(&format!(
+        "verification {}\n",
+        record.verification_results.len()
     ));
     output
 }

@@ -44,7 +44,8 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         .release(guard)
         .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()));
 
-    let (run, report) = result?;
+    let (result, report) = result?;
+    let run = result.run;
     if let Err(err) = release_result {
         return Err(err);
     }
@@ -65,6 +66,7 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
                 safety_checks: Vec::new(),
                 expected_outcomes: Vec::new(),
             },
+            result.verification_results,
         );
         let _ = audit_io::write_audit_record(dir, &record)
             .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;

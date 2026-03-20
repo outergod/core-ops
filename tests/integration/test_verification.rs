@@ -29,10 +29,6 @@ fn init_git_repo(repo: &PathBuf) -> String {
     fs::create_dir_all(&quadlets).expect("create quadlets");
     fs::write(quadlets.join("alpha.container"), "[Container]\nImage=alpine")
         .expect("write container");
-    fs::write(quadlets.join("beta.socket"), "[Socket]\nListenStream=8080")
-        .expect("write socket");
-    fs::write(quadlets.join("gamma.volume"), "[Volume]\nDriver=local")
-        .expect("write volume");
 
     std::process::Command::new("git")
         .arg("-C")
@@ -74,8 +70,8 @@ case "$1" in
     exit 0
     ;;
   show)
-    echo "ActiveState=active"
-    echo "UnitFileState=enabled"
+    echo "ActiveState=inactive"
+    echo "UnitFileState=disabled"
     exit 0
     ;;
   *)
@@ -94,12 +90,12 @@ esac
 }
 
 #[test]
-fn reconcile_apply_supports_socket_and_volume_quadlets() {
+fn reconcile_apply_reports_verification_failure() {
     let _lock = path_lock().lock().expect("path lock");
-    let repo = temp_dir("core_ops_repo_artifacts");
+    let repo = temp_dir("core_ops_repo_verify");
     let rev = init_git_repo(&repo);
 
-    let temp = temp_dir("core_ops_artifacts");
+    let temp = temp_dir("core_ops_verify");
     fs::create_dir_all(&temp).expect("temp dir");
     write_systemctl_stub(&temp);
 
@@ -124,11 +120,11 @@ fn reconcile_apply_supports_socket_and_volume_quadlets() {
     };
 
     let result = reconcile_apply(&deps).expect("apply");
-    assert_eq!(result.run.summary, "converged");
-
-    assert!(host_quadlets.join("alpha.container").exists());
-    assert!(host_quadlets.join("beta.socket").exists());
-    assert!(host_quadlets.join("gamma.volume").exists());
+    assert_eq!(result.run.summary, "verification failed");
+    assert!(result
+        .verification_results
+        .iter()
+        .any(|res| res.status == core_ops::core::types::VerificationStatus::Failure));
 }
 
 fn map_io_error<E: std::fmt::Display>(err: E) -> CoreError {
