@@ -37,16 +37,9 @@ fn validate_boundaries(boundaries: &Boundaries) -> Result<(), ValidationError> {
 }
 
 fn validate_workloads(workloads: &[Workload]) -> Result<(), ValidationError> {
-    let mut names = HashSet::new();
     let mut unit_names = HashSet::new();
 
     for workload in workloads {
-        if !names.insert(workload.name.clone()) {
-            return Err(ValidationError::new(
-                ValidationErrorKind::DuplicateWorkload,
-                format!("duplicate workload name: {}", workload.name),
-            ));
-        }
         if !unit_names.insert(workload.systemd_unit_name.clone()) {
             return Err(ValidationError::new(
                 ValidationErrorKind::DuplicateUnitName,
