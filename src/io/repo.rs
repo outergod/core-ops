@@ -1,12 +1,16 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
+use crate::core::evaluate::{evaluate_desired_state, EvaluationOutput};
 use crate::core::types::{
-    ArtifactSource, Boundaries, BoundaryScope, DesiredState, DropInSource,
-    HostDeclaration, HostOverlaySet, Invariant, ServiceCatalog, ServiceDefinition, Workload,
+    ArtifactSource, Boundaries, BoundaryScope, DesiredState, DropInSource, EnabledState,
+    EvaluationInput, EvaluatedArtifact, HostDeclaration, HostOverlaySet, Invariant, QuadletType,
+    RestartPolicy, ServiceCatalog, ServiceDefinition, Workload,
 };
 use crate::io::quadlet::{parse_quadlet_name, read_quadlet_dir, QuadletError};
+use crate::core::validation::validate_service_selection;
 use serde::Deserialize;
 
 pub const HOST_OVERRIDE_ENV: &str = "CORE_OPS_HOST";
@@ -34,6 +38,8 @@ pub enum RepoError {
     MissingHostIdentity,
     Quadlet(QuadletError),
     Io(String),
+    EvaluationFailed(String),
+    ValidationFailed(String),
 }
 
 impl From<QuadletError> for RepoError {
@@ -67,6 +73,8 @@ impl std::fmt::Display for RepoError {
             RepoError::MissingHostIdentity => write!(f, "missing host identity"),
             RepoError::Quadlet(err) => write!(f, "quadlet error: {}", err),
             RepoError::Io(err) => write!(f, "repo io error: {}", err),
+            RepoError::EvaluationFailed(err) => write!(f, "evaluation failed: {}", err),
+            RepoError::ValidationFailed(err) => write!(f, "validation failed: {}", err),
         }
     }
 }
@@ -89,16 +97,16 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
     git_checkout_revision(temp.path())?;
 
     let repo_path = temp.path().to_path_buf();
+    let services_dir = repo_path.join("services");
+    if services_dir.exists() {
+        return load_layered_desired_state(&repo_path, revision_id);
+    }
     let quadlet_dir = repo_path.join("quadlets");
     if !quadlet_dir.exists() {
         return Err(RepoError::MissingQuadletDir(quadlet_dir));
     }
     let workloads = read_quadlet_dir(&quadlet_dir)?;
-    Ok(desired_state_from_workloads(
-        &repo_path,
-        revision_id,
-        workloads,
-    ))
+    Ok(desired_state_from_workloads(&repo_path, revision_id, workloads))
 }
 
 pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<LayeredRepo, RepoError> {
@@ -141,6 +149,38 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     })
 }
 
+pub fn load_host_declaration(host_dir: &Path) -> Result<HostDeclaration, RepoError> {
+    load_host_declaration_inner(host_dir)
+}
+
+fn load_layered_desired_state(
+    repo_path: &Path,
+    revision_id: &str,
+) -> Result<DesiredState, RepoError> {
+    let services_dir = repo_path.join("services");
+    let hosts_dir = repo_path.join("hosts");
+    if !hosts_dir.exists() {
+        return Err(RepoError::MissingHostsDir(hosts_dir));
+    }
+    let host_id = resolve_host_identity()?;
+    let host_dir = hosts_dir.join(&host_id);
+    let host_decl = load_host_declaration_inner(&host_dir)?;
+    let catalog = load_service_catalog(&services_dir)?;
+    validate_service_selection(&host_decl, &catalog)
+        .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
+    let overlays = load_host_overrides(&host_dir)?;
+
+    let input = EvaluationInput {
+        host: host_decl,
+        catalog,
+        overlays,
+    };
+    let output = evaluate_desired_state(&input)
+        .map_err(RepoError::EvaluationFailed)?;
+    let workloads = workloads_from_evaluation(&output);
+    Ok(desired_state_from_workloads(repo_path, revision_id, workloads))
+}
+
 pub fn desired_state_from_workloads(
     repo_path: &Path,
     revision_id: &str,
@@ -178,7 +218,7 @@ fn resolve_host_identity() -> Result<String, RepoError> {
     Ok(hostname)
 }
 
-fn load_host_declaration(host_dir: &Path) -> Result<HostDeclaration, RepoError> {
+fn load_host_declaration_inner(host_dir: &Path) -> Result<HostDeclaration, RepoError> {
     let host_yaml_path = host_dir.join("host.yaml");
     if !host_yaml_path.exists() {
         return Err(RepoError::MissingHostDeclaration(host_yaml_path));
@@ -333,6 +373,30 @@ fn read_hostname() -> Result<String, std::io::Error> {
     }
     let len = buf.iter().position(|b| *b == 0).unwrap_or(buf.len());
     Ok(String::from_utf8_lossy(&buf[..len]).trim().to_string())
+}
+
+fn workloads_from_evaluation(output: &EvaluationOutput) -> Vec<Workload> {
+    output
+        .artifacts
+        .iter()
+        .map(workload_from_artifact)
+        .collect()
+}
+
+fn workload_from_artifact(artifact: &EvaluatedArtifact) -> Workload {
+    let contents = if artifact.quadlet_type == QuadletType::Socket {
+        crate::io::quadlet::normalize_socket_contents(&artifact.contents)
+    } else {
+        artifact.contents.clone()
+    };
+    Workload {
+        name: artifact.name.clone(),
+        quadlet_type: artifact.quadlet_type.clone(),
+        quadlet_contents: contents,
+        systemd_unit_name: artifact.name.clone(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    }
 }
 
 fn git_clone(repo: &str, dest: &Path) -> Result<(), RepoError> {

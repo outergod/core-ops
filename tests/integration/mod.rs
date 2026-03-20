@@ -7,6 +7,7 @@ mod test_plan;
 mod test_apply_report;
 mod test_reconcile_apply;
 mod test_quickstart_validation;
+mod test_service_selection;
 mod test_idempotence;
 mod test_performance;
 mod test_repo_unavailable;

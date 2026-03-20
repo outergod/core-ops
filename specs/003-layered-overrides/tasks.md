@@ -54,16 +54,16 @@ description: "Task list for layered overrides feature"
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T011 [P] [US1] Unit test for host selection parsing in `tests/unit/test_repo_selection.rs`
-- [ ] T012 [P] [US1] Integration test for host-specific service selection in `tests/integration/test_service_selection.rs`
+- [X] T011 [P] [US1] Unit test for host selection parsing in `tests/unit/test_repo_selection.rs`
+- [X] T012 [P] [US1] Integration test for host-specific service selection in `tests/integration/test_service_selection.rs`
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Load host declaration and selected services in `src/io/repo.rs`
-- [ ] T014 [US1] Build service catalog from `services/` in `src/io/repo.rs`
-- [ ] T015 [US1] Produce evaluated desired state from selected base artifacts in `src/core/evaluate.rs`
-- [ ] T016 [US1] Integrate evaluation output into planner inputs in `src/core/planner.rs`
-- [ ] T017 [US1] Update reconcile flow to use evaluated desired state in `src/core/reconcile.rs`
+- [X] T013 [US1] Load host declaration and selected services in `src/io/repo.rs`
+- [X] T014 [US1] Build service catalog from `services/` in `src/io/repo.rs`
+- [X] T015 [US1] Produce evaluated desired state from selected base artifacts in `src/core/evaluate.rs`
+- [X] T016 [US1] Integrate evaluation output into planner inputs in `src/core/planner.rs`
+- [X] T017 [US1] Update reconcile flow to use evaluated desired state in `src/core/reconcile.rs`
 
 **Checkpoint**: User Story 1 functional and testable
 
