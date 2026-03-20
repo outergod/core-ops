@@ -49,6 +49,20 @@ impl ValidationError {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[error("{message}")]
+pub struct EvaluationError {
+    pub message: String,
+}
+
+impl EvaluationError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum RunLockError {
     #[error("run lock already held")]
     AlreadyHeld,

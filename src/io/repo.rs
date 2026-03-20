@@ -180,7 +180,7 @@ fn load_layered_desired_state(
         overlays,
     };
     let output = evaluate_desired_state(&input)
-        .map_err(RepoError::EvaluationFailed)?;
+        .map_err(|err| RepoError::EvaluationFailed(err.to_string()))?;
     let workloads = workloads_from_evaluation(&output);
     Ok(desired_state_from_workloads(repo_path, revision_id, workloads))
 }

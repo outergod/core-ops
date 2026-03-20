@@ -68,12 +68,15 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             );
             audit_io::emit_journal_event(&event).map_err(map_apply_error)?;
             if let Some(dir) = audit_dir {
-                let record = core_ops::core::audit::build_audit_record(
+                let mut record = core_ops::core::audit::build_audit_record(
                     &run.run_id,
                     Vec::new(),
                     &plan,
                     result.verification_results,
                 );
+                record
+                    .operator_messages
+                    .push(core_ops::core::audit::summarize_evaluation(&result.desired));
                 let _ = audit_io::write_audit_record(&dir, &record).map_err(map_apply_error)?;
             }
 

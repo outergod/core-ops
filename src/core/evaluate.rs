@@ -1,3 +1,4 @@
+use crate::core::errors::EvaluationError;
 use crate::core::types::{
     DropInSource, EvaluatedArtifact, EvaluatedDropIn, EvaluationInput, QuadletType,
 };
@@ -9,7 +10,7 @@ pub struct EvaluationOutput {
     pub socket_dropins: Vec<EvaluatedDropIn>,
 }
 
-pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutput, String> {
+pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutput, EvaluationError> {
     let mut artifacts = Vec::new();
     let mut socket_dropins = Vec::new();
     for service_name in &input.host.services {
@@ -17,7 +18,7 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
             .catalog
             .services
             .get(service_name)
-            .ok_or_else(|| format!("missing service: {}", service_name))?;
+            .ok_or_else(|| EvaluationError::new(format!("missing service: {}", service_name)))?;
         for artifact in &service.artifacts {
             let mut contents = artifact.contents.clone();
             let mut source_layers = vec![artifact.source_path.clone()];

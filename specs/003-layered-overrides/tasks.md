@@ -99,14 +99,14 @@ description: "Task list for layered overrides feature"
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T024 [P] [US3] Unit test for deterministic evaluation ordering in `tests/unit/test_evaluation_determinism.rs`
-- [ ] T025 [P] [US3] Integration test for invalid overlay failure in `tests/integration/test_overlay_validation.rs`
+- [X] T024 [P] [US3] Unit test for deterministic evaluation ordering in `tests/unit/test_evaluation_determinism.rs`
+- [X] T025 [P] [US3] Integration test for invalid overlay failure in `tests/integration/test_overlay_validation.rs`
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Ensure stable ordering of artifacts/drop-ins in `src/core/evaluate.rs`
-- [ ] T027 [US3] Surface evaluation diagnostics in `src/core/errors.rs`
-- [ ] T028 [US3] Add evaluation audit output for plan/apply in `src/core/audit.rs`
+- [X] T026 [US3] Ensure stable ordering of artifacts/drop-ins in `src/core/evaluate.rs`
+- [X] T027 [US3] Surface evaluation diagnostics in `src/core/errors.rs`
+- [X] T028 [US3] Add evaluation audit output for plan/apply in `src/core/audit.rs`
 
 **Checkpoint**: User Story 3 functional and testable
 
@@ -116,12 +116,12 @@ description: "Task list for layered overrides feature"
 
 **Purpose**: Documentation, validation, and maintenance tasks
 
-- [ ] T029 [P] Add performance benchmark for evaluation overhead in `tests/integration/test_performance.rs`
-- [ ] T030 [P] Add test that rejects templating placeholders in configs in `tests/unit/test_no_templating.rs`
-- [ ] T031 [P] Add validation test for Quadlet vs systemd drop-in distinction in `tests/unit/test_dropin_types.rs`
-- [ ] T032 [P] Update quickstart validation to include layered override fixtures in `tests/integration/test_quickstart_validation.rs`
-- [ ] T033 [P] Update developer documentation for layered overrides in `docs/development.md`
-- [ ] T034 Run quickstart validation and integration tests referenced in `specs/003-layered-overrides/quickstart.md`
+- [X] T029 [P] Add performance benchmark for evaluation overhead in `tests/integration/test_performance.rs`
+- [X] T030 [P] Add test that rejects templating placeholders in configs in `tests/unit/test_no_templating.rs`
+- [X] T031 [P] Add validation test for Quadlet vs systemd drop-in distinction in `tests/unit/test_dropin_types.rs`
+- [X] T032 [P] Update quickstart validation to include layered override fixtures in `tests/integration/test_quickstart_validation.rs`
+- [X] T033 [P] Update developer documentation for layered overrides in `docs/development.md`
+- [X] T034 Run quickstart validation and integration tests referenced in `specs/003-layered-overrides/quickstart.md`
 
 ---
 

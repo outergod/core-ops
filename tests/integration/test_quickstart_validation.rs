@@ -12,3 +12,15 @@ fn quickstart_mentions_systemd_units_and_env() {
     assert!(contents.contains("CORE_OPS_REPO"));
     assert!(contents.contains("CORE_OPS_REV"));
 }
+
+#[test]
+fn quickstart_mentions_layered_overrides_flow() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let quickstart = root.join("specs/003-layered-overrides/quickstart.md");
+    let contents = fs::read_to_string(&quickstart).expect("read quickstart");
+
+    assert!(contents.contains("services/"));
+    assert!(contents.contains("hosts/"));
+    assert!(contents.contains("CORE_OPS_HOST"));
+    assert!(contents.contains("Evaluation Flow"));
+}

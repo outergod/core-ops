@@ -9,6 +9,7 @@ mod test_reconcile_apply;
 mod test_quickstart_validation;
 mod test_service_selection;
 mod test_host_overrides;
+mod test_overlay_validation;
 mod test_idempotence;
 mod test_performance;
 mod test_repo_unavailable;

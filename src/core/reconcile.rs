@@ -2,8 +2,8 @@ use crate::core::diff::diff_workloads;
 use crate::core::errors::CoreError;
 use crate::core::planner::plan;
 use crate::core::types::{
-    DiffItem, FailureClass, ReconcileMode, ReconcileRun, ReconciliationPlan, RunStatus,
-    VerificationResult, VerificationStatus,
+    DesiredState, DiffItem, FailureClass, ReconcileMode, ReconcileRun, ReconciliationPlan,
+    RunStatus, VerificationResult, VerificationStatus,
 };
 use crate::core::verify::verify_state;
 
@@ -19,11 +19,13 @@ pub struct PlanResult {
     pub run: ReconcileRun,
     pub plan: ReconciliationPlan,
     pub diffs: Vec<DiffItem>,
+    pub desired: DesiredState,
 }
 
 pub struct ApplyResult {
     pub run: ReconcileRun,
     pub verification_results: Vec<VerificationResult>,
+    pub desired: DesiredState,
 }
 
 pub fn reconcile_plan(deps: &ReconcileDependencies<'_>) -> Result<PlanResult, CoreError> {
@@ -41,7 +43,12 @@ pub fn reconcile_plan(deps: &ReconcileDependencies<'_>) -> Result<PlanResult, Co
         summary: "planned".to_string(),
     };
 
-    Ok(PlanResult { run, plan, diffs })
+    Ok(PlanResult {
+        run,
+        plan,
+        diffs,
+        desired,
+    })
 }
 
 pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, CoreError> {
@@ -82,5 +89,6 @@ pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, 
     Ok(ApplyResult {
         run,
         verification_results,
+        desired,
     })
 }

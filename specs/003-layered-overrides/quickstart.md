@@ -21,7 +21,7 @@ services:
 ## Host Identity Selection
 
 - Default: OS hostname.
-- Override: supply a CLI/env host override when running the controller.
+- Override: supply a CLI/env host override when running the controller (e.g., `CORE_OPS_HOST=ulthar` or `--host ulthar`).
 
 ## Evaluation Flow
 
