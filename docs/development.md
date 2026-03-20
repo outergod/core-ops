@@ -20,10 +20,11 @@ Assume the nix shell is already active, and do not run commands via `direnv exec
 
 The host agent is designed to run as a oneshot service triggered by a timer.
 Use a systemd drop-in to configure the repo source and revision without editing
-unit files in place:
+unit files in place. The contract units are named `core-ops.service` and
+`core-ops.timer`.
 
 ```
-systemctl edit core-ops-agent.service
+systemctl edit core-ops.service
 ```
 
 Suggested drop-in content:
@@ -39,4 +40,10 @@ Environment=CORE_OPS_SYSTEMD_UNIT_DIR=/etc/systemd/system
 Apply changes with:
 
 - `systemctl daemon-reload`
-- `systemctl restart core-ops-agent.service`
+- `systemctl restart core-ops.service`
+
+Timer enablement example:
+
+```
+systemctl enable --now core-ops.timer
+```

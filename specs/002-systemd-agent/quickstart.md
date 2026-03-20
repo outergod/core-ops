@@ -12,12 +12,12 @@ timer on a Fedora CoreOS host.
 ## Steps
 
 1. Install the provided oneshot service and timer unit files on the host.
-   - Copy `specs/002-systemd-agent/contracts/systemd/core-ops-agent.service` to
-     `/etc/systemd/system/core-ops-agent.service`
-   - Copy `specs/002-systemd-agent/contracts/systemd/core-ops-agent.timer` to
-     `/etc/systemd/system/core-ops-agent.timer`
+   - Copy `specs/002-systemd-agent/contracts/systemd/core-ops.service` to
+     `/etc/systemd/system/core-ops.service`
+   - Copy `specs/002-systemd-agent/contracts/systemd/core-ops.timer` to
+     `/etc/systemd/system/core-ops.timer`
 2. Configure the repo and revision the agent should reconcile.
-   - Use `systemctl edit core-ops-agent.service` and add:
+   - Use `systemctl edit core-ops.service` and add:
      ```
      [Service]
      Environment=CORE_OPS_REPO=ssh://git@github.com/your-org/quadlets.git
@@ -25,11 +25,11 @@ timer on a Fedora CoreOS host.
      Environment=CORE_OPS_QUADLET_DIR=/etc/containers/systemd
      Environment=CORE_OPS_SYSTEMD_UNIT_DIR=/etc/systemd/system
      ```
-3. Reload systemd and enable the timer:
+3. Enable and start the timer:
    - `systemctl daemon-reload`
-   - `systemctl enable --now core-ops-agent.timer`
+   - `systemctl enable --now core-ops.timer`
 4. Confirm journald output includes plan/action summaries per run:
-   - `journalctl -u core-ops-agent.service -f`
+   - `journalctl -u core-ops.service -f`
 5. Update the Git repository and verify the agent converges to the new state.
 
 ## What to Expect
