@@ -57,8 +57,11 @@ pub fn apply_plan(
         match &action.action_type {
             PlanActionType::WriteQuadlet => {
                 let workload = find_workload(desired_workloads, &action.target)?;
-                let path = target_dir_for_workload(quadlet_dir, workload)
-                    .join(&workload.systemd_unit_name);
+                let path = if workload.quadlet_type == QuadletType::ConfigFile {
+                    PathBuf::from(&workload.systemd_unit_name)
+                } else {
+                    target_dir_for_workload(quadlet_dir, workload).join(&workload.systemd_unit_name)
+                };
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent)?;
                 }
@@ -76,6 +79,14 @@ pub fn apply_plan(
                                 let _ = fs::remove_dir(parent);
                             }
                         }
+                    } else {
+                        return Err(ApplyError::MissingWorkload(action.target.clone()));
+                    }
+                } else if action.target.starts_with("/etc/") {
+                    let path = PathBuf::from(&action.target);
+                    if path.exists() {
+                        fs::remove_file(&path)?;
+                        files_removed.push(path.display().to_string());
                     } else {
                         return Err(ApplyError::MissingWorkload(action.target.clone()));
                     }
@@ -138,6 +149,7 @@ pub fn apply_plan(
 fn target_dir_for_workload(quadlet_dir: &Path, workload: &Workload) -> PathBuf {
     match workload.quadlet_type {
         QuadletType::Socket | QuadletType::SocketDropIn => systemd_unit_dir(),
+        QuadletType::ConfigFile => PathBuf::from("/"),
         _ => quadlet_dir.to_path_buf(),
     }
 }
@@ -150,6 +162,8 @@ fn target_dir_for_name(quadlet_dir: &Path, target: &str) -> PathBuf {
             == Some("socket")
     {
         systemd_unit_dir()
+    } else if target.starts_with("/etc/") {
+        PathBuf::from("/")
     } else {
         quadlet_dir.to_path_buf()
     }

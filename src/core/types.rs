@@ -19,6 +19,7 @@ pub struct ServiceDefinition {
     pub name: String,
     pub artifacts: Vec<ArtifactSource>,
     pub base_dropins: Vec<DropInSource>,
+    pub config_files: Vec<ConfigFileSource>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,6 +32,7 @@ pub struct HostDeclaration {
 pub struct HostOverlaySet {
     pub host: String,
     pub overrides: Vec<DropInSource>,
+    pub config_overrides: Vec<ConfigFileSource>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -44,6 +46,13 @@ pub struct ArtifactSource {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DropInSource {
     pub target: String,
+    pub contents: String,
+    pub source_path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfigFileSource {
+    pub target_path: String,
     pub contents: String,
     pub source_path: String,
 }
@@ -69,6 +78,13 @@ pub struct EvaluatedDropIn {
     pub file_name: String,
     pub contents: String,
     pub source_path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvaluatedConfigFile {
+    pub target_path: String,
+    pub contents: String,
+    pub source_layers: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -167,6 +183,7 @@ pub enum QuadletType {
     Container,
     Socket,
     SocketDropIn,
+    ConfigFile,
     Pod,
     Volume,
     Network,

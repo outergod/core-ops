@@ -28,6 +28,7 @@ fn evaluation_is_deterministic_for_same_input() {
             contents: "X".to_string(),
             source_path: "/services/alpha/alpha.container.d/10-x.conf".to_string(),
         }],
+        config_files: Vec::new(),
     };
 
     let mut services = BTreeMap::new();
@@ -46,6 +47,7 @@ fn evaluation_is_deterministic_for_same_input() {
                 contents: "Y".to_string(),
                 source_path: "/hosts/ulthar/overrides/alpha.container.d/20-y.conf".to_string(),
             }],
+            config_overrides: Vec::new(),
         },
     };
 

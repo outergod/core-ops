@@ -27,6 +27,7 @@ fn applies_dropins_in_lexicographic_order_with_host_overrides_last() {
                 source_path: "/services/alpha/alpha.container.d/10-a.conf".to_string(),
             },
         ],
+        config_files: Vec::new(),
     };
 
     let mut services = BTreeMap::new();
@@ -45,6 +46,7 @@ fn applies_dropins_in_lexicographic_order_with_host_overrides_last() {
                 contents: "HOST".to_string(),
                 source_path: "/hosts/kadath/overrides/alpha.container.d/20-host.conf".to_string(),
             }],
+            config_overrides: Vec::new(),
         },
     };
 

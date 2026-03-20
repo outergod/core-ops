@@ -1,6 +1,7 @@
 use crate::core::errors::EvaluationError;
 use crate::core::types::{
-    DropInSource, EvaluatedArtifact, EvaluatedDropIn, EvaluationInput, QuadletType,
+    ConfigFileSource, DropInSource, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn,
+    EvaluationInput, QuadletType,
 };
 use std::path::Path;
 
@@ -8,11 +9,13 @@ use std::path::Path;
 pub struct EvaluationOutput {
     pub artifacts: Vec<EvaluatedArtifact>,
     pub socket_dropins: Vec<EvaluatedDropIn>,
+    pub config_files: Vec<EvaluatedConfigFile>,
 }
 
 pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutput, EvaluationError> {
     let mut artifacts = Vec::new();
     let mut socket_dropins = Vec::new();
+    let mut config_files = Vec::new();
     for service_name in &input.host.services {
         let service = input
             .catalog
@@ -41,6 +44,16 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
                 source_layers,
             });
         }
+
+        let base_configs = &service.config_files;
+        let host_configs = input
+            .overlays
+            .config_overrides
+            .iter()
+            .filter(|cfg| cfg.target_path.starts_with("/etc/"))
+            .cloned()
+            .collect::<Vec<_>>();
+        config_files.extend(overlay_config_files(base_configs, &host_configs));
     }
     artifacts.sort_by(|a, b| a.name.cmp(&b.name));
     socket_dropins.sort_by(|a, b| {
@@ -49,6 +62,7 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
     Ok(EvaluationOutput {
         artifacts,
         socket_dropins,
+        config_files,
     })
 }
 
@@ -98,4 +112,32 @@ fn dropin_file_name(path: &str) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or(path)
         .to_string()
+}
+
+fn overlay_config_files(
+    base_files: &[ConfigFileSource],
+    host_files: &[ConfigFileSource],
+) -> Vec<EvaluatedConfigFile> {
+    let mut map: std::collections::BTreeMap<String, EvaluatedConfigFile> = std::collections::BTreeMap::new();
+    for cfg in base_files {
+        map.insert(
+            cfg.target_path.clone(),
+            EvaluatedConfigFile {
+                target_path: cfg.target_path.clone(),
+                contents: cfg.contents.clone(),
+                source_layers: vec![cfg.source_path.clone()],
+            },
+        );
+    }
+    for cfg in host_files {
+        map.insert(
+            cfg.target_path.clone(),
+            EvaluatedConfigFile {
+                target_path: cfg.target_path.clone(),
+                contents: cfg.contents.clone(),
+                source_layers: vec![cfg.source_path.clone()],
+            },
+        );
+    }
+    map.into_values().collect()
 }

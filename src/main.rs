@@ -32,8 +32,9 @@ fn run(cli: Cli) -> Result<(), CoreError> {
 
             let deps = ReconcileDependencies {
                 load_desired: &|| repo::load_desired_state(&repo_source, &rev).map_err(map_plan_error),
-                read_observed: &|| {
-                    observed::read_observed_state(&quadlet_dir, None).map_err(map_plan_error)
+                read_observed: &|desired| {
+                    observed::read_observed_state(&quadlet_dir, Some(desired), None)
+                        .map_err(map_plan_error)
                 },
                 apply_plan: &|_, _| Ok(()),
             };

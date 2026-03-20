@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::core::types::{
-    EnabledState, ObservedState, ObservedUnit, QuadletType, RestartPolicy, UnitActiveState,
-    Workload,
+    DesiredState, EnabledState, ObservedState, ObservedUnit, QuadletType, RestartPolicy,
+    UnitActiveState, Workload,
 };
 use crate::io::quadlet::{
     normalize_socket_contents, parse_quadlet_name, read_quadlet_dir, QuadletError,
@@ -49,6 +49,7 @@ impl std::error::Error for ObservedError {}
 
 pub fn read_observed_state(
     quadlet_dir: &Path,
+    desired: Option<&DesiredState>,
     observed_revision_id: Option<String>,
 ) -> Result<ObservedState, ObservedError> {
     if !quadlet_dir.exists() {
@@ -61,6 +62,9 @@ pub fn read_observed_state(
     let socket_dropins = read_socket_dropins(&socket_dir, &socket_units)?;
     workloads.extend(socket_units);
     workloads.extend(socket_dropins);
+    if let Some(desired) = desired {
+        workloads.extend(read_config_files(desired)?);
+    }
     let units = read_systemd_units(&workloads)?;
 
     Ok(ObservedState {
@@ -162,7 +166,7 @@ fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, Obser
 
     let mut units = Vec::new();
     for workload in workloads {
-        if workload.quadlet_type == QuadletType::SocketDropIn {
+        if matches!(workload.quadlet_type, QuadletType::SocketDropIn | QuadletType::ConfigFile) {
             continue;
         }
         let unit_name = systemd_unit_for_quadlet_file(&workload.systemd_unit_name);
@@ -173,6 +177,29 @@ fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, Obser
     }
 
     Ok(units)
+}
+
+fn read_config_files(desired: &DesiredState) -> Result<Vec<Workload>, ObservedError> {
+    let mut workloads = Vec::new();
+    for workload in &desired.workloads {
+        if workload.quadlet_type != QuadletType::ConfigFile {
+            continue;
+        }
+        let path = Path::new(&workload.systemd_unit_name);
+        if !path.exists() {
+            continue;
+        }
+        let contents = std::fs::read_to_string(path)?;
+        workloads.push(Workload {
+            name: workload.systemd_unit_name.clone(),
+            quadlet_type: QuadletType::ConfigFile,
+            quadlet_contents: contents,
+            systemd_unit_name: workload.systemd_unit_name.clone(),
+            enabled_state: EnabledState::Enabled,
+            restart_policy: RestartPolicy::Always,
+        });
+    }
+    Ok(workloads)
 }
 
 fn systemctl_available() -> bool {

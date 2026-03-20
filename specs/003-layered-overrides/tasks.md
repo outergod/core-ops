@@ -87,6 +87,14 @@ description: "Task list for layered overrides feature"
 - [X] T022 [US2] Validate drop-in targets and file types in `src/core/validation.rs`
 - [X] T023 [US2] Track applied source layers in evaluated artifacts in `src/core/types.rs`
 
+
+- [X] T035 [US2] Define config payload model (base + host overrides) in `src/core/types.rs`
+- [X] T036 [US2] Load config payloads from `services/<service>/config/` in `src/io/repo.rs`
+- [X] T037 [US2] Load host config overrides from `hosts/<host>/overrides/config/` in `src/io/repo.rs`
+- [X] T038 [US2] Apply config layering rules (whole-file replacement + directory overlay) in `src/core/evaluate.rs`
+- [X] T039 [US2] Materialize config payloads to bounded host paths in `src/io/apply.rs`
+- [X] T040 [US2] Validate bounded config roots and reject unsupported formats in `src/core/validation.rs`
+
 **Checkpoint**: User Story 2 functional and testable
 
 ---

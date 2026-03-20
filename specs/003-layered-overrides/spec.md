@@ -43,14 +43,15 @@ services, with no host-specific overlays present.
 ### User Story 2 - Apply host-specific drop-ins without templating (Priority: P2)
 
 As an operator, I want host-specific drop-ins to override shared base artifacts
-without using a templating language so that each host can adjust behavior using
-native Quadlet/systemd mechanisms.
+and config payloads without using a templating language so that each host can
+adjust behavior using native Quadlet/systemd mechanisms and bounded host paths.
 
 **Why this priority**: Host-level customization is the key practical need for
 reusable desired state while preserving native semantics.
 
-**Independent Test**: Add a host-specific drop-in and verify only that host’s
-concrete desired state changes, while other hosts remain unchanged.
+**Independent Test**: Add a host-specific drop-in and a config override and
+verify only that host’s concrete desired state and config materialization change,
+while other hosts remain unchanged.
 
 **Acceptance Scenarios**:
 
@@ -61,6 +62,10 @@ concrete desired state changes, while other hosts remain unchanged.
 2. **Given** multiple hosts with different overlays, **When** each host evaluates
    desired state, **Then** each host’s concrete desired state includes only its
    own overlays.
+3. **Given** shared config payloads plus a host-specific config override,
+   **When** evaluation runs, **Then** the config materialized for that host
+   reflects base payloads with host overrides layered by replacement or
+   directory overlay rules.
 
 ---
 
@@ -119,6 +124,14 @@ outputs and stable diagnostics.
   placeholder substitution.
 - **FR-011**: The system MUST clearly distinguish Quadlet drop-ins from native
   systemd drop-ins in validation and evaluation rules.
+- **FR-012**: Selected services MAY include managed config files and directories
+  that are materialized to bounded host paths (e.g., `/etc/<service>`) and then
+  mounted or referenced by Quadlets.
+- **FR-013**: Config payloads MUST support shared base definitions plus
+  host-specific overrides using whole-file replacement and directory layering.
+- **FR-014**: The system MUST NOT implement semantic merging of TOML/YAML/JSON
+  config formats and MUST preserve explicit boundaries to avoid becoming a
+  general configuration management system.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -138,6 +151,10 @@ outputs and stable diagnostics.
   base artifacts and their native drop-ins.
 - **Host Overlay Set**: A `hosts/<host>/overrides/` tree containing host-specific
   drop-ins layered after service selection.
+- **Config Payload**: Managed files/directories for a service that are
+  materialized to bounded host paths and referenced by Quadlets.
+- **Config Overlay**: Host-specific config files/directories that replace or
+  layer on top of base config payloads.
 
 ## Repository Structure Example
 
@@ -145,55 +162,62 @@ outputs and stable diagnostics.
 repo/
 ├── services/
 │   ├── traefik/
-│   │   ├── traefik.container
-│   │   ├── traefik.container.d/
-│   │   │   └── 10-defaults.conf
-│   │   ├── traefik.socket
-│   │   └── traefik.socket.d/
-│   │       └── 10-defaults.conf
+│   │   ├── quadlet/
+│   │   │   ├── traefik.container
+│   │   │   └── traefik.socket
+│   │   ├── quadlet-overrides/
+│   │   │   └── traefik.container.d/
+│   │   │       └── 10-defaults.conf
+│   │   └── config/
+│   │       └── etc/
+│   │           └── traefik/
+│   │               ├── traefik.toml
+│   │               └── dynamic/
+│   │                   └── routers.toml
 │   │
 │   ├── immich/
-│   │   ├── immich.container
-│   │   ├── immich.volume
-│   │   └── immich.container.d/
-│   │       └── 10-defaults.conf
+│   │   ├── quadlet/
+│   │   │   ├── immich.container
+│   │   │   └── immich.volume
+│   │   └── quadlet-overrides/
+│   │       └── immich.container.d/
+│   │           └── 10-defaults.conf
 │   │
 │   ├── vector/
-│   │   ├── vector.container
-│   │   └── vector.container.d/
-│   │       └── 10-defaults.conf
+│   │   └── quadlet/
+│   │       └── vector.container
 │   │
 │   └── whoami/
-│       └── whoami.container
+│       └── quadlet/
+│           └── whoami.container
 │
 ├── hosts/
 │   ├── kadath/
 │   │   ├── host.yaml
 │   │   └── overrides/
-│   │       ├── traefik.container.d/
-│   │       │   └── 20-host.conf
-│   │       ├── traefik.socket.d/
-│   │       │   └── 20-host.conf
-│   │       ├── immich.container.d/
-│   │       │   └── 20-host.conf
-│   │       └── immich.volume.d/
-│   │           └── 20-host.conf
+│   │       ├── quadlet/
+│   │       │   └── traefik.container.d/
+│   │       │       └── 20-host.conf
+│   │       └── config/
+│   │           └── etc/
+│   │               └── traefik/
+│   │                   ├── traefik.toml
+│   │                   └── dynamic/
+│   │                       └── local.toml
 │   │
 │   ├── rlyeh/
 │   │   ├── host.yaml
 │   │   └── overrides/
-│   │       ├── traefik.container.d/
-│   │       │   └── 20-host.conf
-│   │       └── vector.container.d/
-│   │           └── 20-host.conf
+│   │       └── quadlet/
+│   │           └── vector.container.d/
+│   │               └── 20-host.conf
 │   │
 │   └── ulthar/
 │       ├── host.yaml
 │       └── overrides/
-│           ├── traefik.socket.d/
-│           │   └── 20-host.conf
-│           └── whoami.container.d/
-│               └── 20-host.conf
+│           └── quadlet/
+│               └── whoami.container.d/
+│                   └── 20-host.conf
 │
 └── README.md
 ```

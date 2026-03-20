@@ -5,12 +5,16 @@ use tempfile::TempDir;
 
 use crate::core::evaluate::{evaluate_desired_state, EvaluationOutput};
 use crate::core::types::{
-    ArtifactSource, Boundaries, BoundaryScope, DesiredState, DropInSource, EnabledState,
-    EvaluationInput, EvaluatedArtifact, EvaluatedDropIn, HostDeclaration, HostOverlaySet, Invariant,
-    QuadletType, RestartPolicy, ServiceCatalog, ServiceDefinition, Workload,
+    ArtifactSource, Boundaries, BoundaryScope, ConfigFileSource, DesiredState, DropInSource,
+    EnabledState, EvaluationInput, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn,
+    HostDeclaration, HostOverlaySet, Invariant, QuadletType, RestartPolicy, ServiceCatalog,
+    ServiceDefinition, Workload,
 };
 use crate::io::quadlet::{parse_quadlet_name, read_quadlet_dir, QuadletError};
-use crate::core::validation::{validate_dropin_targets as validate_dropin_targets_fn, validate_service_selection};
+use crate::core::validation::{
+    validate_config_paths, validate_dropin_targets as validate_dropin_targets_fn,
+    validate_service_selection,
+};
 use serde::Deserialize;
 
 pub const HOST_OVERRIDE_ENV: &str = "CORE_OPS_HOST";
@@ -173,6 +177,9 @@ fn load_layered_desired_state(
     let overlays = load_host_overrides(&host_dir)?;
     let all_artifacts = all_service_artifacts(&catalog);
     validate_dropin_targets(&catalog, &overlays, &all_artifacts)?;
+    let config_paths = collect_config_paths(&catalog, &overlays);
+    validate_config_paths(&config_paths)
+        .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
 
     let input = EvaluationInput {
         host: host_decl,
@@ -272,6 +279,7 @@ fn load_service_definition(
 ) -> Result<ServiceDefinition, RepoError> {
     let mut artifacts = Vec::new();
     let mut base_dropins = Vec::new();
+    let mut config_files = Vec::new();
     for entry in fs::read_dir(service_dir).map_err(|err| RepoError::Io(err.to_string()))? {
         let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
         let path = entry.path();
@@ -282,6 +290,9 @@ fn load_service_definition(
         if path.is_dir() {
             if let Some(target) = dropin_target_from_dir(&file_name) {
                 base_dropins.extend(read_dropins(&path, &target)?);
+            }
+            if file_name == "config" {
+                config_files.extend(read_config_files(&path)?);
             }
             continue;
         }
@@ -301,6 +312,7 @@ fn load_service_definition(
         name: service_name.to_string(),
         artifacts,
         base_dropins,
+        config_files,
     })
 }
 
@@ -314,10 +326,12 @@ fn load_host_overrides(host_dir: &Path) -> Result<HostOverlaySet, RepoError> {
         return Ok(HostOverlaySet {
             host: host_name.to_string(),
             overrides: Vec::new(),
+            config_overrides: Vec::new(),
         });
     }
 
     let mut overrides = Vec::new();
+    let mut config_overrides = Vec::new();
     for entry in fs::read_dir(&overrides_dir).map_err(|err| RepoError::Io(err.to_string()))? {
         let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
         let path = entry.path();
@@ -331,11 +345,15 @@ fn load_host_overrides(host_dir: &Path) -> Result<HostOverlaySet, RepoError> {
         if let Some(target) = dropin_target_from_dir(&file_name) {
             overrides.extend(read_dropins(&path, &target)?);
         }
+        if file_name == "config" {
+            config_overrides.extend(read_config_files(&path)?);
+        }
     }
 
     Ok(HostOverlaySet {
         host: host_name.to_string(),
         overrides,
+        config_overrides,
     })
 }
 
@@ -394,6 +412,12 @@ fn workloads_from_evaluation(output: &EvaluationOutput) -> Vec<Workload> {
             .iter()
             .map(workload_from_socket_dropin),
     );
+    workloads.extend(
+        output
+            .config_files
+            .iter()
+            .map(workload_from_config_file),
+    );
     workloads
 }
 
@@ -424,6 +448,17 @@ fn workload_from_socket_dropin(dropin: &EvaluatedDropIn) -> Workload {
     }
 }
 
+fn workload_from_config_file(file: &EvaluatedConfigFile) -> Workload {
+    Workload {
+        name: file.target_path.clone(),
+        quadlet_type: QuadletType::ConfigFile,
+        quadlet_contents: file.contents.clone(),
+        systemd_unit_name: file.target_path.clone(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    }
+}
+
 fn all_service_artifacts(catalog: &ServiceCatalog) -> Vec<ArtifactSource> {
     let mut artifacts = Vec::new();
     for service in catalog.services.values() {
@@ -444,6 +479,55 @@ fn validate_dropin_targets(
     dropins.extend(overlays.overrides.iter().cloned());
     validate_dropin_targets_fn(&dropins, artifacts)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))
+}
+
+fn read_config_files(config_root: &Path) -> Result<Vec<ConfigFileSource>, RepoError> {
+    let mut files = Vec::new();
+    for entry in walk_config_dir(config_root)? {
+        let rel = entry.strip_prefix(config_root).map_err(|err| RepoError::Io(err.to_string()))?;
+        let rel_str = rel.to_string_lossy();
+        if rel_str.starts_with("etc/") {
+            let contents = fs::read_to_string(&entry).map_err(|err| RepoError::Io(err.to_string()))?;
+            let target_path = format!("/{}", rel_str);
+            files.push(ConfigFileSource {
+                target_path,
+                contents,
+                source_path: entry.display().to_string(),
+            });
+        }
+    }
+    Ok(files)
+}
+
+fn walk_config_dir(root: &Path) -> Result<Vec<PathBuf>, RepoError> {
+    let mut files = Vec::new();
+    if !root.exists() {
+        return Ok(files);
+    }
+    for entry in fs::read_dir(root).map_err(|err| RepoError::Io(err.to_string()))? {
+        let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            files.extend(walk_config_dir(&path)?);
+        } else {
+            files.push(path);
+        }
+    }
+    Ok(files)
+}
+
+fn collect_config_paths(catalog: &ServiceCatalog, overlays: &HostOverlaySet) -> Vec<String> {
+    let mut paths = Vec::new();
+    for service in catalog.services.values() {
+        paths.extend(service.config_files.iter().map(|f| f.target_path.clone()));
+    }
+    paths.extend(
+        overlays
+            .config_overrides
+            .iter()
+            .map(|f| f.target_path.clone()),
+    );
+    paths
 }
 
 fn git_clone(repo: &str, dest: &Path) -> Result<(), RepoError> {

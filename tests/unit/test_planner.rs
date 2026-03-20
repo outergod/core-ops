@@ -13,6 +13,7 @@ fn workload_with_type(name: &str, quadlet_type: QuadletType) -> Workload {
         QuadletType::Container => "container",
         QuadletType::Socket => "socket",
         QuadletType::SocketDropIn => "socket-dropin",
+        QuadletType::ConfigFile => "config",
         QuadletType::Volume => "volume",
         QuadletType::Pod => "pod",
         QuadletType::Network => "network",

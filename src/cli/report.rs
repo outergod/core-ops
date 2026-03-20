@@ -32,6 +32,7 @@ fn quadlet_type_label(quadlet_type: Option<QuadletType>) -> &'static str {
         Some(QuadletType::Container) => "container",
         Some(QuadletType::Socket) => "socket",
         Some(QuadletType::SocketDropIn) => "socket-dropin",
+        Some(QuadletType::ConfigFile) => "config",
         Some(QuadletType::Volume) => "volume",
         Some(QuadletType::Pod) => "pod",
         Some(QuadletType::Network) => "network",

@@ -7,22 +7,23 @@
 
 ## Summary
 
-Add a deterministic evaluation phase that composes shared base artifacts with
-host-selected services and host-specific drop-ins, producing a concrete desired
-state before diff/plan/apply. Reuse is achieved via native Quadlet and systemd
-drop-in semantics, without any templating language, and with explicit failures
-for invalid overlays or undefined services.
+Add a deterministic evaluation phase that composes shared base artifacts,
+host-selected services, host-specific drop-ins, and bounded config payloads,
+producing a concrete desired state before diff/plan/apply. Reuse is achieved
+via native Quadlet and systemd drop-in semantics plus whole-file config layering,
+without any templating language, and with explicit failures for invalid overlays
+or undefined services.
 
 ## Technical Context
 
 **Language/Version**: Rust (stable toolchain)
 **Primary Dependencies**: Git (CLI), systemd (systemctl), Quadlet generator, clap, thiserror, miette, journald logger, serde, serde_yaml, libc
-**Storage**: Files on disk (repository layout + evaluated desired state in memory)
+**Storage**: Files on disk (repository layout + bounded config payloads + evaluated desired state in memory)
 **Testing**: cargo test (unit + integration)
 **Target Platform**: Fedora CoreOS (single host)
 **Project Type**: CLI + systemd service/timer agent
 **Performance Goals**: Evaluation overhead <= 1s per 50 artifacts (per SC-004)
-**Constraints**: No templating language; deterministic evaluation; explicit failure diagnostics; native Quadlet/systemd drop-ins only
+**Constraints**: No templating language; no semantic config merging; deterministic evaluation; explicit failure diagnostics; native Quadlet/systemd drop-ins only
 **Scale/Scope**: Single host, shared base definitions reused across multiple hosts
 
 ## Constitution Check

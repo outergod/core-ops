@@ -17,7 +17,9 @@ pub fn apply(
     let repo_source = repo_source.to_string();
     let deps = ReconcileDependencies {
         load_desired: &|| load_desired_state(&repo_source, revision).map_err(map_plan_error),
-        read_observed: &|| read_observed_state(quadlet_dir, None).map_err(map_plan_error),
+        read_observed: &|desired| {
+            read_observed_state(quadlet_dir, Some(desired), None).map_err(map_plan_error)
+        },
         apply_plan: &|plan, desired| {
             apply_plan(plan, &desired.workloads, quadlet_dir, reload_systemd)
                 .map(|_| ())
@@ -40,7 +42,9 @@ pub fn apply_with_report(
     let repo_source = repo_source.to_string();
     let deps = ReconcileDependencies {
         load_desired: &|| load_desired_state(&repo_source, revision).map_err(map_plan_error),
-        read_observed: &|| read_observed_state(quadlet_dir, None).map_err(map_plan_error),
+        read_observed: &|desired| {
+            read_observed_state(quadlet_dir, Some(desired), None).map_err(map_plan_error)
+        },
         apply_plan: &|plan, desired| {
             apply_plan(plan, &desired.workloads, quadlet_dir, reload_systemd)
                 .map(|_| ())

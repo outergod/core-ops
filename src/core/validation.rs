@@ -44,6 +44,24 @@ pub fn validate_dropin_targets(
     Ok(())
 }
 
+pub fn validate_config_paths(paths: &[String]) -> Result<(), ValidationError> {
+    for path in paths {
+        if !path.starts_with("/etc/") {
+            return Err(ValidationError::new(
+                ValidationErrorKind::MissingArtifactTarget,
+                format!("config path outside allowed root: {}", path),
+            ));
+        }
+        if path.contains("..") {
+            return Err(ValidationError::new(
+                ValidationErrorKind::MissingArtifactTarget,
+                format!("config path traversal not allowed: {}", path),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_invariants(invariants: &[Invariant]) -> Result<(), ValidationError> {
     if !invariants.contains(&Invariant::BoundariesDeclared) {
         return Err(ValidationError::new(
