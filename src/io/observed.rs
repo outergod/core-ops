@@ -57,7 +57,10 @@ pub fn read_observed_state(
 
     let mut workloads: Vec<Workload> = read_quadlet_dir(quadlet_dir)?;
     let socket_dir = systemd_unit_dir();
-    workloads.extend(read_socket_units(&socket_dir)?);
+    let socket_units = read_socket_units(&socket_dir)?;
+    let socket_dropins = read_socket_dropins(&socket_dir, &socket_units)?;
+    workloads.extend(socket_units);
+    workloads.extend(socket_dropins);
     let units = read_systemd_units(&workloads)?;
 
     Ok(ObservedState {
@@ -113,6 +116,44 @@ fn read_socket_units(dir: &Path) -> Result<Vec<Workload>, ObservedError> {
     Ok(workloads)
 }
 
+fn read_socket_dropins(
+    dir: &Path,
+    sockets: &[Workload],
+) -> Result<Vec<Workload>, ObservedError> {
+    let mut workloads = Vec::new();
+    for socket in sockets {
+        let dropin_dir = dir.join(format!("{}.d", socket.systemd_unit_name));
+        if !dropin_dir.exists() {
+            continue;
+        }
+        for entry in std::fs::read_dir(dropin_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                continue;
+            }
+            let file_name = match path.file_name().and_then(|name| name.to_str()) {
+                Some(name) if !name.starts_with('.') => name.to_string(),
+                _ => continue,
+            };
+            if !file_name.ends_with(".conf") {
+                continue;
+            }
+            let contents = std::fs::read_to_string(&path)?;
+            let unit_name = format!("{}.d/{}", socket.systemd_unit_name, file_name);
+            workloads.push(Workload {
+                name: unit_name.clone(),
+                quadlet_type: QuadletType::SocketDropIn,
+                quadlet_contents: contents,
+                systemd_unit_name: unit_name,
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            });
+        }
+    }
+    Ok(workloads)
+}
+
 fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, ObservedError> {
     if !systemctl_available() {
         log::warn!("systemctl unavailable; skipping unit discovery");
@@ -121,6 +162,9 @@ fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, Obser
 
     let mut units = Vec::new();
     for workload in workloads {
+        if workload.quadlet_type == QuadletType::SocketDropIn {
+            continue;
+        }
         let unit_name = systemd_unit_for_quadlet_file(&workload.systemd_unit_name);
         match query_unit_state(&unit_name)? {
             Some(unit) => units.push(unit),

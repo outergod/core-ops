@@ -12,6 +12,7 @@ fn workload_with_type(name: &str, quadlet_type: QuadletType) -> Workload {
     let extension = match quadlet_type {
         QuadletType::Container => "container",
         QuadletType::Socket => "socket",
+        QuadletType::SocketDropIn => "socket-dropin",
         QuadletType::Volume => "volume",
         QuadletType::Pod => "pod",
         QuadletType::Network => "network",

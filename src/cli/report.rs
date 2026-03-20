@@ -31,6 +31,7 @@ fn quadlet_type_label(quadlet_type: Option<QuadletType>) -> &'static str {
     match quadlet_type {
         Some(QuadletType::Container) => "container",
         Some(QuadletType::Socket) => "socket",
+        Some(QuadletType::SocketDropIn) => "socket-dropin",
         Some(QuadletType::Volume) => "volume",
         Some(QuadletType::Pod) => "pod",
         Some(QuadletType::Network) => "network",
@@ -44,14 +45,20 @@ fn action_label(
 ) -> String {
     match action {
         crate::core::types::PlanActionType::WriteQuadlet => {
-            if matches!(quadlet_type, Some(QuadletType::Socket)) {
+            if matches!(
+                quadlet_type,
+                Some(QuadletType::Socket) | Some(QuadletType::SocketDropIn)
+            ) {
                 "WriteUnit".to_string()
             } else {
                 "WriteQuadlet".to_string()
             }
         }
         crate::core::types::PlanActionType::RemoveQuadlet => {
-            if matches!(quadlet_type, Some(QuadletType::Socket)) {
+            if matches!(
+                quadlet_type,
+                Some(QuadletType::Socket) | Some(QuadletType::SocketDropIn)
+            ) {
                 "RemoveUnit".to_string()
             } else {
                 "RemoveQuadlet".to_string()

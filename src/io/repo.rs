@@ -6,11 +6,11 @@ use tempfile::TempDir;
 use crate::core::evaluate::{evaluate_desired_state, EvaluationOutput};
 use crate::core::types::{
     ArtifactSource, Boundaries, BoundaryScope, DesiredState, DropInSource, EnabledState,
-    EvaluationInput, EvaluatedArtifact, HostDeclaration, HostOverlaySet, Invariant, QuadletType,
-    RestartPolicy, ServiceCatalog, ServiceDefinition, Workload,
+    EvaluationInput, EvaluatedArtifact, EvaluatedDropIn, HostDeclaration, HostOverlaySet, Invariant,
+    QuadletType, RestartPolicy, ServiceCatalog, ServiceDefinition, Workload,
 };
 use crate::io::quadlet::{parse_quadlet_name, read_quadlet_dir, QuadletError};
-use crate::core::validation::validate_service_selection;
+use crate::core::validation::{validate_dropin_targets as validate_dropin_targets_fn, validate_service_selection};
 use serde::Deserialize;
 
 pub const HOST_OVERRIDE_ENV: &str = "CORE_OPS_HOST";
@@ -40,6 +40,7 @@ pub enum RepoError {
     Io(String),
     EvaluationFailed(String),
     ValidationFailed(String),
+    InvalidDropIn(String),
 }
 
 impl From<QuadletError> for RepoError {
@@ -75,6 +76,7 @@ impl std::fmt::Display for RepoError {
             RepoError::Io(err) => write!(f, "repo io error: {}", err),
             RepoError::EvaluationFailed(err) => write!(f, "evaluation failed: {}", err),
             RepoError::ValidationFailed(err) => write!(f, "validation failed: {}", err),
+            RepoError::InvalidDropIn(err) => write!(f, "invalid drop-in: {}", err),
         }
     }
 }
@@ -169,6 +171,8 @@ fn load_layered_desired_state(
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let overlays = load_host_overrides(&host_dir)?;
+    let all_artifacts = all_service_artifacts(&catalog);
+    validate_dropin_targets(&catalog, &overlays, &all_artifacts)?;
 
     let input = EvaluationInput {
         host: host_decl,
@@ -352,7 +356,10 @@ fn read_dropins(dir: &Path, target: &str) -> Result<Vec<DropInSource>, RepoError
             _ => continue,
         };
         if !file_name.ends_with(".conf") {
-            continue;
+            return Err(RepoError::InvalidDropIn(format!(
+                "unsupported drop-in extension: {}",
+                file_name
+            )));
         }
         let contents =
             fs::read_to_string(&path).map_err(|err| RepoError::Io(err.to_string()))?;
@@ -376,11 +383,18 @@ fn read_hostname() -> Result<String, std::io::Error> {
 }
 
 fn workloads_from_evaluation(output: &EvaluationOutput) -> Vec<Workload> {
-    output
+    let mut workloads: Vec<Workload> = output
         .artifacts
         .iter()
         .map(workload_from_artifact)
-        .collect()
+        .collect();
+    workloads.extend(
+        output
+            .socket_dropins
+            .iter()
+            .map(workload_from_socket_dropin),
+    );
+    workloads
 }
 
 fn workload_from_artifact(artifact: &EvaluatedArtifact) -> Workload {
@@ -397,6 +411,39 @@ fn workload_from_artifact(artifact: &EvaluatedArtifact) -> Workload {
         enabled_state: EnabledState::Enabled,
         restart_policy: RestartPolicy::Always,
     }
+}
+
+fn workload_from_socket_dropin(dropin: &EvaluatedDropIn) -> Workload {
+    Workload {
+        name: format!("{}.d/{}", dropin.target, dropin.file_name),
+        quadlet_type: QuadletType::SocketDropIn,
+        quadlet_contents: dropin.contents.clone(),
+        systemd_unit_name: format!("{}.d/{}", dropin.target, dropin.file_name),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    }
+}
+
+fn all_service_artifacts(catalog: &ServiceCatalog) -> Vec<ArtifactSource> {
+    let mut artifacts = Vec::new();
+    for service in catalog.services.values() {
+        artifacts.extend(service.artifacts.iter().cloned());
+    }
+    artifacts
+}
+
+fn validate_dropin_targets(
+    catalog: &ServiceCatalog,
+    overlays: &HostOverlaySet,
+    artifacts: &[ArtifactSource],
+) -> Result<(), RepoError> {
+    let mut dropins = Vec::new();
+    for service in catalog.services.values() {
+        dropins.extend(service.base_dropins.iter().cloned());
+    }
+    dropins.extend(overlays.overrides.iter().cloned());
+    validate_dropin_targets_fn(&dropins, artifacts)
+        .map_err(|err| RepoError::ValidationFailed(err.to_string()))
 }
 
 fn git_clone(repo: &str, dest: &Path) -> Result<(), RepoError> {

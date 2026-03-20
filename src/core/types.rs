@@ -64,6 +64,14 @@ pub struct EvaluatedArtifact {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvaluatedDropIn {
+    pub target: String,
+    pub file_name: String,
+    pub contents: String,
+    pub source_path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Workload {
     pub name: String,
     pub quadlet_type: QuadletType,
@@ -158,6 +166,7 @@ pub enum DiffKind {
 pub enum QuadletType {
     Container,
     Socket,
+    SocketDropIn,
     Pod,
     Volume,
     Network,

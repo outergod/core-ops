@@ -77,15 +77,15 @@ description: "Task list for layered overrides feature"
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T018 [P] [US2] Unit test for drop-in ordering/precedence in `tests/unit/test_dropin_order.rs`
-- [ ] T019 [P] [US2] Integration test for host overlays application in `tests/integration/test_host_overrides.rs`
+- [X] T018 [P] [US2] Unit test for drop-in ordering/precedence in `tests/unit/test_dropin_order.rs`
+- [X] T019 [P] [US2] Integration test for host overlays application in `tests/integration/test_host_overrides.rs`
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Apply base drop-ins in lexicographic order in `src/core/evaluate.rs`
-- [ ] T021 [US2] Apply host overrides after base drop-ins in `src/core/evaluate.rs`
-- [ ] T022 [US2] Validate drop-in targets and file types in `src/core/validation.rs`
-- [ ] T023 [US2] Track applied source layers in evaluated artifacts in `src/core/types.rs`
+- [X] T020 [US2] Apply base drop-ins in lexicographic order in `src/core/evaluate.rs`
+- [X] T021 [US2] Apply host overrides after base drop-ins in `src/core/evaluate.rs`
+- [X] T022 [US2] Validate drop-in targets and file types in `src/core/validation.rs`
+- [X] T023 [US2] Track applied source layers in evaluated artifacts in `src/core/types.rs`
 
 **Checkpoint**: User Story 2 functional and testable
 

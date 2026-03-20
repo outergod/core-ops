@@ -69,6 +69,7 @@ fn actions_for_diff(
     container_stems: &HashSet<String>,
 ) -> Vec<PlanAction> {
     let manage_unit = match quadlet_type {
+        Some(QuadletType::SocketDropIn) => false,
         Some(QuadletType::Volume) => false,
         Some(QuadletType::Container) => {
             let stem = stem_for_unit_name(name);
@@ -186,20 +187,22 @@ fn order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
         Some(QuadletType::Volume) => 0,
         Some(QuadletType::Container) => 1,
         Some(QuadletType::Socket) => 2,
-        Some(QuadletType::Pod) => 3,
-        Some(QuadletType::Network) => 4,
-        None => 5,
+        Some(QuadletType::SocketDropIn) => 3,
+        Some(QuadletType::Pod) => 4,
+        Some(QuadletType::Network) => 5,
+        None => 6,
     }
 }
 
 fn reverse_order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
     match quadlet_type {
-        Some(QuadletType::Socket) => 0,
-        Some(QuadletType::Container) => 1,
-        Some(QuadletType::Volume) => 2,
-        Some(QuadletType::Pod) => 3,
-        Some(QuadletType::Network) => 4,
-        None => 5,
+        Some(QuadletType::SocketDropIn) => 0,
+        Some(QuadletType::Socket) => 1,
+        Some(QuadletType::Container) => 2,
+        Some(QuadletType::Volume) => 3,
+        Some(QuadletType::Pod) => 4,
+        Some(QuadletType::Network) => 5,
+        None => 6,
     }
 }
 
