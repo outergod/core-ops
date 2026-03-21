@@ -81,12 +81,15 @@ fn actions_for_diff(
         }
         _ => true,
     };
+    let reload_systemd = !matches!(quadlet_type, Some(QuadletType::ConfigFile));
     match kind {
         DiffKind::Add => {
             let mut actions = vec![
                 action(PlanActionType::WriteQuadlet, name),
-                action(PlanActionType::ReloadSystemd, name),
             ];
+            if reload_systemd {
+                actions.push(action(PlanActionType::ReloadSystemd, name));
+            }
             if manage_unit {
                 actions.push(action(PlanActionType::StartUnit, name));
             }
@@ -104,14 +107,18 @@ fn actions_for_diff(
                 actions.push(action(PlanActionType::StopUnit, name));
             }
             actions.push(action(PlanActionType::RemoveQuadlet, name));
-            actions.push(action(PlanActionType::ReloadSystemd, name));
+            if reload_systemd {
+                actions.push(action(PlanActionType::ReloadSystemd, name));
+            }
             actions
         }
         DiffKind::Change => {
             let mut actions = vec![
                 action(PlanActionType::WriteQuadlet, name),
-                action(PlanActionType::ReloadSystemd, name),
             ];
+            if reload_systemd {
+                actions.push(action(PlanActionType::ReloadSystemd, name));
+            }
             if manage_unit {
                 actions.push(action(PlanActionType::StartUnit, name));
             }
@@ -187,11 +194,11 @@ fn order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
     match quadlet_type {
         Some(QuadletType::ConfigFile) => 0,
         Some(QuadletType::Volume) => 1,
-        Some(QuadletType::Container) => 2,
-        Some(QuadletType::Socket) => 3,
-        Some(QuadletType::SocketDropIn) => 4,
-        Some(QuadletType::Pod) => 5,
-        Some(QuadletType::Network) => 6,
+        Some(QuadletType::Network) => 2,
+        Some(QuadletType::Container) => 3,
+        Some(QuadletType::Socket) => 4,
+        Some(QuadletType::SocketDropIn) => 5,
+        Some(QuadletType::Pod) => 6,
         None => 7,
     }
 }
@@ -202,9 +209,9 @@ fn reverse_order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
         Some(QuadletType::Socket) => 1,
         Some(QuadletType::Container) => 2,
         Some(QuadletType::Volume) => 3,
-        Some(QuadletType::ConfigFile) => 4,
-        Some(QuadletType::Pod) => 5,
-        Some(QuadletType::Network) => 6,
+        Some(QuadletType::Network) => 4,
+        Some(QuadletType::ConfigFile) => 5,
+        Some(QuadletType::Pod) => 6,
         None => 7,
     }
 }

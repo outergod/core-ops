@@ -288,11 +288,21 @@ fn load_service_definition(
             _ => continue,
         };
         if path.is_dir() {
+            if file_name == "quadlet" {
+                artifacts.extend(read_quadlet_files(&path)?);
+                continue;
+            }
+            if file_name == "quadlet-overrides" {
+                base_dropins.extend(read_dropins_from_root(&path)?);
+                continue;
+            }
             if let Some(target) = dropin_target_from_dir(&file_name) {
                 base_dropins.extend(read_dropins(&path, &target)?);
+                continue;
             }
             if file_name == "config" {
                 config_files.extend(read_config_files(&path)?);
+                continue;
             }
             continue;
         }
@@ -342,8 +352,13 @@ fn load_host_overrides(host_dir: &Path) -> Result<HostOverlaySet, RepoError> {
             Some(name) if !name.starts_with('.') => name.to_string(),
             _ => continue,
         };
+        if file_name == "quadlet" {
+            overrides.extend(read_dropins_from_root(&path)?);
+            continue;
+        }
         if let Some(target) = dropin_target_from_dir(&file_name) {
             overrides.extend(read_dropins(&path, &target)?);
+            continue;
         }
         if file_name == "config" {
             config_overrides.extend(read_config_files(&path)?);
@@ -386,6 +401,28 @@ fn read_dropins(dir: &Path, target: &str) -> Result<Vec<DropInSource>, RepoError
             contents,
             source_path: path.display().to_string(),
         });
+    }
+    Ok(dropins)
+}
+
+fn read_dropins_from_root(root: &Path) -> Result<Vec<DropInSource>, RepoError> {
+    let mut dropins = Vec::new();
+    if !root.exists() {
+        return Ok(dropins);
+    }
+    for entry in fs::read_dir(root).map_err(|err| RepoError::Io(err.to_string()))? {
+        let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let file_name = match path.file_name().and_then(|name| name.to_str()) {
+            Some(name) if !name.starts_with('.') => name.to_string(),
+            _ => continue,
+        };
+        if let Some(target) = dropin_target_from_dir(&file_name) {
+            dropins.extend(read_dropins(&path, &target)?);
+        }
     }
     Ok(dropins)
 }
@@ -528,6 +565,32 @@ fn collect_config_paths(catalog: &ServiceCatalog, overlays: &HostOverlaySet) -> 
             .map(|f| f.target_path.clone()),
     );
     paths
+}
+
+fn read_quadlet_files(dir: &Path) -> Result<Vec<ArtifactSource>, RepoError> {
+    let mut artifacts = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|err| RepoError::Io(err.to_string()))? {
+        let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            continue;
+        }
+        let file_name = match path.file_name().and_then(|name| name.to_str()) {
+            Some(name) if !name.starts_with('.') => name.to_string(),
+            _ => continue,
+        };
+        if let Ok((_, quadlet_type)) = parse_quadlet_name(&file_name) {
+            let contents =
+                fs::read_to_string(&path).map_err(|err| RepoError::Io(err.to_string()))?;
+            artifacts.push(ArtifactSource {
+                name: file_name,
+                quadlet_type,
+                contents,
+                source_path: path.display().to_string(),
+            });
+        }
+    }
+    Ok(artifacts)
 }
 
 fn git_clone(repo: &str, dest: &Path) -> Result<(), RepoError> {

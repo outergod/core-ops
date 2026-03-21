@@ -83,6 +83,7 @@ fn plan_orders_actions_by_quadlet_type() {
     let desired = desired_state(vec![
         workload_with_type("socket", QuadletType::Socket),
         workload_with_type("container", QuadletType::Container),
+        workload_with_type("network", QuadletType::Network),
         workload_with_type("volume", QuadletType::Volume),
     ]);
     let observed = observed_state(Vec::new());
@@ -99,6 +100,11 @@ fn plan_orders_actions_by_quadlet_type() {
         "container.container".to_string(),
         "container.container".to_string(),
     ];
+    let network_prefix = vec![
+        "network.network".to_string(),
+        "network.network".to_string(),
+        "network.network".to_string(),
+    ];
     let socket_prefix = vec![
         "socket.socket".to_string(),
         "socket.socket".to_string(),
@@ -106,6 +112,7 @@ fn plan_orders_actions_by_quadlet_type() {
     ];
 
     assert_eq!(&targets[..2], &volume_prefix[..]);
-    assert_eq!(&targets[2..5], &container_prefix[..]);
-    assert_eq!(&targets[5..8], &socket_prefix[..]);
+    assert_eq!(&targets[2..5], &network_prefix[..]);
+    assert_eq!(&targets[5..8], &container_prefix[..]);
+    assert_eq!(&targets[8..11], &socket_prefix[..]);
 }
