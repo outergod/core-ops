@@ -464,8 +464,13 @@ fn workload_from_artifact(artifact: &EvaluatedArtifact) -> Workload {
     } else {
         artifact.contents.clone()
     };
+    let name = Path::new(&artifact.name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(&artifact.name)
+        .to_string();
     Workload {
-        name: artifact.name.clone(),
+        name,
         quadlet_type: artifact.quadlet_type.clone(),
         quadlet_contents: contents,
         systemd_unit_name: artifact.name.clone(),

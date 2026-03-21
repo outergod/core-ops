@@ -53,6 +53,8 @@ pub fn apply_plan(
     let mut files_written = Vec::new();
     let mut files_removed = Vec::new();
 
+    let mut deferred_starts: Vec<String> = Vec::new();
+
     for action in &plan.actions {
         match &action.action_type {
             PlanActionType::WriteQuadlet => {
@@ -118,12 +120,11 @@ pub fn apply_plan(
                 // Quadlet-generated units rely on [Install] processing; no disable call is needed.
             }
             PlanActionType::StartUnit => {
-                let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &action.target)?;
-                run_systemctl(&["start", &unit])?;
+                deferred_starts.push(action.target.clone());
             }
             PlanActionType::StopUnit => {
                 let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &action.target)?;
-                run_systemctl(&["stop", &unit])?;
+                run_systemctl_allow_not_loaded(&["stop", &unit])?;
             }
             PlanActionType::ReloadSystemd => {
                 if reload_systemd {
@@ -137,6 +138,11 @@ pub fn apply_plan(
                 )));
             }
         }
+    }
+
+    for target in deferred_starts {
+        let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &target)?;
+        run_systemctl(&["start", &unit])?;
     }
 
     Ok(ApplyOutcome {
@@ -190,6 +196,21 @@ fn run_systemctl(args: &[&str]) -> Result<(), ApplyError> {
         ));
     }
     Ok(())
+}
+
+fn run_systemctl_allow_not_loaded(args: &[&str]) -> Result<(), ApplyError> {
+    let output = std::process::Command::new("systemctl")
+        .args(args)
+        .output()
+        .map_err(|err| ApplyError::SystemdCommandFailed(err.to_string()))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("not loaded") || stderr.contains("not found") {
+        return Ok(());
+    }
+    Err(ApplyError::SystemdCommandFailed(stderr.to_string()))
 }
 
 

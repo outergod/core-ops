@@ -196,8 +196,8 @@ fn order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
         Some(QuadletType::Volume) => 1,
         Some(QuadletType::Network) => 2,
         Some(QuadletType::Container) => 3,
-        Some(QuadletType::Socket) => 4,
-        Some(QuadletType::SocketDropIn) => 5,
+        Some(QuadletType::SocketDropIn) => 4,
+        Some(QuadletType::Socket) => 5,
         Some(QuadletType::Pod) => 6,
         None => 7,
     }
