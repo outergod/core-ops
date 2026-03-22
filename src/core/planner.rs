@@ -120,7 +120,13 @@ fn actions_for_diff(
                 actions.push(action(PlanActionType::ReloadSystemd, name));
             }
             if manage_unit {
-                actions.push(action(PlanActionType::StartUnit, name));
+                actions.push(action(PlanActionType::RestartUnit, name));
+            }
+            if should_restart_service_for_container(quadlet_type.as_ref(), name, socket_stems) {
+                actions.push(action(
+                    PlanActionType::RestartUnit,
+                    &format!("{}.service", stem_for_unit_name(name).unwrap_or(name)),
+                ));
             }
             if should_start_service_for_socket(quadlet_type.as_ref(), name, container_stems) {
                 actions.push(action(
@@ -163,6 +169,20 @@ fn should_start_service_for_socket(
     }
     match stem_for_unit_name(name) {
         Some(stem) => container_stems.contains(stem),
+        None => false,
+    }
+}
+
+fn should_restart_service_for_container(
+    quadlet_type: Option<&QuadletType>,
+    name: &str,
+    socket_stems: &HashSet<String>,
+) -> bool {
+    if !matches!(quadlet_type, Some(QuadletType::Container)) {
+        return false;
+    }
+    match stem_for_unit_name(name) {
+        Some(stem) => socket_stems.contains(stem),
         None => false,
     }
 }

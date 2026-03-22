@@ -54,6 +54,7 @@ pub fn apply_plan(
     let mut files_removed = Vec::new();
 
     let mut deferred_starts: Vec<String> = Vec::new();
+    let mut deferred_restarts: Vec<String> = Vec::new();
 
     for action in &plan.actions {
         match &action.action_type {
@@ -122,6 +123,9 @@ pub fn apply_plan(
             PlanActionType::StartUnit => {
                 deferred_starts.push(action.target.clone());
             }
+            PlanActionType::RestartUnit => {
+                deferred_restarts.push(action.target.clone());
+            }
             PlanActionType::StopUnit => {
                 let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &action.target)?;
                 run_systemctl_allow_not_loaded(&["stop", &unit])?;
@@ -140,7 +144,16 @@ pub fn apply_plan(
         }
     }
 
+    let mut restarted = std::collections::HashSet::new();
+    for target in deferred_restarts {
+        let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &target)?;
+        run_systemctl(&["restart", &unit])?;
+        restarted.insert(target);
+    }
     for target in deferred_starts {
+        if restarted.contains(&target) {
+            continue;
+        }
         let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &target)?;
         run_systemctl(&["start", &unit])?;
     }

@@ -15,7 +15,6 @@ pub struct EvaluationOutput {
 pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutput, EvaluationError> {
     let mut artifacts = Vec::new();
     let mut socket_dropins = Vec::new();
-    let mut config_files = Vec::new();
     for service_name in &input.host.services {
         let service = input
             .catalog
@@ -45,16 +44,22 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
             });
         }
 
-        let base_configs = &service.config_files;
-        let host_configs = input
-            .overlays
-            .config_overrides
-            .iter()
-            .filter(|cfg| cfg.target_path.starts_with("/etc/"))
-            .cloned()
-            .collect::<Vec<_>>();
-        config_files.extend(overlay_config_files(base_configs, &host_configs));
     }
+    let base_configs: Vec<ConfigFileSource> = input
+        .host
+        .services
+        .iter()
+        .filter_map(|service_name| input.catalog.services.get(service_name))
+        .flat_map(|service| service.config_files.iter().cloned())
+        .collect();
+    let host_configs = input
+        .overlays
+        .config_overrides
+        .iter()
+        .filter(|cfg| cfg.target_path.starts_with("/etc/"))
+        .cloned()
+        .collect::<Vec<_>>();
+    let config_files = overlay_config_files(&base_configs, &host_configs);
     artifacts.sort_by(|a, b| a.name.cmp(&b.name));
     socket_dropins.sort_by(|a, b| {
         (a.target.clone(), a.file_name.clone()).cmp(&(b.target.clone(), b.file_name.clone()))

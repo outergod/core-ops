@@ -217,6 +217,7 @@ pub enum PlanActionType {
     DisableUnit,
     ReloadSystemd,
     StartUnit,
+    RestartUnit,
     StopUnit,
     Unknown(String),
 }
