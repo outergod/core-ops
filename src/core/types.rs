@@ -353,11 +353,51 @@ pub struct ReconciliationProvenance {
 
 impl ReconciliationProvenance {
     pub fn is_valid(&self) -> bool {
-        if self.running && self.status != ReconciliationStatus::InProgress {
-            return false;
+        match self.status {
+            ReconciliationStatus::NeverRun => {
+                if self.running
+                    || self.generation != 0
+                    || self.last_attempted_revision.is_some()
+                    || self.last_applied_revision.is_some()
+                    || self.last_started_at.is_some()
+                    || self.last_finished_at.is_some()
+                    || self.attempted_observed_divergence.is_some()
+                {
+                    return false;
+                }
+            }
+            ReconciliationStatus::InProgress => {
+                if !self.running
+                    || self.last_started_at.is_none()
+                    || self.last_finished_at.is_some()
+                {
+                    return false;
+                }
+            }
+            ReconciliationStatus::Success => {
+                if self.running
+                    || self.last_started_at.is_none()
+                    || self.last_finished_at.is_none()
+                    || self.last_attempted_revision.is_none()
+                    || self.last_applied_revision != self.last_attempted_revision
+                {
+                    return false;
+                }
+            }
+            ReconciliationStatus::Failed => {
+                if self.running
+                    || self.last_started_at.is_none()
+                    || self.last_finished_at.is_none()
+                    || self.last_attempted_revision.is_none()
+                {
+                    return false;
+                }
+            }
         }
-        if self.status == ReconciliationStatus::InProgress && self.last_finished_at.is_some() {
-            return false;
+        if let Some(divergence) = &self.attempted_observed_divergence {
+            if divergence.observed_revision == divergence.attempted_revision {
+                return false;
+            }
         }
         true
     }

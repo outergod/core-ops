@@ -5,6 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
 
 use crate::core::errors::StateError;
+use crate::core::reconcile::{
+    build_reconciliation_provenance, never_run_provenance, next_reconciliation_generation,
+};
 use crate::core::types::{
     ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState,
     ReconciliationProvenance, ReconciliationStatus, TreeState,
@@ -15,6 +18,12 @@ pub const CONTROLLER_VERSION_ENV: &str = "CORE_OPS_CONTROLLER_VERSION";
 pub const CONTROLLER_REVISION_ENV: &str = "CORE_OPS_CONTROLLER_REVISION";
 pub const CONTROLLER_BUILD_TIME_ENV: &str = "CORE_OPS_CONTROLLER_BUILD_TIME";
 pub const CONTROLLER_TREE_STATE_ENV: &str = "CORE_OPS_CONTROLLER_TREE_STATE";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReconciliationAttemptHandle {
+    pub generation: u64,
+    pub started_at: String,
+}
 
 pub fn read_persisted_state(path: &Path) -> Result<Option<PersistedProvenanceState>, StateError> {
     let contents = match fs::read_to_string(path) {
@@ -67,33 +76,137 @@ pub fn persist_success_state(
     requested_ref: &str,
     observed_revision: &str,
 ) -> Result<(), StateError> {
-    let next_generation = read_persisted_state(path)?
-        .map(|state| state.reconciliation.generation + 1)
-        .unwrap_or(1);
-    let now = timestamp_string();
+    let attempt = persist_in_progress_state(path, repository, requested_ref, observed_revision, None)?;
+    persist_finished_state(
+        path,
+        repository,
+        requested_ref,
+        observed_revision,
+        None,
+        &attempt,
+        ReconciliationStatus::Success,
+    )
+}
 
+pub fn persist_never_run_state(
+    path: &Path,
+    repository: &str,
+    requested_ref: &str,
+) -> Result<(), StateError> {
     let state = PersistedProvenanceState {
         schema_version: crate::core::types::PERSISTED_PROVENANCE_SCHEMA_VERSION,
         controller: controller_provenance_from_env(),
         desired_state: DesiredStateProvenance {
             repository: repository.to_string(),
             requested_ref: requested_ref.to_string(),
-            last_observed_revision: Some(observed_revision.to_string()),
-            last_observed_at: Some(now.clone()),
+            last_observed_revision: None,
+            last_observed_at: None,
         },
-        reconciliation: ReconciliationProvenance {
-            generation: next_generation,
-            status: ReconciliationStatus::Success,
-            running: false,
-            last_attempted_revision: Some(observed_revision.to_string()),
-            last_applied_revision: Some(observed_revision.to_string()),
-            last_started_at: Some(now.clone()),
-            last_finished_at: Some(now),
-            attempted_observed_divergence: None,
-        },
+        reconciliation: never_run_provenance(),
     };
 
     write_persisted_state(path, &state)
+}
+
+pub fn persist_in_progress_state(
+    path: &Path,
+    repository: &str,
+    requested_ref: &str,
+    observed_revision: &str,
+    attempted_revision: Option<&str>,
+) -> Result<ReconciliationAttemptHandle, StateError> {
+    let previous = read_persisted_state(path)?;
+    let generation = next_reconciliation_generation(previous.as_ref());
+    let started_at = timestamp_string();
+    let state = build_state(
+        previous.as_ref(),
+        repository,
+        requested_ref,
+        Some(observed_revision),
+        Some(started_at.clone()),
+        build_reconciliation_provenance(
+            previous.as_ref(),
+            generation,
+            Some(observed_revision),
+            attempted_revision,
+            ReconciliationStatus::InProgress,
+            Some(started_at.clone()),
+            None,
+        ),
+    );
+    write_persisted_state(path, &state)?;
+    Ok(ReconciliationAttemptHandle {
+        generation,
+        started_at,
+    })
+}
+
+pub fn persist_finished_state(
+    path: &Path,
+    repository: &str,
+    requested_ref: &str,
+    observed_revision: &str,
+    attempted_revision: Option<&str>,
+    attempt: &ReconciliationAttemptHandle,
+    status: ReconciliationStatus,
+) -> Result<(), StateError> {
+    let previous = read_persisted_state(path)?;
+    let state = build_state(
+        previous.as_ref(),
+        repository,
+        requested_ref,
+        Some(observed_revision),
+        Some(attempt.started_at.clone()),
+        build_reconciliation_provenance(
+            previous.as_ref(),
+            attempt.generation,
+            Some(observed_revision),
+            attempted_revision,
+            status,
+            Some(attempt.started_at.clone()),
+            Some(timestamp_string()),
+        ),
+    );
+    write_persisted_state(path, &state)
+}
+
+fn build_state(
+    previous: Option<&PersistedProvenanceState>,
+    repository: &str,
+    requested_ref: &str,
+    observed_revision: Option<&str>,
+    observed_at: Option<String>,
+    reconciliation: ReconciliationProvenance,
+) -> PersistedProvenanceState {
+    PersistedProvenanceState {
+        schema_version: crate::core::types::PERSISTED_PROVENANCE_SCHEMA_VERSION,
+        controller: controller_provenance_from_env(),
+        desired_state: DesiredStateProvenance {
+            repository: repository.to_string(),
+            requested_ref: requested_ref.to_string(),
+            last_observed_revision: observed_revision
+                .map(ToString::to_string)
+                .or_else(|| {
+                    previous.and_then(|state| {
+                        state
+                            .desired_state
+                            .last_observed_revision
+                            .as_ref()
+                            .map(ToString::to_string)
+                    })
+                }),
+            last_observed_at: observed_at.or_else(|| {
+                previous.and_then(|state| {
+                    state
+                        .desired_state
+                        .last_observed_at
+                        .as_ref()
+                        .map(ToString::to_string)
+                })
+            }),
+        },
+        reconciliation,
+    }
 }
 
 fn controller_provenance_from_env() -> ControllerProvenance {

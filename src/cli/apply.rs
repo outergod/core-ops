@@ -2,12 +2,12 @@ use std::path::Path;
 
 use crate::core::errors::CoreError;
 use crate::core::reconcile::{reconcile_apply, reconcile_plan, ReconcileDependencies};
-use crate::core::types::{FailureClass, ReconcileRun};
+use crate::core::types::{FailureClass, ReconcileRun, ReconciliationStatus, RunStatus};
 use crate::io::apply::apply_plan;
 use crate::io::observed::read_observed_state;
 use crate::io::repo::load_desired_state;
-use crate::io::state::{persist_success_state, resolve_state_file};
 use crate::cli::report::format_plan_report;
+use crate::io::state::{persist_finished_state, persist_in_progress_state, resolve_state_file};
 
 pub fn apply(
     repo_source: &str,
@@ -53,14 +53,38 @@ pub fn apply_with_report(
         },
     };
 
+    let state_path = resolve_state_file(None);
     let plan_result = reconcile_plan(&deps)?;
     let report = format_plan_report(&plan_result.plan, &plan_result.diffs);
+    let attempt = match state_path.as_ref() {
+        Some(path) => Some(
+            persist_in_progress_state(
+                path,
+                &repo_source,
+                revision,
+                &plan_result.desired.revision_id,
+                None,
+            )
+            .map_err(map_apply_error)?,
+        ),
+        None => None,
+    };
     let result = reconcile_apply(&deps)?;
-    if result.run.status == crate::core::types::RunStatus::Success {
-        if let Some(path) = resolve_state_file(None) {
-            persist_success_state(&path, &repo_source, revision, &result.desired.revision_id)
-                .map_err(map_apply_error)?;
-        }
+    if let (Some(path), Some(attempt)) = (state_path.as_ref(), attempt.as_ref()) {
+        let status = match result.run.status {
+            RunStatus::Success => ReconciliationStatus::Success,
+            RunStatus::Failure => ReconciliationStatus::Failed,
+        };
+        persist_finished_state(
+            path,
+            &repo_source,
+            revision,
+            &result.desired.revision_id,
+            None,
+            attempt,
+            status,
+        )
+        .map_err(map_apply_error)?;
     }
     Ok((result, report, plan_result.plan))
 }

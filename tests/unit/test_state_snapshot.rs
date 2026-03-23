@@ -5,7 +5,9 @@ use core_ops::core::types::{
     ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState,
     ReconciliationProvenance, ReconciliationStatus, TreeState, PERSISTED_PROVENANCE_SCHEMA_VERSION,
 };
-use core_ops::io::state::{read_persisted_state, write_persisted_state};
+use core_ops::io::state::{
+    persist_finished_state, persist_in_progress_state, read_persisted_state, write_persisted_state,
+};
 
 #[test]
 fn valid_snapshot_round_trips_through_state_io() {
@@ -56,6 +58,91 @@ fn running_snapshot_requires_in_progress_status() {
     state.reconciliation.status = ReconciliationStatus::InProgress;
     state.reconciliation.last_finished_at = None;
     assert!(state.reconciliation.is_valid());
+}
+
+#[test]
+fn reconciliation_generation_and_transitions_remain_monotonic() {
+    let path = temp_file("state_transitions.json");
+    let state = fixture_state();
+    write_persisted_state(&path, &state).expect("write initial state");
+
+    let attempt = persist_in_progress_state(
+        &path,
+        "file:///var/lib/core-ops/repo",
+        "main",
+        "feedface",
+        None,
+    )
+    .expect("persist in progress");
+    assert_eq!(attempt.generation, 2);
+
+    let in_progress = read_persisted_state(&path)
+        .expect("read in-progress")
+        .expect("snapshot exists");
+    assert_eq!(in_progress.reconciliation.status, ReconciliationStatus::InProgress);
+    assert_eq!(in_progress.reconciliation.generation, 2);
+    assert_eq!(
+        in_progress.reconciliation.last_applied_revision.as_deref(),
+        Some("deadbeef")
+    );
+
+    persist_finished_state(
+        &path,
+        "file:///var/lib/core-ops/repo",
+        "main",
+        "feedface",
+        None,
+        &attempt,
+        ReconciliationStatus::Failed,
+    )
+    .expect("persist failed state");
+
+    let failed = read_persisted_state(&path)
+        .expect("read failed state")
+        .expect("failed snapshot exists");
+    assert_eq!(failed.reconciliation.status, ReconciliationStatus::Failed);
+    assert_eq!(failed.reconciliation.generation, 2);
+    assert_eq!(
+        failed.reconciliation.last_attempted_revision.as_deref(),
+        Some("feedface")
+    );
+    assert_eq!(
+        failed.reconciliation.last_applied_revision.as_deref(),
+        Some("deadbeef")
+    );
+
+    let attempt = persist_in_progress_state(
+        &path,
+        "file:///var/lib/core-ops/repo",
+        "main",
+        "cafebabe",
+        None,
+    )
+    .expect("persist second in progress");
+    assert_eq!(attempt.generation, 3);
+
+    persist_finished_state(
+        &path,
+        "file:///var/lib/core-ops/repo",
+        "main",
+        "cafebabe",
+        None,
+        &attempt,
+        ReconciliationStatus::Success,
+    )
+    .expect("persist success state");
+
+    let success = read_persisted_state(&path)
+        .expect("read success state")
+        .expect("success snapshot exists");
+    assert_eq!(success.reconciliation.status, ReconciliationStatus::Success);
+    assert_eq!(success.reconciliation.generation, 3);
+    assert_eq!(
+        success.reconciliation.last_applied_revision.as_deref(),
+        Some("cafebabe")
+    );
+
+    let _ = fs::remove_file(path);
 }
 
 fn fixture_state() -> PersistedProvenanceState {

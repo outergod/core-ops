@@ -6,7 +6,7 @@ use crate::core::errors::CoreError;
 use crate::core::types::{FailureClass, ReconcileRun, RunLock};
 use crate::io::audit as audit_io;
 use crate::io::lock::FileRunLock;
-use crate::io::state::{resolve_state_file, STATE_FILE_ENV};
+use crate::io::state::{persist_never_run_state, resolve_state_file, STATE_FILE_ENV};
 
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -27,6 +27,10 @@ pub struct AgentOutput {
 
 pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
     if let Some(path) = resolve_state_file(config.state_file.clone()) {
+        if !path.exists() {
+            persist_never_run_state(&path, &config.repo, &config.rev)
+                .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
+        }
         std::env::set_var(STATE_FILE_ENV, path);
     }
     let lock_path = config

@@ -113,9 +113,10 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
         return Err(RepoError::MissingQuadletDir(quadlet_dir));
     }
     let workloads = read_quadlet_dir(&quadlet_dir)?;
+    let resolved_revision = resolved_head_revision(&repo_path)?;
     Ok(desired_state_from_workloads(
         &repo_path,
-        revision_id,
+        &resolved_revision,
         workloads,
         Vec::new(),
         Vec::new(),
@@ -178,7 +179,7 @@ pub fn load_host_declaration(host_dir: &Path) -> Result<HostDeclaration, RepoErr
 
 fn load_layered_desired_state(
     repo_path: &Path,
-    revision_id: &str,
+    _revision_id: &str,
 ) -> Result<DesiredState, RepoError> {
     let services_dir = repo_path.join("services");
     let hosts_dir = repo_path.join("hosts");
@@ -216,9 +217,10 @@ fn load_layered_desired_state(
     let output = evaluate_desired_state(&input)
         .map_err(|err| RepoError::EvaluationFailed(err.to_string()))?;
     let workloads = workloads_from_evaluation(&output);
+    let resolved_revision = resolved_head_revision(repo_path)?;
     Ok(desired_state_from_workloads(
         repo_path,
-        revision_id,
+        &resolved_revision,
         workloads,
         config_paths,
         config_roots,
@@ -765,4 +767,22 @@ fn git_checkout_revision(repo_path: &Path) -> Result<(), RepoError> {
     }
 
     Ok(())
+}
+
+fn resolved_head_revision(repo_path: &Path) -> Result<String, RepoError> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output()
+        .map_err(|err| RepoError::GitCheckoutFailed(err.to_string()))?;
+
+    if !output.status.success() {
+        return Err(RepoError::GitCheckoutFailed(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }

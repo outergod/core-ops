@@ -80,19 +80,19 @@ description: "Task list for provenance and reconciliation revision tracking"
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T021 [P] [US2] Unit test for reconciliation state transitions and generation monotonicity in `tests/unit/test_state_snapshot.rs`
-- [ ] T022 [P] [US2] Integration test for desired-state provenance fields and failed reconciliation preserving last applied revision in `tests/integration/test_reconcile_provenance.rs`
-- [ ] T023 [P] [US2] Integration test for explicit never-run and in-progress status representation in `tests/integration/test_status_state.rs`
-- [ ] T024 [P] [US2] Integration test for host-scoped desired-state provenance in `tests/integration/test_reconcile_provenance.rs`
+- [X] T021 [P] [US2] Unit test for reconciliation state transitions and generation monotonicity in `tests/unit/test_state_snapshot.rs`
+- [X] T022 [P] [US2] Integration test for desired-state provenance fields and failed reconciliation preserving last applied revision in `tests/integration/test_reconcile_provenance.rs`
+- [X] T023 [P] [US2] Integration test for explicit never-run and in-progress status representation in `tests/integration/test_status_state.rs`
+- [X] T024 [P] [US2] Integration test for host-scoped desired-state provenance in `tests/integration/test_reconcile_provenance.rs`
 
 ### Implementation for User Story 2
 
-- [ ] T025 [US2] Implement reconciliation provenance transition rules in `src/core/reconcile.rs`
-- [ ] T026 [US2] Extend persisted snapshot model with desired-state provenance fields, attempted/applied divergence, status semantics, and generation rules in `src/core/types.rs`
-- [ ] T027 [US2] Write desired-state provenance plus in-progress, success, failed, and never-run snapshots in `src/io/state.rs`
-- [ ] T028 [US2] Integrate repository, requested ref, observed revision, and observed timestamp updates into apply lifecycle in `src/cli/apply.rs`
-- [ ] T029 [US2] Integrate repository, requested ref, observed revision, and observed timestamp updates into agent lifecycle in `src/cli/agent.rs`
-- [ ] T030 [US2] Ensure invalid, partial, or unsupported persisted snapshots are ignored as absent and can be rebuilt after fresh observation in `src/io/state.rs`
+- [X] T025 [US2] Implement reconciliation provenance transition rules in `src/core/reconcile.rs`
+- [X] T026 [US2] Extend persisted snapshot model with desired-state provenance fields, attempted/applied divergence, status semantics, and generation rules in `src/core/types.rs`
+- [X] T027 [US2] Write desired-state provenance plus in-progress, success, failed, and never-run snapshots in `src/io/state.rs`
+- [X] T028 [US2] Integrate repository, requested ref, observed revision, and observed timestamp updates into apply lifecycle in `src/cli/apply.rs`
+- [X] T029 [US2] Integrate repository, requested ref, observed revision, and observed timestamp updates into agent lifecycle in `src/cli/agent.rs`
+- [X] T030 [US2] Ensure invalid, partial, or unsupported persisted snapshots are ignored as absent and can be rebuilt after fresh observation in `src/io/state.rs`
 
 **Checkpoint**: User Story 2 should be fully functional and testable independently
 
