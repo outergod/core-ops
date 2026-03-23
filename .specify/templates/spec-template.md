@@ -116,6 +116,8 @@
   desired-state revision, reconciliation status, and behavioral comparison signals]
 - **Safe defaults**: [Risky actions require explicit intent]
 - **Compatibility**: [Backward-compatibility strategy and migrations]
+- **Release version policy**: [How behavior/schema/CLI/reconciliation changes
+  affect versioning; canonical controller version comes from `Cargo.toml`]
 - **Test contract**: [Invariants, external behavior, convergence, failure tests]
 - **Regenerability**: [How specs/tests enable safe regeneration]
 

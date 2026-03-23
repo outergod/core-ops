@@ -1,10 +1,10 @@
 <!--
 Sync Impact Report:
-- Version change: 1.0.0 -> 1.1.0
+- Version change: 1.1.0 -> 1.2.0
 - Modified principles:
-  - 7. Observability as a Core Feature -> 7. Observability as a Core Feature
   - 9. Conservative Public Evolution -> 9. Conservative Public Evolution
-  - Added 12. Provenance, Versioning, and Behavioral Traceability
+  - 12. Provenance, Versioning, and Behavioral Traceability ->
+    12. Provenance, Versioning, and Behavioral Traceability
 - Added sections: None
 - Removed sections: None
 - Templates requiring updates:
@@ -90,7 +90,10 @@ exist, but only consciously.
 Public configuration, state models, file formats, reconciliation status
 surfaces, and user-facing behavior SHOULD evolve conservatively. Backward
 compatibility SHOULD be preserved where feasible; unavoidable breakage MUST be
-explicit, documented, versioned, and justified.
+explicit, documented, versioned, and justified. Any change that affects
+externally observable behavior, persisted state schema, CLI output,
+reconciliation semantics, or compatibility MUST evaluate and update the
+release version policy accordingly.
 
 Rationale: Mature open source software earns trust by avoiding unnecessary
 churn.
@@ -120,7 +123,8 @@ expose machine-readable provenance and reconciliation status sufficient to
 compare revisions, explain behavioral differences, and audit outcomes across
 environments. Local controller state MAY be persisted for safety, resumability,
 and provenance, but MUST remain derivative rather than authoritative with
-respect to desired state.
+respect to desired state. The canonical controller version MUST be the package
+version declared in `Cargo.toml`.
 
 Rationale: When behavior diverges across hosts or revisions, operators need
 first-class evidence of what code ran, what desired state was applied, and what
@@ -135,8 +139,8 @@ outcome resulted.
 
 Specifications, plans, and tasks MUST document the declarative state model,
 side-effect boundaries, idempotence strategy, observability signals,
-provenance/version surfaces, compatibility impact, and the test plan for each
-change.
+provenance/version surfaces, compatibility impact, release version policy
+impact, and the test plan for each change.
 
 ## Governance
 
@@ -152,5 +156,9 @@ change.
 - Compliance reviews MUST verify that reconciliation status and provenance
   surfaces remain machine-readable, version-comparable, and behaviorally
   explanatory.
+- Compliance reviews MUST verify that changes affecting external behavior,
+  persisted schemas, CLI output, reconciliation semantics, or compatibility
+  update the release version policy and continue to derive the canonical
+  controller version from `Cargo.toml`.
 
-**Version**: 1.1.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-03-23
+**Version**: 1.2.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-03-23

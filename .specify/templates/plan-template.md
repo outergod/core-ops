@@ -42,6 +42,9 @@
   and applied outcome in machine-readable form.
 - Safe defaults are documented; destructive actions require explicit intent.
 - Compatibility impact is assessed; breaking changes are documented with migration.
+- Release version policy impact is assessed for any externally observable,
+  schema, CLI, reconciliation, or compatibility change; the canonical
+  controller version comes from `Cargo.toml`.
 - Test strategy covers invariants, external behavior, convergence, and failures.
 - Modules are structured to be regenerable from specs and tests.
 

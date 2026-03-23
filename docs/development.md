@@ -66,3 +66,8 @@ CORE_OPS_HOST=<host> core-ops plan --repo <repo> --rev <rev>
 When adding or changing behavior, ensure tests and diagnostics preserve
 machine-readable provenance for both the `core-ops` binary revision and the
 desired-state revision being reconciled.
+
+Any change that affects externally observable behavior, persisted state schema,
+CLI output, reconciliation semantics, or compatibility must evaluate and
+update the release version policy. The canonical controller version is the
+package version in `Cargo.toml`.

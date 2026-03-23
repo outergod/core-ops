@@ -158,6 +158,8 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX Performance optimization across all stories
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
 - [ ] TXXX Verify provenance/version/status output across changed flows
+- [ ] TXXX Evaluate and update release version policy for any externally
+  observable, schema, CLI, reconciliation, or compatibility change
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
 
@@ -251,6 +253,8 @@ With multiple developers:
 - Each user story should be independently completable and testable
 - Tests are mandatory unless explicitly exempted in the spec
 - Include provenance/version/status assertions where behavior or reconciliation outcomes change
+- Include release-version-policy updates whenever behavior, schema, CLI output,
+  reconciliation semantics, or compatibility changes
 - Verify tests fail before implementing
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
