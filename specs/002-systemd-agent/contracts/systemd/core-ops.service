@@ -1,0 +1,15 @@
+[Unit]
+Description=Core Ops Quadlet GitOps Agent
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Set the repo + revision to reconcile against.
+Environment=CORE_OPS_REPO=https://example.com/org/quadlets.git
+Environment=CORE_OPS_REV=main
+Environment=CORE_OPS_QUADLET_DIR=/etc/containers/systemd
+ExecStart=/usr/bin/core-ops apply --repo ${CORE_OPS_REPO} --rev ${CORE_OPS_REV} --quadlet-dir ${CORE_OPS_QUADLET_DIR}
+
+[Install]
+WantedBy=multi-user.target

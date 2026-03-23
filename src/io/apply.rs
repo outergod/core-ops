@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::core::types::{PlanAction, PlanActionType, ReconciliationPlan, Workload};
+use crate::core::types::{PlanAction, PlanActionType, QuadletType, ReconciliationPlan, Workload};
+use crate::core::unit::systemd_unit_for_quadlet_file;
+use crate::io::systemd::systemd_unit_dir;
 
 #[derive(Debug)]
 pub enum ApplyError {
@@ -55,33 +57,36 @@ pub fn apply_plan(
         match &action.action_type {
             PlanActionType::WriteQuadlet => {
                 let workload = find_workload(desired_workloads, &action.target)?;
-                let path = quadlet_dir.join(&workload.systemd_unit_name);
+                let path = target_dir_for_workload(quadlet_dir, workload)
+                    .join(&workload.systemd_unit_name);
                 fs::write(&path, &workload.quadlet_contents)?;
                 files_written.push(path.display().to_string());
             }
             PlanActionType::RemoveQuadlet => {
-                for entry in fs::read_dir(quadlet_dir)? {
+                let target_dir = target_dir_for_name(quadlet_dir, &action.target);
+                let mut removed = false;
+                for entry in fs::read_dir(&target_dir)? {
                     let entry = entry?;
                     let path = entry.path();
                     if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
-                        if file_name.starts_with(&format!("{}.", action.target)) {
+                        if file_name == action.target
+                            || file_name.starts_with(&format!("{}.", action.target))
+                        {
                             fs::remove_file(&path)?;
                             files_removed.push(path.display().to_string());
+                            removed = true;
                         }
                     }
                 }
+                if !removed {
+                    return Err(ApplyError::MissingWorkload(action.target.clone()));
+                }
             }
             PlanActionType::EnableUnit => {
-                return Err(ApplyError::SystemdCommandFailed(
-                    "enable/disable is handled via Quadlet [Install], not systemctl enable"
-                        .to_string(),
-                ));
+                // Quadlet-generated units rely on [Install] processing; no enable call is needed.
             }
             PlanActionType::DisableUnit => {
-                return Err(ApplyError::SystemdCommandFailed(
-                    "enable/disable is handled via Quadlet [Install], not systemctl disable"
-                        .to_string(),
-                ));
+                // Quadlet-generated units rely on [Install] processing; no disable call is needed.
             }
             PlanActionType::StartUnit => {
                 let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &action.target)?;
@@ -112,13 +117,32 @@ pub fn apply_plan(
     })
 }
 
+fn target_dir_for_workload(quadlet_dir: &Path, workload: &Workload) -> PathBuf {
+    match workload.quadlet_type {
+        QuadletType::Socket => systemd_unit_dir(),
+        _ => quadlet_dir.to_path_buf(),
+    }
+}
+
+fn target_dir_for_name(quadlet_dir: &Path, target: &str) -> PathBuf {
+    if Path::new(target)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        == Some("socket")
+    {
+        systemd_unit_dir()
+    } else {
+        quadlet_dir.to_path_buf()
+    }
+}
+
 fn find_workload<'a>(
     workloads: &'a [Workload],
     name: &str,
 ) -> Result<&'a Workload, ApplyError> {
     workloads
         .iter()
-        .find(|workload| workload.name == name)
+        .find(|workload| workload.systemd_unit_name == name || workload.name == name)
         .ok_or_else(|| ApplyError::MissingWorkload(name.to_string()))
 }
 
@@ -141,27 +165,22 @@ fn unit_name_for_start_stop(
     quadlet_dir: &Path,
     target: &str,
 ) -> Result<String, ApplyError> {
-    if let Some(workload) = workloads.iter().find(|w| w.name == target) {
-        return Ok(service_unit_name(&workload.systemd_unit_name));
+    if let Some(workload) = workloads
+        .iter()
+        .find(|w| w.systemd_unit_name == target || w.name == target)
+    {
+        return Ok(systemd_unit_for_quadlet_file(&workload.systemd_unit_name));
     }
 
     for entry in fs::read_dir(quadlet_dir)? {
         let entry = entry?;
         let path = entry.path();
         if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
-            if file_name.starts_with(&format!("{target}.")) {
-                return Ok(service_unit_name(file_name));
+            if file_name == target || file_name.starts_with(&format!("{target}.")) {
+                return Ok(systemd_unit_for_quadlet_file(file_name));
             }
         }
     }
 
-    Ok(format!("{target}.service"))
-}
-
-fn service_unit_name(unit_file: &str) -> String {
-    let stem = Path::new(unit_file)
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or(unit_file);
-    format!("{stem}.service")
+    Ok(systemd_unit_for_quadlet_file(target))
 }

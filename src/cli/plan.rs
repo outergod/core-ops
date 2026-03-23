@@ -13,8 +13,8 @@ pub struct PlanOutput {
 pub fn plan(deps: &ReconcileDependencies<'_>) -> Result<PlanOutput, CoreError> {
     let result = reconcile_plan(deps)?;
     let diffs = result.diffs;
-    let audit = build_audit_record(&result.run.run_id, diffs.clone(), &result.plan);
-    let event = build_audit_event(&result.run, Some(&result.plan));
+    let audit = build_audit_record(&result.run.run_id, diffs.clone(), &result.plan, Vec::new());
+    let event = build_audit_event(&result.run, Some(&result.plan), &[]);
 
     Ok(PlanOutput {
         summary: format_plan_report(&result.plan, &diffs),

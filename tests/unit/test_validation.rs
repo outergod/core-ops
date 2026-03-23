@@ -98,14 +98,14 @@ fn fails_when_missing_boundary_scope() {
 }
 
 #[test]
-fn fails_on_duplicate_workload_name() {
+fn allows_same_name_for_distinct_unit_names() {
     let mut desired = base_desired();
     let mut extra = desired.workloads[0].clone();
-    extra.systemd_unit_name = "beta.container".to_string();
+    extra.quadlet_type = QuadletType::Socket;
+    extra.systemd_unit_name = "alpha.socket".to_string();
     desired.workloads.push(extra);
 
-    let err = validate_desired_state(&desired).unwrap_err();
-    assert!(err.message.contains("duplicate workload"));
+    assert!(validate_desired_state(&desired).is_ok());
 }
 
 #[test]

@@ -25,15 +25,18 @@ pub fn apply(
         },
     };
 
-    reconcile_apply(&deps)
+    let result = reconcile_apply(&deps)?;
+    Ok(result.run)
 }
+
+use crate::core::reconcile::ApplyResult;
 
 pub fn apply_with_report(
     repo_source: &str,
     revision: &str,
     quadlet_dir: &Path,
     reload_systemd: bool,
-) -> Result<(ReconcileRun, String), CoreError> {
+) -> Result<(ApplyResult, String, crate::core::types::ReconciliationPlan), CoreError> {
     let repo_source = repo_source.to_string();
     let deps = ReconcileDependencies {
         load_desired: &|| load_desired_state(&repo_source, revision).map_err(map_plan_error),
@@ -47,8 +50,8 @@ pub fn apply_with_report(
 
     let plan_result = reconcile_plan(&deps)?;
     let report = format_plan_report(&plan_result.plan, &plan_result.diffs);
-    let run = reconcile_apply(&deps)?;
-    Ok((run, report))
+    let result = reconcile_apply(&deps)?;
+    Ok((result, report, plan_result.plan))
 }
 
 fn map_plan_error<E: std::fmt::Display>(err: E) -> CoreError {

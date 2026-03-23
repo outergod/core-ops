@@ -81,7 +81,7 @@ pub struct AuditRecord {
     pub diffs: Vec<DiffItem>,
     pub plan_summary: String,
     pub actions_applied: Vec<PlanAction>,
-    pub verification_results: Vec<String>,
+    pub verification_results: Vec<VerificationResult>,
     pub operator_messages: Vec<String>,
 }
 
@@ -103,6 +103,7 @@ pub enum DiffKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QuadletType {
     Container,
+    Socket,
     Pod,
     Volume,
     Network,
@@ -189,6 +190,28 @@ pub enum ReconcileMode {
 pub enum RunStatus {
     Success,
     Failure,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerificationResult {
+    pub target: String,
+    pub status: VerificationStatus,
+    pub details: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VerificationStatus {
+    Success,
+    Failure,
+}
+
+pub struct RunLockGuard {
+    pub lock_id: String,
+}
+
+pub trait RunLock {
+    fn acquire(&self) -> Result<RunLockGuard, crate::core::errors::RunLockError>;
+    fn release(&self, guard: RunLockGuard) -> Result<(), crate::core::errors::RunLockError>;
 }
 
 pub fn index_workloads(workloads: &[Workload]) -> BTreeMap<String, Workload> {

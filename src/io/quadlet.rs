@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use crate::core::types::{EnabledState, QuadletType, RestartPolicy, Workload};
 
+pub(crate) const SOCKET_MANAGED_MARKER: &str = "# managed-by: core-ops";
+
 #[derive(Debug)]
 pub enum QuadletError {
     UnsupportedExtension(String),
@@ -30,11 +32,21 @@ impl std::error::Error for QuadletError {}
 
 pub fn read_quadlet_dir(dir: &Path) -> Result<Vec<Workload>, QuadletError> {
     let mut workloads = Vec::new();
+    read_quadlet_dir_inner(dir, &mut workloads)?;
+    Ok(workloads)
+}
 
+fn read_quadlet_dir_inner(dir: &Path, workloads: &mut Vec<Workload>) -> Result<(), QuadletError> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+                if name.starts_with('.') {
+                    continue;
+                }
+            }
+            read_quadlet_dir_inner(&path, workloads)?;
             continue;
         }
         let file_name = match path.file_name().and_then(|name| name.to_str()) {
@@ -53,7 +65,7 @@ pub fn read_quadlet_dir(dir: &Path) -> Result<Vec<Workload>, QuadletError> {
         }
     }
 
-    Ok(workloads)
+    Ok(())
 }
 
 fn load_quadlet_file(path: &Path) -> Result<Workload, QuadletError> {
@@ -64,7 +76,10 @@ fn load_quadlet_file(path: &Path) -> Result<Workload, QuadletError> {
 
     let (name, quadlet_type) = parse_quadlet_name(file_name)?;
 
-    let contents = fs::read_to_string(path)?;
+    let mut contents = fs::read_to_string(path)?;
+    if quadlet_type == QuadletType::Socket {
+        contents = normalize_socket_contents(&contents);
+    }
 
     Ok(Workload {
         name,
@@ -76,7 +91,7 @@ fn load_quadlet_file(path: &Path) -> Result<Workload, QuadletError> {
     })
 }
 
-fn parse_quadlet_name(file_name: &str) -> Result<(String, QuadletType), QuadletError> {
+pub(crate) fn parse_quadlet_name(file_name: &str) -> Result<(String, QuadletType), QuadletError> {
     let path = PathBuf::from(file_name);
     let stem = path
         .file_stem()
@@ -89,6 +104,7 @@ fn parse_quadlet_name(file_name: &str) -> Result<(String, QuadletType), QuadletE
 
     let quadlet_type = match ext {
         "container" => QuadletType::Container,
+        "socket" => QuadletType::Socket,
         "pod" => QuadletType::Pod,
         "volume" => QuadletType::Volume,
         "network" => QuadletType::Network,
@@ -96,4 +112,11 @@ fn parse_quadlet_name(file_name: &str) -> Result<(String, QuadletType), QuadletE
     };
 
     Ok((stem.to_string(), quadlet_type))
+}
+
+pub(crate) fn normalize_socket_contents(contents: &str) -> String {
+    if contents.contains(SOCKET_MANAGED_MARKER) {
+        return contents.to_string();
+    }
+    format!("{SOCKET_MANAGED_MARKER}\n{contents}")
 }

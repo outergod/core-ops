@@ -45,3 +45,11 @@ impl ValidationError {
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+pub enum RunLockError {
+    #[error("run lock already held")]
+    AlreadyHeld,
+    #[error("run lock io error: {0}")]
+    Io(String),
+}

@@ -65,9 +65,23 @@ fn init_git_repo(repo: &PathBuf) -> String {
 fn write_systemctl_stub(dir: &PathBuf, log_path: &PathBuf) -> PathBuf {
     let bin_path = dir.join("systemctl");
     let script = format!(
-        "#!/bin/sh\n\n\
-echo \"$@\" >> \"{}\"\n\
-exit 0\n",
+        r#"#!/bin/sh
+echo "$@" >> "{}"
+case "$1" in
+  is-system-running)
+    echo "running"
+    exit 0
+    ;;
+  show)
+    echo "ActiveState=active"
+    echo "UnitFileState=enabled"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+"#,
         log_path.display()
     );
     fs::write(&bin_path, script).expect("write systemctl stub");
@@ -121,9 +135,9 @@ fn reconcile_apply_converges_to_desired_state() {
         },
     };
 
-    let run = reconcile_apply(&deps).expect("reconcile apply");
+    let result = reconcile_apply(&deps).expect("reconcile apply");
 
-    assert_eq!(run.summary, "converged");
+    assert_eq!(result.run.summary, "converged");
 }
 
 fn map_io_error<E: std::fmt::Display>(err: E) -> CoreError {

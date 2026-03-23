@@ -3,7 +3,9 @@ use crate::core::errors::CoreError;
 use crate::core::planner::plan;
 use crate::core::types::{
     DiffItem, FailureClass, ReconcileMode, ReconcileRun, ReconciliationPlan, RunStatus,
+    VerificationResult, VerificationStatus,
 };
+use crate::core::verify::verify_state;
 
 pub struct ReconcileDependencies<'a> {
     pub load_desired: &'a dyn Fn() -> Result<crate::core::types::DesiredState, CoreError>,
@@ -17,6 +19,11 @@ pub struct PlanResult {
     pub run: ReconcileRun,
     pub plan: ReconciliationPlan,
     pub diffs: Vec<DiffItem>,
+}
+
+pub struct ApplyResult {
+    pub run: ReconcileRun,
+    pub verification_results: Vec<VerificationResult>,
 }
 
 pub fn reconcile_plan(deps: &ReconcileDependencies<'_>) -> Result<PlanResult, CoreError> {
@@ -37,7 +44,7 @@ pub fn reconcile_plan(deps: &ReconcileDependencies<'_>) -> Result<PlanResult, Co
     Ok(PlanResult { run, plan, diffs })
 }
 
-pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ReconcileRun, CoreError> {
+pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, CoreError> {
     let desired = (deps.load_desired)()?;
     let observed = (deps.read_observed)()?;
 
@@ -49,8 +56,12 @@ pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ReconcileRun,
 
     let observed_after = (deps.read_observed)()?;
     let diffs = diff_workloads(&desired.workloads, &observed_after.workloads);
+    let verification_results = verify_state(&desired, &observed_after);
+    let has_failures = verification_results
+        .iter()
+        .any(|result| result.status == VerificationStatus::Failure);
 
-    let (status, failure_class, summary) = if diffs.is_empty() {
+    let (status, failure_class, summary) = if diffs.is_empty() && !has_failures {
         (RunStatus::Success, None, "converged".to_string())
     } else {
         (
@@ -60,11 +71,16 @@ pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ReconcileRun,
         )
     };
 
-    Ok(ReconcileRun {
+    let run = ReconcileRun {
         run_id: format!("run:{}", plan.plan_id),
         mode: ReconcileMode::Apply,
         status,
         failure_class,
         summary,
+    };
+
+    Ok(ApplyResult {
+        run,
+        verification_results,
     })
 }
