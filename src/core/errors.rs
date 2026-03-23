@@ -30,6 +30,7 @@ pub enum ValidationErrorKind {
     UnsupportedQuadletType,
     UndefinedServiceSelection,
     MissingArtifactTarget,
+    InvalidDropInOrdering,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]

@@ -32,6 +32,8 @@ services:
 - Systemd socket drop-ins: `artifact.socket.d/*.conf`.
 - Drop-ins are applied in lexicographic order by filename.
 - Host overrides are applied after base drop-ins.
+- For socket drop-ins, host override filenames must sort after base filenames
+  for the same target, or evaluation fails.
 
 ## Validation Failures
 

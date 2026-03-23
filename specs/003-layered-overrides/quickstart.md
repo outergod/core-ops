@@ -28,6 +28,8 @@ services:
 1. Load base artifacts from `services/<service>/` for selected services.
 2. Apply base drop-ins in lexicographic order.
 3. Apply host overrides in lexicographic order after base drop-ins.
+   For socket drop-ins, host filenames must sort after base filenames
+   (e.g., `90-host.conf`).
 4. Produce a concrete desired state and proceed with normal diff/plan/apply.
 
 ## Validation Rules

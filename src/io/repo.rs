@@ -558,13 +558,21 @@ fn validate_dropin_targets(
     artifacts: &[ArtifactSource],
 ) -> Result<(), RepoError> {
     let mut dropins = Vec::new();
+    let mut base_dropins = Vec::new();
     for service_name in selected_services {
         if let Some(service) = catalog.services.get(service_name) {
-            dropins.extend(service.base_dropins.iter().cloned());
+            base_dropins.extend(service.base_dropins.iter().cloned());
         }
     }
+    dropins.extend(base_dropins.iter().cloned());
     dropins.extend(overlays.overrides.iter().cloned());
     validate_dropin_targets_fn(&dropins, artifacts)
+        .and_then(|_| {
+            crate::core::validation::validate_socket_dropin_precedence(
+                &base_dropins,
+                &overlays.overrides,
+            )
+        })
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))
 }
 

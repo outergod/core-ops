@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use crate::core::errors::{ValidationError, ValidationErrorKind};
 use crate::core::types::{
@@ -44,6 +45,48 @@ pub fn validate_dropin_targets(
     Ok(())
 }
 
+pub fn validate_socket_dropin_precedence(
+    base_dropins: &[DropInSource],
+    host_dropins: &[DropInSource],
+) -> Result<(), ValidationError> {
+    let mut base_max: HashMap<&str, String> = HashMap::new();
+    for dropin in base_dropins {
+        if !dropin.target.ends_with(".socket") {
+            continue;
+        }
+        let file_name = dropin_file_name(&dropin.source_path);
+        base_max
+            .entry(dropin.target.as_str())
+            .and_modify(|current| {
+                if file_name > *current {
+                    *current = file_name.clone();
+                }
+            })
+            .or_insert(file_name);
+    }
+
+    for dropin in host_dropins {
+        if !dropin.target.ends_with(".socket") {
+            continue;
+        }
+        let Some(base_name) = base_max.get(dropin.target.as_str()) else {
+            continue;
+        };
+        let file_name = dropin_file_name(&dropin.source_path);
+        if file_name <= *base_name {
+            return Err(ValidationError::new(
+                ValidationErrorKind::InvalidDropInOrdering,
+                format!(
+                    "host socket drop-in must sort after base drop-ins: target={} host={} base_max={}",
+                    dropin.target, file_name, base_name
+                ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 pub fn validate_config_paths(paths: &[String]) -> Result<(), ValidationError> {
     for path in paths {
         if !path.starts_with("/etc/") {
@@ -60,6 +103,14 @@ pub fn validate_config_paths(paths: &[String]) -> Result<(), ValidationError> {
         }
     }
     Ok(())
+}
+
+fn dropin_file_name(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(path)
+        .to_string()
 }
 
 fn validate_invariants(invariants: &[Invariant]) -> Result<(), ValidationError> {

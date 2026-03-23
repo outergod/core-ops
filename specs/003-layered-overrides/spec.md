@@ -117,6 +117,9 @@ outputs and stable diagnostics.
 - **FR-006**: The system MUST evaluate base artifacts plus applicable overlays
   into a concrete desired state before diff/plan/apply, applying native drop-in
   ordering (lexicographic) with host overrides layered after base drop-ins.
+- **FR-006a**: For socket drop-ins, host override filenames MUST sort after base
+  drop-ins for the same target; otherwise evaluation MUST fail with a clear
+  validation error.
 - **FR-007**: Evaluation MUST be deterministic, side-effect free, and testable.
 - **FR-008**: The system MUST reject overlays that target nonexistent base
   artifacts, invalid file types, or host selections that reference undefined
