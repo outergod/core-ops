@@ -93,6 +93,11 @@ fn actions_for_diff(
             if manage_unit {
                 actions.push(action(PlanActionType::StartUnit, name));
             }
+            if should_restart_socket_for_dropin(quadlet_type.as_ref(), name) {
+                if let Some(socket_unit) = socket_unit_from_dropin_name(name) {
+                    actions.push(action(PlanActionType::RestartUnit, &socket_unit));
+                }
+            }
             if should_start_service_for_socket(quadlet_type.as_ref(), name, container_stems) {
                 actions.push(action(
                     PlanActionType::StartUnit,
@@ -121,6 +126,11 @@ fn actions_for_diff(
             }
             if manage_unit {
                 actions.push(action(PlanActionType::RestartUnit, name));
+            }
+            if should_restart_socket_for_dropin(quadlet_type.as_ref(), name) {
+                if let Some(socket_unit) = socket_unit_from_dropin_name(name) {
+                    actions.push(action(PlanActionType::RestartUnit, &socket_unit));
+                }
             }
             if should_restart_service_for_container(quadlet_type.as_ref(), name, socket_stems) {
                 actions.push(action(
@@ -185,6 +195,19 @@ fn should_restart_service_for_container(
         Some(stem) => socket_stems.contains(stem),
         None => false,
     }
+}
+
+fn should_restart_socket_for_dropin(
+    quadlet_type: Option<&QuadletType>,
+    name: &str,
+) -> bool {
+    matches!(quadlet_type, Some(QuadletType::SocketDropIn))
+        && socket_unit_from_dropin_name(name).is_some()
+}
+
+fn socket_unit_from_dropin_name(name: &str) -> Option<String> {
+    let marker = ".socket.d/";
+    name.find(marker).map(|idx| name[..idx + ".socket".len()].to_string())
 }
 
 fn order_diffs(diffs: &mut [DiffItem]) {

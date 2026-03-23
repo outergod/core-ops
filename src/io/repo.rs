@@ -151,12 +151,16 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     let host_dir = hosts_dir.join(&host_id);
     let host_decl = load_host_declaration(&host_dir)?;
     let catalog = load_service_catalog(&services_dir)?;
+    validate_service_selection(&host_decl, &catalog)
+        .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let mut overlays = load_host_overrides(&host_dir)?;
     let allowed_prefixes = config_prefixes_for_services(&host_decl.services);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
     }
     overlays.config_overrides = filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
+    let all_artifacts = selected_service_artifacts(&host_decl.services, &catalog);
+    validate_dropin_targets(&host_decl.services, &catalog, &overlays, &all_artifacts)?;
 
     Ok(LayeredRepo {
         _repo_temp: temp,
@@ -193,8 +197,8 @@ fn load_layered_desired_state(
         return Err(RepoError::ValidationFailed(err));
     }
     overlays.config_overrides = filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
-    let all_artifacts = all_service_artifacts(&catalog);
-    validate_dropin_targets(&catalog, &overlays, &all_artifacts)?;
+    let all_artifacts = selected_service_artifacts(&host_decl.services, &catalog);
+    validate_dropin_targets(&host_decl.services, &catalog, &overlays, &all_artifacts)?;
     let mut config_paths = collect_config_paths(&host_decl.services, &catalog, &overlays);
     config_paths.sort();
     config_paths.dedup();
@@ -534,22 +538,30 @@ fn workload_from_config_file(file: &EvaluatedConfigFile) -> Workload {
     }
 }
 
-fn all_service_artifacts(catalog: &ServiceCatalog) -> Vec<ArtifactSource> {
+fn selected_service_artifacts(
+    selected_services: &[String],
+    catalog: &ServiceCatalog,
+) -> Vec<ArtifactSource> {
     let mut artifacts = Vec::new();
-    for service in catalog.services.values() {
-        artifacts.extend(service.artifacts.iter().cloned());
+    for service_name in selected_services {
+        if let Some(service) = catalog.services.get(service_name) {
+            artifacts.extend(service.artifacts.iter().cloned());
+        }
     }
     artifacts
 }
 
 fn validate_dropin_targets(
+    selected_services: &[String],
     catalog: &ServiceCatalog,
     overlays: &HostOverlaySet,
     artifacts: &[ArtifactSource],
 ) -> Result<(), RepoError> {
     let mut dropins = Vec::new();
-    for service in catalog.services.values() {
-        dropins.extend(service.base_dropins.iter().cloned());
+    for service_name in selected_services {
+        if let Some(service) = catalog.services.get(service_name) {
+            dropins.extend(service.base_dropins.iter().cloned());
+        }
     }
     dropins.extend(overlays.overrides.iter().cloned());
     validate_dropin_targets_fn(&dropins, artifacts)
