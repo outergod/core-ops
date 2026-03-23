@@ -1,7 +1,7 @@
 {
   "schema_version": 99,
   "controller": {
-    "version": "0.2.0",
+    "version": "0.3.0",
     "revision": "8f3c2ab",
     "build_time": "2026-03-23T10:00:00Z",
     "tree_state": "clean"

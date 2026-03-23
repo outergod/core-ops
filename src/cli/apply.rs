@@ -7,7 +7,7 @@ use crate::cli::report::{append_provenance_report, format_plan_report};
 use crate::io::apply::apply_plan;
 use crate::io::observed::read_observed_state;
 use crate::io::repo::load_desired_state;
-use crate::io::state::{persist_finished_state, persist_in_progress_state, resolve_state_file};
+use crate::io::state::{persist_finished_state, persist_in_progress_state};
 
 pub fn apply(
     repo_source: &str,
@@ -39,6 +39,7 @@ pub fn apply_with_report(
     revision: &str,
     quadlet_dir: &Path,
     reload_systemd: bool,
+    state_path: Option<std::path::PathBuf>,
 ) -> Result<(ApplyResult, String, crate::core::types::ReconciliationPlan), CoreError> {
     let repo_source = repo_source.to_string();
     let deps = ReconcileDependencies {
@@ -53,7 +54,6 @@ pub fn apply_with_report(
         },
     };
 
-    let state_path = resolve_state_file(None);
     let plan_result = reconcile_plan(&deps)?;
     let mut report = format_plan_report(&plan_result.plan, &plan_result.diffs);
     let attempt = match state_path.as_ref() {

@@ -1,12 +1,14 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 
 use core_ops::core::types::{
     ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState,
     ReconciliationProvenance, ReconciliationStatus, TreeState, PERSISTED_PROVENANCE_SCHEMA_VERSION,
 };
 use core_ops::io::state::{
-    persist_finished_state, persist_in_progress_state, read_persisted_state, write_persisted_state,
+    default_state_file_path, persist_finished_state, persist_in_progress_state,
+    read_persisted_state, resolve_state_file, write_persisted_state, STATE_FILE_ENV,
 };
 
 #[test]
@@ -171,11 +173,34 @@ fn persisted_state_does_not_require_history_or_journal_fields() {
     assert!(object.get("events").is_none());
 }
 
+#[test]
+fn state_file_resolution_defaults_to_canonical_path() {
+    let _guard = env_lock().lock().expect("env lock");
+    std::env::remove_var(STATE_FILE_ENV);
+    assert_eq!(resolve_state_file(None), default_state_file_path());
+}
+
+#[test]
+fn state_file_resolution_uses_env_override_before_default() {
+    let _guard = env_lock().lock().expect("env lock");
+    let path = temp_file("state_env_override.json");
+    std::env::set_var(STATE_FILE_ENV, &path);
+
+    assert_eq!(resolve_state_file(None), path);
+
+    std::env::remove_var(STATE_FILE_ENV);
+}
+
+fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 fn fixture_state() -> PersistedProvenanceState {
     PersistedProvenanceState {
         schema_version: PERSISTED_PROVENANCE_SCHEMA_VERSION,
         controller: ControllerProvenance {
-            version: Some("0.2.0".to_string()),
+            version: Some("0.3.0".to_string()),
             revision: Some("abc1234".to_string()),
             build_time: Some("2026-03-23T10:00:00Z".to_string()),
             tree_state: TreeState::Clean,

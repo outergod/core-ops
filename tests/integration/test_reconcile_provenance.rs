@@ -123,6 +123,7 @@ fn failed_reconciliation_preserves_last_applied_revision_and_desired_state_field
         "main",
         &host_quadlets,
         true,
+        Some(state_file.clone()),
     )
     .expect("first apply");
     assert_eq!(first.0.run.summary, "converged");
@@ -136,6 +137,7 @@ fn failed_reconciliation_preserves_last_applied_revision_and_desired_state_field
         "main",
         &host_quadlets,
         true,
+        Some(state_file.clone()),
     )
     .expect("second apply");
     assert_eq!(second.0.run.status, core_ops::core::types::RunStatus::Failure);
@@ -193,6 +195,7 @@ fn desired_state_provenance_remains_host_scoped() {
         "main",
         &host_quadlets,
         true,
+        Some(state_file.clone()),
     )
     .expect("apply");
     assert_eq!(result.0.run.summary, "converged");

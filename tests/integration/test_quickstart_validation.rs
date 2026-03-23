@@ -31,8 +31,10 @@ fn quickstart_mentions_provenance_status_and_version_review_flow() {
     let quickstart = root.join("specs/004-reconcile-provenance/quickstart.md");
     let contents = fs::read_to_string(&quickstart).expect("read quickstart");
 
-    assert!(contents.contains("core-ops status --state-file <path>"));
+    assert!(contents.contains("core-ops status"));
+    assert!(contents.contains("/var/lib/core-ops/status.json"));
+    assert!(contents.contains("--force-no-state"));
     assert!(contents.contains("Cargo.toml"));
     assert!(contents.contains("minor version review"));
-    assert!(contents.contains("0.1.0 -> 0.2.0"));
+    assert!(contents.contains("0.2.0 -> 0.3.0"));
 }

@@ -14,6 +14,7 @@ use crate::core::types::{
 };
 
 pub const STATE_FILE_ENV: &str = "CORE_OPS_STATE_FILE";
+pub const DEFAULT_STATE_FILE_PATH: &str = "/var/lib/core-ops/status.json";
 pub const CONTROLLER_VERSION_ENV: &str = "CORE_OPS_CONTROLLER_VERSION";
 pub const CONTROLLER_REVISION_ENV: &str = "CORE_OPS_CONTROLLER_REVISION";
 pub const CONTROLLER_BUILD_TIME_ENV: &str = "CORE_OPS_CONTROLLER_BUILD_TIME";
@@ -74,8 +75,14 @@ pub fn is_supported_schema_version(version: u32) -> bool {
     version == crate::core::types::PERSISTED_PROVENANCE_SCHEMA_VERSION
 }
 
-pub fn resolve_state_file(explicit: Option<PathBuf>) -> Option<PathBuf> {
-    explicit.or_else(|| std::env::var_os(STATE_FILE_ENV).map(PathBuf::from))
+pub fn resolve_state_file(explicit: Option<PathBuf>) -> PathBuf {
+    explicit
+        .or_else(|| std::env::var_os(STATE_FILE_ENV).map(PathBuf::from))
+        .unwrap_or_else(default_state_file_path)
+}
+
+pub fn default_state_file_path() -> PathBuf {
+    PathBuf::from(DEFAULT_STATE_FILE_PATH)
 }
 
 pub fn persist_success_state(

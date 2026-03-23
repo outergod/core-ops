@@ -23,11 +23,20 @@ Inspect the current host provenance and the most recent reconciliation outcome t
 
 ## Expected Operator Flow
 
-1. Run a reconcile attempt through the normal CoreOps workflow.
-2. Read the canonical persisted provenance snapshot or run
-   `core-ops status --state-file <path>`.
+1. Run a reconcile attempt through the normal CoreOps workflow. By default,
+   `apply` and `agent` maintain `/var/lib/core-ops/status.json`.
+2. Read the canonical persisted provenance snapshot or run `core-ops status`.
 3. Optionally use CLI status output that mirrors the same snapshot.
 4. Compare two snapshots to determine whether behavioral differences come from controller identity, desired-state observation, or reconciliation outcome.
+
+## Optional Overrides
+
+- Override the canonical path with `--state-file <path>` or
+  `CORE_OPS_STATE_FILE=<path>`.
+- Use `core-ops apply --force-no-state` only when you intentionally need an
+  apply run that does not update the canonical persisted provenance snapshot.
+- `core-ops plan` remains read-only and does not create or update the canonical
+  status snapshot.
 
 ## Example Checks
 
@@ -56,4 +65,6 @@ Inspect the current host provenance and the most recent reconciliation outcome t
 - Compatibility review outcome: minor version review required for this feature
   because it introduces a new canonical persisted provenance schema and new
   externally observable status behavior.
-- Planned controller package version update: `0.1.0 -> 0.2.0`.
+- Completed controller package version updates:
+  - `0.1.0 -> 0.2.0` for the initial provenance/state feature
+  - `0.2.0 -> 0.3.0` for default canonical state persistence and apply/status behavior changes

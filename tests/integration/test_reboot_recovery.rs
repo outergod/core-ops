@@ -154,6 +154,7 @@ fn apply_persists_status_snapshot_across_repeat_runs() {
         &rev,
         &host_quadlets,
         true,
+        Some(state_file.clone()),
     )
     .expect("first apply");
     assert_eq!(first.0.run.summary, "converged");
@@ -169,6 +170,7 @@ fn apply_persists_status_snapshot_across_repeat_runs() {
         &rev,
         &host_quadlets,
         true,
+        Some(state_file.clone()),
     )
     .expect("second apply");
     assert_eq!(second.0.run.summary, "converged");

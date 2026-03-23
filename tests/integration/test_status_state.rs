@@ -1,13 +1,134 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use core_ops::cli::status::{format_status_text, render_status_from_path};
-use core_ops::io::state::persist_success_state;
+use crate::integration::env_lock::path_lock;
+use core_ops::cli::apply::apply_with_report;
+use core_ops::cli::plan as plan_cmd;
+use core_ops::cli::status::{format_status_text, render_status, render_status_from_path};
+use core_ops::core::errors::CoreError;
+use core_ops::core::reconcile::ReconcileDependencies;
+use core_ops::io::apply::apply_plan;
+use core_ops::io::observed::read_observed_state;
+use core_ops::io::repo::load_desired_state;
+use core_ops::io::state::{
+    persist_success_state, read_persisted_state, resolve_state_file, STATE_FILE_ENV,
+};
 
 fn fixture(name: &str) -> String {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("tests/fixtures/provenance_state").join(name);
     fs::read_to_string(path).expect("read fixture")
+}
+
+fn temp_dir(prefix: &str) -> PathBuf {
+    let mut path = std::env::temp_dir();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time")
+        .as_nanos();
+    path.push(format!("{prefix}_{nanos}"));
+    path
+}
+
+fn init_git_repo(repo: &PathBuf) -> String {
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(repo)
+        .output()
+        .expect("git init");
+
+    let quadlets = repo.join("quadlets");
+    fs::create_dir_all(&quadlets).expect("create quadlets");
+    fs::write(quadlets.join("alpha.container"), "[Container]\nImage=alpine")
+        .expect("write quadlet");
+
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .arg("add")
+        .arg(".")
+        .output()
+        .expect("git add");
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .arg("commit")
+        .arg("-m")
+        .arg("fixture")
+        .env("GIT_AUTHOR_NAME", "fixture")
+        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
+        .env("GIT_COMMITTER_NAME", "fixture")
+        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
+        .output()
+        .expect("git commit");
+
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output()
+        .expect("git rev-parse");
+
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn write_systemctl_stub(dir: &PathBuf) {
+    let bin_path = dir.join("systemctl");
+    let script = r#"#!/bin/sh
+case "$1" in
+  is-system-running)
+    echo "running"
+    exit 0
+    ;;
+  show)
+    echo "ActiveState=active"
+    echo "UnitFileState=enabled"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+"#;
+    fs::write(&bin_path, script).expect("write systemctl stub");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&bin_path).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&bin_path, perms).expect("chmod");
+    }
+}
+
+fn map_io_error<E: std::fmt::Display>(err: E) -> CoreError {
+    CoreError {
+        class: core_ops::core::types::FailureClass::Plan,
+        message: err.to_string(),
+    }
+}
+
+struct EnvGuard {
+    previous: Option<std::ffi::OsString>,
+}
+
+impl EnvGuard {
+    fn set_state_file(path: &Path) -> Self {
+        let previous = std::env::var_os(STATE_FILE_ENV);
+        std::env::set_var(STATE_FILE_ENV, path);
+        Self { previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        if let Some(value) = &self.previous {
+            std::env::set_var(STATE_FILE_ENV, value);
+        } else {
+            std::env::remove_var(STATE_FILE_ENV);
+        }
+    }
 }
 
 #[test]
@@ -109,4 +230,125 @@ fn status_output_rebuilds_after_invalid_snapshot_is_replaced() {
     assert!(rebuilt.contains("\"last_applied_revision\": \"deadbeef\""));
 
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn apply_creates_state_snapshot_on_first_run_from_implicit_path() {
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let repo = temp_dir("core_ops_repo_status_default_apply");
+    let rev = init_git_repo(&repo);
+    let temp = temp_dir("core_ops_status_default_apply");
+    fs::create_dir_all(&temp).expect("temp dir");
+    write_systemctl_stub(&temp);
+
+    let old_path = std::env::var("PATH").unwrap_or_default();
+    std::env::set_var("PATH", format!("{}:{}", temp.display(), old_path));
+    let _path_guard = PathGuard { previous: old_path };
+
+    let state_path = temp.join("status.json");
+    let _state_guard = EnvGuard::set_state_file(&state_path);
+    let host_quadlets = temp.join("host_quadlets");
+    fs::create_dir_all(&host_quadlets).expect("host quadlets");
+
+    let implicit_state_path = resolve_state_file(None);
+    let (_result, _report, _plan) = apply_with_report(
+        repo.to_str().unwrap(),
+        &rev,
+        &host_quadlets,
+        false,
+        Some(implicit_state_path),
+    )
+    .expect("apply");
+
+    assert!(state_path.exists());
+    let state = read_persisted_state(&state_path)
+        .expect("read state")
+        .expect("state exists");
+    assert_eq!(
+        state.reconciliation.status,
+        core_ops::core::types::ReconciliationStatus::Success
+    );
+}
+
+#[test]
+fn plan_does_not_create_state_snapshot_from_implicit_path() {
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let repo = temp_dir("core_ops_repo_status_plan");
+    let rev = init_git_repo(&repo);
+    let temp = temp_dir("core_ops_status_plan");
+    fs::create_dir_all(&temp).expect("temp dir");
+
+    let state_path = temp.join("status.json");
+    let _state_guard = EnvGuard::set_state_file(&state_path);
+    let host_quadlets = temp.join("host_quadlets");
+    fs::create_dir_all(&host_quadlets).expect("host quadlets");
+
+    let deps = ReconcileDependencies {
+        load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
+        read_observed: &|desired| {
+            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string()))
+                .map_err(map_io_error)
+        },
+        apply_plan: &|plan, desired| {
+            apply_plan(plan, &desired.workloads, &host_quadlets, false)
+                .map(|_| ())
+                .map_err(map_io_error)
+        },
+    };
+
+    let output = plan_cmd::plan(&deps).expect("plan");
+    assert!(output.summary.contains("plan "));
+    assert!(!state_path.exists());
+}
+
+#[test]
+fn apply_can_explicitly_opt_out_of_state_persistence() {
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let repo = temp_dir("core_ops_repo_status_no_state");
+    let rev = init_git_repo(&repo);
+    let temp = temp_dir("core_ops_status_no_state");
+    fs::create_dir_all(&temp).expect("temp dir");
+    write_systemctl_stub(&temp);
+
+    let old_path = std::env::var("PATH").unwrap_or_default();
+    std::env::set_var("PATH", format!("{}:{}", temp.display(), old_path));
+    let _path_guard = PathGuard { previous: old_path };
+
+    let state_path = temp.join("status.json");
+    let _state_guard = EnvGuard::set_state_file(&state_path);
+    let host_quadlets = temp.join("host_quadlets");
+    fs::create_dir_all(&host_quadlets).expect("host quadlets");
+
+    let (_result, report, _plan) =
+        apply_with_report(repo.to_str().unwrap(), &rev, &host_quadlets, false, None)
+            .expect("apply");
+
+    assert!(!state_path.exists());
+    assert!(!report.contains("\"status\": \"success\""));
+}
+
+#[test]
+fn status_uses_implicit_state_path_when_no_explicit_path_is_given() {
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let state_path = temp_dir("core_ops_status_implicit").join("status.json");
+    if let Some(parent) = state_path.parent() {
+        fs::create_dir_all(parent).expect("create parent");
+    }
+    fs::write(&state_path, fixture("valid-success.json")).expect("write state");
+    let _state_guard = EnvGuard::set_state_file(&state_path);
+
+    let output = render_status(None);
+    assert!(output.contains("\"status\": \"success\""));
+
+    let _ = fs::remove_file(state_path);
+}
+
+struct PathGuard {
+    previous: String,
+}
+
+impl Drop for PathGuard {
+    fn drop(&mut self) {
+        std::env::set_var("PATH", &self.previous);
+    }
 }

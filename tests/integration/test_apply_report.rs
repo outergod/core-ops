@@ -107,7 +107,7 @@ fn apply_report_includes_diffs_and_actions() {
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
 
     let (_result, report, _plan) =
-        apply_with_report(repo.to_str().unwrap(), &rev, &host_quadlets, false)
+        apply_with_report(repo.to_str().unwrap(), &rev, &host_quadlets, false, None)
             .expect("apply report");
 
     assert!(report.contains("diffs"));

@@ -74,12 +74,17 @@ package version in `Cargo.toml`.
 
 ## Provenance Status Snapshot Workflow
 
-- Canonical persisted provenance lives in the local status file selected with
-  `--state-file` or `CORE_OPS_STATE_FILE`.
-- `core-ops status --state-file <path>` reports that snapshot directly and
-  treats missing, partial, invalid, or unsupported snapshots as absent.
-- Apply and agent flows update the canonical snapshot rather than maintaining a
-  parallel persisted view.
+- Canonical persisted provenance defaults to
+  `/var/lib/core-ops/status.json`.
+- `--state-file <path>` or `CORE_OPS_STATE_FILE` override that default when a
+  different path is required.
+- `core-ops status` reads the canonical snapshot directly and treats missing,
+  partial, invalid, or unsupported snapshots as absent.
+- Apply and agent flows update the canonical snapshot by default rather than
+  maintaining a parallel persisted view.
+- `core-ops apply --force-no-state` is an explicit escape hatch for running an
+  apply without updating the canonical snapshot. It is intended for exceptional
+  cases, not normal operation.
 - Backward-incompatible persisted-schema changes require a recorded version
   review and a controller version update in `Cargo.toml` according to the
   project versioning policy.

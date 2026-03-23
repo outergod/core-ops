@@ -28,13 +28,12 @@ pub struct AgentOutput {
 }
 
 pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
-    if let Some(path) = resolve_state_file(config.state_file.clone()) {
-        if !path.exists() {
-            persist_never_run_state(&path, &config.repo, &config.rev)
-                .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
-        }
-        std::env::set_var(STATE_FILE_ENV, path);
+    let state_path = resolve_state_file(config.state_file.clone());
+    if !state_path.exists() {
+        persist_never_run_state(&state_path, &config.repo, &config.rev)
+            .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
     }
+    std::env::set_var(STATE_FILE_ENV, &state_path);
     let lock_path = config
         .lock_path
         .clone()
@@ -49,6 +48,7 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         &config.rev,
         &config.quadlet_dir,
         config.reload_systemd,
+        Some(state_path.clone()),
     );
 
     let release_result = lock
@@ -61,8 +61,7 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         return Err(err);
     }
 
-    let provenance = resolve_state_file(config.state_file.clone())
-        .and_then(|path| read_persisted_state(&path).ok().flatten());
+    let provenance = read_persisted_state(&state_path).ok().flatten();
     let event = build_audit_event(
         &run,
         Some(&plan),

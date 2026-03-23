@@ -64,9 +64,13 @@ pub struct ApplyArgs {
     #[arg(long)]
     pub audit_dir: Option<PathBuf>,
     /// Optional path to the canonical persisted provenance status file.
-    /// When omitted, the runtime uses CORE_OPS_STATE_FILE if set.
+    /// When omitted, the runtime uses CORE_OPS_STATE_FILE if set, otherwise
+    /// `/var/lib/core-ops/status.json`.
     #[arg(long)]
     pub state_file: Option<PathBuf>,
+    /// Force apply without updating the canonical persisted provenance state.
+    #[arg(long, conflicts_with = "state_file")]
+    pub force_no_state: bool,
     /// Skip systemd daemon-reload after applying changes.
     #[arg(long)]
     pub no_reload: bool,
@@ -93,7 +97,8 @@ pub struct AgentArgs {
     #[arg(long)]
     pub audit_dir: Option<PathBuf>,
     /// Optional path to the canonical persisted provenance status file.
-    /// When omitted, the runtime uses CORE_OPS_STATE_FILE if set.
+    /// When omitted, the runtime uses CORE_OPS_STATE_FILE if set, otherwise
+    /// `/var/lib/core-ops/status.json`.
     #[arg(long)]
     pub state_file: Option<PathBuf>,
     /// Path to the run lock file.
@@ -106,7 +111,9 @@ pub struct AgentArgs {
 
 #[derive(Args, Debug)]
 pub struct StatusArgs {
-    /// Path to the canonical provenance status snapshot to read.
+    /// Optional path to the canonical provenance status snapshot to read.
+    /// When omitted, the runtime uses CORE_OPS_STATE_FILE if set, otherwise
+    /// `/var/lib/core-ops/status.json`.
     #[arg(long)]
-    pub state_file: PathBuf,
+    pub state_file: Option<PathBuf>,
 }

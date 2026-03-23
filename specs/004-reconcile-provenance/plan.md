@@ -123,6 +123,8 @@ tests/
 - Controller package version update selected: `0.1.0 -> 0.2.0`.
 - Rationale: behavior and persisted-state compatibility change materially, but
   they do not require a major policy break for the current pre-1.0 controller.
-- Phase 7 follow-up: default canonical state persistence changes reopen
-  release-version-policy review; the final version decision remains pending
-  implementation and validation of the new default-path behavior.
+- Phase 7 follow-up review outcome: minor version update selected:
+  `0.2.0 -> 0.3.0`.
+- Phase 7 rationale: default canonical state persistence changes externally
+  observable `apply`, `agent`, and `status` behavior, but remain compatible
+  with the current pre-1.0 controller policy.
