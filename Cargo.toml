@@ -1,0 +1,19 @@
+[package]
+name = "core-ops"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.4", features = ["derive"] }
+log = { version = "0.4", features = ["kv"] }
+miette = { version = "7.2.0", features = ["fancy"] }
+systemd-journal-logger = "2.2.2"
+tempfile = "3.10.1"
+thiserror = "1.0.58"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "core-ops"
+path = "src/main.rs"

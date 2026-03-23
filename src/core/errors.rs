@@ -1,0 +1,47 @@
+use crate::core::types::FailureClass;
+use thiserror::Error;
+
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[error("{message}")]
+pub struct CoreError {
+    pub class: FailureClass,
+    pub message: String,
+}
+
+impl CoreError {
+    pub fn new(class: FailureClass, message: impl Into<String>) -> Self {
+        Self {
+            class,
+            message: message.into(),
+        }
+    }
+
+    pub fn is_retryable(&self) -> bool {
+        self.class == FailureClass::Transient
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ValidationErrorKind {
+    MissingInvariant,
+    MissingBoundaryScope,
+    DuplicateWorkload,
+    DuplicateUnitName,
+    UnsupportedQuadletType,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[error("{message}")]
+pub struct ValidationError {
+    pub kind: ValidationErrorKind,
+    pub message: String,
+}
+
+impl ValidationError {
+    pub fn new(kind: ValidationErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
+}
