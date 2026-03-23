@@ -24,3 +24,15 @@ fn quickstart_mentions_layered_overrides_flow() {
     assert!(contents.contains("CORE_OPS_HOST"));
     assert!(contents.contains("Evaluation Flow"));
 }
+
+#[test]
+fn quickstart_mentions_provenance_status_and_version_review_flow() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let quickstart = root.join("specs/004-reconcile-provenance/quickstart.md");
+    let contents = fs::read_to_string(&quickstart).expect("read quickstart");
+
+    assert!(contents.contains("core-ops status --state-file <path>"));
+    assert!(contents.contains("Cargo.toml"));
+    assert!(contents.contains("minor version review"));
+    assert!(contents.contains("0.1.0 -> 0.2.0"));
+}

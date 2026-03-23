@@ -128,14 +128,14 @@ description: "Task list for provenance and reconciliation revision tracking"
 
 **Purpose**: Documentation, compatibility, and end-to-end validation across all stories
 
-- [ ] T041 [P] Update developer guidance for canonical persisted provenance state in `docs/development.md`
-- [ ] T042 [P] Update CLI usage/help text for provenance status paths and behavior in `src/cli/args.rs`
-- [ ] T043 [P] Validate quickstart scenarios against persisted provenance behavior in `tests/integration/test_quickstart_validation.rs`
-- [ ] T044 [P] Add schema compatibility tests for persisted provenance versions in `tests/unit/test_state_snapshot.rs`
-- [ ] T045 [P] Add test asserting no journal/history artifact is required for provenance state in `tests/unit/test_state_snapshot.rs`
-- [ ] T046 [P] Document minor-or-major version review outcomes for incompatible persisted schema changes in `specs/004-reconcile-provenance/plan.md`
-- [ ] T047 [P] Evaluate and apply any required controller version update in `Cargo.toml` for merged observable or compatibility-affecting changes
-- [ ] T048 Run the full test suite covering provenance state, status CLI, and reconcile flows with `cargo test`
+- [X] T041 [P] Update developer guidance for canonical persisted provenance state in `docs/development.md`
+- [X] T042 [P] Update CLI usage/help text for provenance status paths and behavior in `src/cli/args.rs`
+- [X] T043 [P] Validate quickstart scenarios against persisted provenance behavior in `tests/integration/test_quickstart_validation.rs`
+- [X] T044 [P] Add schema compatibility tests for persisted provenance versions in `tests/unit/test_state_snapshot.rs`
+- [X] T045 [P] Add test asserting no journal/history artifact is required for provenance state in `tests/unit/test_state_snapshot.rs`
+- [X] T046 [P] Document minor-or-major version review outcomes for incompatible persisted schema changes in `specs/004-reconcile-provenance/plan.md`
+- [X] T047 [P] Evaluate and apply any required controller version update in `Cargo.toml` for merged observable or compatibility-affecting changes
+- [X] T048 Run the full test suite covering provenance state, status CLI, and reconcile flows with `cargo test`
 
 ---
 

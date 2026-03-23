@@ -71,3 +71,15 @@ Any change that affects externally observable behavior, persisted state schema,
 CLI output, reconciliation semantics, or compatibility must evaluate and
 update the release version policy. The canonical controller version is the
 package version in `Cargo.toml`.
+
+## Provenance Status Snapshot Workflow
+
+- Canonical persisted provenance lives in the local status file selected with
+  `--state-file` or `CORE_OPS_STATE_FILE`.
+- `core-ops status --state-file <path>` reports that snapshot directly and
+  treats missing, partial, invalid, or unsupported snapshots as absent.
+- Apply and agent flows update the canonical snapshot rather than maintaining a
+  parallel persisted view.
+- Backward-incompatible persisted-schema changes require a recorded version
+  review and a controller version update in `Cargo.toml` according to the
+  project versioning policy.

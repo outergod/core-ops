@@ -49,6 +49,21 @@ fn unsupported_schema_snapshot_is_treated_as_absent() {
 }
 
 #[test]
+fn supported_schema_snapshot_remains_readable_after_round_trip() {
+    let path = temp_file("state_supported_schema.json");
+    let state = fixture_state();
+    fs::write(
+        &path,
+        serde_json::to_vec_pretty(&state).expect("serialize supported state"),
+    )
+    .expect("write supported state");
+
+    let loaded = read_persisted_state(&path).expect("read supported state");
+    assert_eq!(loaded, Some(state));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn running_snapshot_requires_in_progress_status() {
     let mut state = fixture_state();
     state.reconciliation.running = true;
@@ -145,11 +160,22 @@ fn reconciliation_generation_and_transitions_remain_monotonic() {
     let _ = fs::remove_file(path);
 }
 
+#[test]
+fn persisted_state_does_not_require_history_or_journal_fields() {
+    let state = fixture_state();
+    let value = serde_json::to_value(&state).expect("serialize state");
+    let object = value.as_object().expect("state object");
+
+    assert!(object.get("history").is_none());
+    assert!(object.get("journal").is_none());
+    assert!(object.get("events").is_none());
+}
+
 fn fixture_state() -> PersistedProvenanceState {
     PersistedProvenanceState {
         schema_version: PERSISTED_PROVENANCE_SCHEMA_VERSION,
         controller: ControllerProvenance {
-            version: Some("0.1.0".to_string()),
+            version: Some("0.2.0".to_string()),
             revision: Some("abc1234".to_string()),
             build_time: Some("2026-03-23T10:00:00Z".to_string()),
             tree_state: TreeState::Clean,

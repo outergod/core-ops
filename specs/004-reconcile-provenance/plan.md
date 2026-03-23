@@ -108,3 +108,12 @@ tests/
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
 | | | |
+
+## Version Review Record
+
+- Trigger: this feature introduces a new canonical persisted provenance schema
+  and new externally observable status/reporting behavior.
+- Compatibility policy review: minor version review completed.
+- Controller package version update selected: `0.1.0 -> 0.2.0`.
+- Rationale: behavior and persisted-state compatibility change materially, but
+  they do not require a major policy break for the current pre-1.0 controller.

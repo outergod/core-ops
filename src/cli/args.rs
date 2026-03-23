@@ -17,7 +17,7 @@ pub enum Commands {
     Apply(ApplyArgs),
     /// Run the agent once (intended for systemd service execution).
     Agent(AgentArgs),
-    /// Display a stored audit record.
+    /// Display canonical persisted provenance from a status snapshot.
     Status(StatusArgs),
 }
 
@@ -64,6 +64,7 @@ pub struct ApplyArgs {
     #[arg(long)]
     pub audit_dir: Option<PathBuf>,
     /// Optional path to the canonical persisted provenance status file.
+    /// When omitted, the runtime uses CORE_OPS_STATE_FILE if set.
     #[arg(long)]
     pub state_file: Option<PathBuf>,
     /// Skip systemd daemon-reload after applying changes.
@@ -92,6 +93,7 @@ pub struct AgentArgs {
     #[arg(long)]
     pub audit_dir: Option<PathBuf>,
     /// Optional path to the canonical persisted provenance status file.
+    /// When omitted, the runtime uses CORE_OPS_STATE_FILE if set.
     #[arg(long)]
     pub state_file: Option<PathBuf>,
     /// Path to the run lock file.
@@ -104,7 +106,7 @@ pub struct AgentArgs {
 
 #[derive(Args, Debug)]
 pub struct StatusArgs {
-    /// Path to a provenance status file.
+    /// Path to the canonical provenance status snapshot to read.
     #[arg(long)]
     pub state_file: PathBuf,
 }

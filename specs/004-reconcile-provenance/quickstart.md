@@ -3,6 +3,16 @@
 ## Goal
 Inspect the current host provenance and the most recent reconciliation outcome through the canonical persisted status snapshot.
 
+## Canonical Versioning Expectations
+
+- The controller version reported in provenance comes from the package version
+  in `Cargo.toml`.
+- Changes merged under this feature that alter externally observable behavior
+  or persisted-state compatibility must evaluate and update that version
+  according to the project versioning policy.
+- Backward-incompatible persisted-schema changes require a recorded minor-or-
+  major version review outcome before merge.
+
 ## What This Iteration Adds
 
 - Controller provenance as identity data.
@@ -14,7 +24,8 @@ Inspect the current host provenance and the most recent reconciliation outcome t
 ## Expected Operator Flow
 
 1. Run a reconcile attempt through the normal CoreOps workflow.
-2. Read the canonical persisted provenance snapshot.
+2. Read the canonical persisted provenance snapshot or run
+   `core-ops status --state-file <path>`.
 3. Optionally use CLI status output that mirrors the same snapshot.
 4. Compare two snapshots to determine whether behavioral differences come from controller identity, desired-state observation, or reconciliation outcome.
 
@@ -39,3 +50,10 @@ Inspect the current host provenance and the most recent reconciliation outcome t
 
 ### Invalid Persisted State
 - If the persisted snapshot is partial, invalid, or on an unsupported schema, treat it as absent and investigate why a valid snapshot is unavailable.
+
+## Version Review Record For This Iteration
+
+- Compatibility review outcome: minor version review required for this feature
+  because it introduces a new canonical persisted provenance schema and new
+  externally observable status behavior.
+- Planned controller package version update: `0.1.0 -> 0.2.0`.
