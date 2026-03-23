@@ -6,8 +6,8 @@ use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
 use core_ops::io::{audit as audit_io, observed, repo};
 use core_ops::io::state::{
-    CONTROLLER_BUILD_TIME_ENV, CONTROLLER_REVISION_ENV, CONTROLLER_TREE_STATE_ENV,
-    CONTROLLER_VERSION_ENV, STATE_FILE_ENV,
+    read_persisted_state, CONTROLLER_BUILD_TIME_ENV, CONTROLLER_REVISION_ENV,
+    CONTROLLER_TREE_STATE_ENV, CONTROLLER_VERSION_ENV, STATE_FILE_ENV,
 };
 use core_ops::io::systemd::SYSTEMD_UNIT_DIR_ENV;
 use log::LevelFilter;
@@ -73,6 +73,10 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                 &run,
                 Some(&plan),
                 &result.verification_results,
+                state_file
+                    .as_ref()
+                    .and_then(|path| read_persisted_state(path).ok().flatten())
+                    .as_ref(),
             );
             audit_io::emit_journal_event(&event).map_err(map_apply_error)?;
             if let Some(dir) = audit_dir {
@@ -137,8 +141,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
         }
         Commands::Status(args) => {
             let state_file = args.state_file;
-            let contents = std::fs::read_to_string(&state_file).map_err(map_plan_error)?;
-            println!("{}", core_ops::cli::status::format_status_text(&contents));
+            println!("{}", core_ops::cli::status::render_status_from_path(&state_file));
             Ok(())
         }
     }
@@ -196,7 +199,7 @@ fn set_state_file(value: &Option<PathBuf>) {
 
 fn set_controller_provenance_defaults() {
     if std::env::var_os(CONTROLLER_VERSION_ENV).is_none() {
-        std::env::set_var(CONTROLLER_VERSION_ENV, env!("CARGO_PKG_VERSION"));
+        std::env::set_var(CONTROLLER_VERSION_ENV, canonical_controller_version());
     }
     if std::env::var_os(CONTROLLER_REVISION_ENV).is_none() {
         if let Some(revision) = option_env!("CORE_OPS_BUILD_REVISION") {
@@ -214,4 +217,8 @@ fn set_controller_provenance_defaults() {
             option_env!("CORE_OPS_TREE_STATE").unwrap_or("unknown"),
         );
     }
+}
+
+fn canonical_controller_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
 }

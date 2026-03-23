@@ -1,6 +1,7 @@
 use crate::core::types::{
-    AuditRecord, DiffItem, FailureClass, PlanAction, ReconcileRun, ReconciliationPlan, RunStatus,
-    DesiredState, QuadletType, VerificationResult, VerificationStatus,
+    AuditRecord, DesiredState, DiffItem, FailureClass, PersistedProvenanceState, PlanAction,
+    QuadletType, ReconcileRun, ReconciliationPlan, ReconciliationStatus, RunStatus,
+    VerificationResult, VerificationStatus,
 };
 
 pub fn build_audit_record(
@@ -87,12 +88,22 @@ pub struct AuditEvent {
     pub failed_artifacts: Vec<String>,
     pub failure_reason: Option<String>,
     pub summary: String,
+    pub controller_version: Option<String>,
+    pub controller_revision: Option<String>,
+    pub desired_repository: Option<String>,
+    pub desired_requested_ref: Option<String>,
+    pub desired_observed_revision: Option<String>,
+    pub reconciliation_generation: Option<u64>,
+    pub reconciliation_status: Option<String>,
+    pub attempted_revision: Option<String>,
+    pub applied_revision: Option<String>,
 }
 
 pub fn build_audit_event(
     run: &ReconcileRun,
     plan: Option<&ReconciliationPlan>,
     verification_results: &[VerificationResult],
+    provenance: Option<&PersistedProvenanceState>,
 ) -> AuditEvent {
     let failed_artifacts = verification_results
         .iter()
@@ -103,6 +114,30 @@ pub fn build_audit_event(
         Some(run.summary.clone())
     } else {
         None
+    };
+    let (
+        controller_version,
+        controller_revision,
+        desired_repository,
+        desired_requested_ref,
+        desired_observed_revision,
+        reconciliation_generation,
+        reconciliation_status,
+        attempted_revision,
+        applied_revision,
+    ) = match provenance {
+        Some(state) => (
+            state.controller.version.clone(),
+            state.controller.revision.clone(),
+            Some(state.desired_state.repository.clone()),
+            Some(state.desired_state.requested_ref.clone()),
+            state.desired_state.last_observed_revision.clone(),
+            Some(state.reconciliation.generation),
+            Some(reconciliation_status_label(&state.reconciliation.status).to_string()),
+            state.reconciliation.last_attempted_revision.clone(),
+            state.reconciliation.last_applied_revision.clone(),
+        ),
+        None => (None, None, None, None, None, None, None, None, None),
     };
 
     AuditEvent {
@@ -115,6 +150,15 @@ pub fn build_audit_event(
         failed_artifacts,
         failure_reason,
         summary: run.summary.clone(),
+        controller_version,
+        controller_revision,
+        desired_repository,
+        desired_requested_ref,
+        desired_observed_revision,
+        reconciliation_generation,
+        reconciliation_status,
+        attempted_revision,
+        applied_revision,
     }
 }
 
@@ -136,8 +180,22 @@ pub fn format_audit_event_json(event: &AuditEvent) -> String {
         None => "null".to_string(),
     };
     let failed_artifacts = format_string_array(&event.failed_artifacts);
+    let controller_version = format_optional_string(event.controller_version.as_deref());
+    let controller_revision = format_optional_string(event.controller_revision.as_deref());
+    let desired_repository = format_optional_string(event.desired_repository.as_deref());
+    let desired_requested_ref = format_optional_string(event.desired_requested_ref.as_deref());
+    let desired_observed_revision =
+        format_optional_string(event.desired_observed_revision.as_deref());
+    let reconciliation_generation = event
+        .reconciliation_generation
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "null".to_string());
+    let reconciliation_status =
+        format_optional_string(event.reconciliation_status.as_deref());
+    let attempted_revision = format_optional_string(event.attempted_revision.as_deref());
+    let applied_revision = format_optional_string(event.applied_revision.as_deref());
     format!(
-        "{{\"run_id\":\"{}\",\"plan_id\":{},\"plan_summary\":{},\"action_count\":{},\"status\":\"{}\",\"failure_class\":{},\"failed_artifacts\":{},\"failure_reason\":{},\"summary\":\"{}\"}}",
+        "{{\"run_id\":\"{}\",\"plan_id\":{},\"plan_summary\":{},\"action_count\":{},\"status\":\"{}\",\"failure_class\":{},\"failed_artifacts\":{},\"failure_reason\":{},\"summary\":\"{}\",\"controller_version\":{},\"controller_revision\":{},\"desired_repository\":{},\"desired_requested_ref\":{},\"desired_observed_revision\":{},\"reconciliation_generation\":{},\"reconciliation_status\":{},\"attempted_revision\":{},\"applied_revision\":{}}}",
         escape_json(&event.run_id),
         plan_id,
         plan_summary,
@@ -146,7 +204,16 @@ pub fn format_audit_event_json(event: &AuditEvent) -> String {
         failure_class,
         failed_artifacts,
         failure_reason,
-        escape_json(&event.summary)
+        escape_json(&event.summary),
+        controller_version,
+        controller_revision,
+        desired_repository,
+        desired_requested_ref,
+        desired_observed_revision,
+        reconciliation_generation,
+        reconciliation_status,
+        attempted_revision,
+        applied_revision
     )
 }
 
@@ -174,6 +241,15 @@ fn failure_class_label(class: &FailureClass) -> &'static str {
     }
 }
 
+fn reconciliation_status_label(status: &ReconciliationStatus) -> &'static str {
+    match status {
+        ReconciliationStatus::NeverRun => "never_run",
+        ReconciliationStatus::InProgress => "in_progress",
+        ReconciliationStatus::Success => "success",
+        ReconciliationStatus::Failed => "failed",
+    }
+}
+
 fn format_string_array(values: &[String]) -> String {
     let mut output = String::from("[");
     for (idx, value) in values.iter().enumerate() {
@@ -186,4 +262,11 @@ fn format_string_array(values: &[String]) -> String {
     }
     output.push(']');
     output
+}
+
+fn format_optional_string(value: Option<&str>) -> String {
+    match value {
+        Some(value) => format!("\"{}\"", escape_json(value)),
+        None => "null".to_string(),
+    }
 }

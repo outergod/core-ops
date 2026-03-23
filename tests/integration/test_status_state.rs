@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-use core_ops::cli::status::format_status_text;
+use core_ops::cli::status::{format_status_text, render_status_from_path};
+use core_ops::io::state::persist_success_state;
 
 fn fixture(name: &str) -> String {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -60,4 +61,52 @@ fn status_output_reflects_in_progress_snapshot_contents() {
     assert!(output.contains("\"status\": \"in_progress\""));
     assert!(output.contains("\"running\": true"));
     assert!(output.contains("\"last_applied_revision\": \"a42be91\""));
+}
+
+#[test]
+fn status_output_is_stable_for_unchanged_snapshot_contents() {
+    let contents = fixture("valid-success.json");
+
+    let first = format_status_text(&contents);
+    let second = format_status_text(&contents);
+
+    assert_eq!(first, second);
+}
+
+#[test]
+fn status_output_reports_absent_for_invalid_or_missing_snapshot() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let invalid = root.join("tests/fixtures/provenance_state/invalid-partial.json");
+    let missing = root.join("tests/fixtures/provenance_state/missing.json");
+
+    let invalid_output = render_status_from_path(&invalid);
+    let missing_output = render_status_from_path(&missing);
+
+    assert!(invalid_output.contains("\"status\": \"absent\""));
+    assert!(missing_output.contains("\"status\": \"absent\""));
+}
+
+#[test]
+fn status_output_rebuilds_after_invalid_snapshot_is_replaced() {
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "core_ops_status_rebuild_{}.json",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix epoch")
+            .as_nanos()
+    ));
+    fs::write(&path, "{\n  \"schema_version\": 1,\n  \"controller\": {").expect("write invalid");
+
+    let absent = render_status_from_path(&path);
+    assert!(absent.contains("\"status\": \"absent\""));
+
+    persist_success_state(&path, "file:///var/lib/core-ops/repo", "main", "deadbeef")
+        .expect("rebuild snapshot");
+    let rebuilt = render_status_from_path(&path);
+
+    assert!(rebuilt.contains("\"status\": \"success\""));
+    assert!(rebuilt.contains("\"last_applied_revision\": \"deadbeef\""));
+
+    let _ = fs::remove_file(path);
 }

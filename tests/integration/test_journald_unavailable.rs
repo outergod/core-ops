@@ -11,6 +11,6 @@ fn journald_unavailable_does_not_fail_emit() {
         failure_class: None,
         summary: "converged".to_string(),
     };
-    let event = build_audit_event(&run, None, &[]);
+    let event = build_audit_event(&run, None, &[], None);
     emit_journal_event(&event).expect("emit audit event");
 }

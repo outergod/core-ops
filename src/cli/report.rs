@@ -27,6 +27,13 @@ pub fn format_plan_report(plan: &ReconciliationPlan, diffs: &[DiffItem]) -> Stri
     output
 }
 
+pub fn append_provenance_report(base: &str, contents: Option<&str>) -> String {
+    match contents {
+        Some(contents) => format!("{base}\n{}", crate::cli::status::format_status_text(contents)),
+        None => base.to_string(),
+    }
+}
+
 fn quadlet_type_label(quadlet_type: Option<QuadletType>) -> &'static str {
     match quadlet_type {
         Some(QuadletType::Container) => "container",

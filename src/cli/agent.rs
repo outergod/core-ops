@@ -6,7 +6,9 @@ use crate::core::errors::CoreError;
 use crate::core::types::{FailureClass, ReconcileRun, RunLock};
 use crate::io::audit as audit_io;
 use crate::io::lock::FileRunLock;
-use crate::io::state::{persist_never_run_state, resolve_state_file, STATE_FILE_ENV};
+use crate::io::state::{
+    persist_never_run_state, read_persisted_state, resolve_state_file, STATE_FILE_ENV,
+};
 
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -59,7 +61,14 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         return Err(err);
     }
 
-    let event = build_audit_event(&run, Some(&plan), &result.verification_results);
+    let provenance = resolve_state_file(config.state_file.clone())
+        .and_then(|path| read_persisted_state(&path).ok().flatten());
+    let event = build_audit_event(
+        &run,
+        Some(&plan),
+        &result.verification_results,
+        provenance.as_ref(),
+    );
     audit_io::emit_journal_event(&event)
         .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
 

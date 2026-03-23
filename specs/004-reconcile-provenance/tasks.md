@@ -106,19 +106,19 @@ description: "Task list for provenance and reconciliation revision tracking"
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T031 [P] [US3] Integration test for snapshot comparison scenarios in `tests/integration/test_status_contract.rs`
-- [ ] T032 [P] [US3] Integration test for CLI/status contract conformance in `tests/integration/test_status_state.rs`
-- [ ] T033 [P] [US3] Integration test for invalid or missing persisted provenance being treated as absent and rebuilt after fresh observation in `tests/integration/test_status_state.rs`
+- [X] T031 [P] [US3] Integration test for snapshot comparison scenarios in `tests/integration/test_status_contract.rs`
+- [X] T032 [P] [US3] Integration test for CLI/status contract conformance in `tests/integration/test_status_state.rs`
+- [X] T033 [P] [US3] Integration test for invalid or missing persisted provenance being treated as absent and rebuilt after fresh observation in `tests/integration/test_status_state.rs`
 
 ### Implementation for User Story 3
 
-- [ ] T034 [US3] Align CLI status output with the canonical status-file contract in `src/cli/status.rs`
-- [ ] T035 [US3] Mirror canonical provenance snapshot contents into operator-facing reports without independent state in `src/cli/report.rs`
-- [ ] T036 [US3] Emit audit/journald provenance fields consistent with canonical persisted state in `src/core/audit.rs`
-- [ ] T037 [US3] Update audit IO to log machine-readable provenance fields derived from canonical state in `src/io/audit.rs`
-- [ ] T038 [US3] Implement explicit schema migration or incompatibility handling policy in `src/io/state.rs`
-- [ ] T039 [US3] Source controller version provenance from the package version in `Cargo.toml` within `src/main.rs`
-- [ ] T040 [P] [US3] Integration test for controller version provenance matching `Cargo.toml` in `tests/integration/test_status_contract.rs`
+- [X] T034 [US3] Align CLI status output with the canonical status-file contract in `src/cli/status.rs`
+- [X] T035 [US3] Mirror canonical provenance snapshot contents into operator-facing reports without independent state in `src/cli/report.rs`
+- [X] T036 [US3] Emit audit/journald provenance fields consistent with canonical persisted state in `src/core/audit.rs`
+- [X] T037 [US3] Update audit IO to log machine-readable provenance fields derived from canonical state in `src/io/audit.rs`
+- [X] T038 [US3] Implement explicit schema migration or incompatibility handling policy in `src/io/state.rs`
+- [X] T039 [US3] Source controller version provenance from the package version in `Cargo.toml` within `src/main.rs`
+- [X] T040 [P] [US3] Integration test for controller version provenance matching `Cargo.toml` in `tests/integration/test_status_contract.rs`
 
 **Checkpoint**: All user stories should now be independently functional
 

@@ -32,16 +32,7 @@ pub fn read_persisted_state(path: &Path) -> Result<Option<PersistedProvenanceSta
         Err(err) => return Err(StateError::Io(err.to_string())),
     };
 
-    let state: PersistedProvenanceState = match serde_json::from_str(&contents) {
-        Ok(state) => state,
-        Err(_) => return Ok(None),
-    };
-
-    if !state.is_supported_schema() || !state.reconciliation.is_valid() {
-        return Ok(None);
-    }
-
-    Ok(Some(state))
+    Ok(parse_persisted_state_text(&contents))
 }
 
 pub fn write_persisted_state(
@@ -64,6 +55,23 @@ pub fn write_persisted_state(
     temp.persist(path)
         .map(|_| ())
         .map_err(|err| StateError::Io(err.error.to_string()))
+}
+
+pub fn parse_persisted_state_text(contents: &str) -> Option<PersistedProvenanceState> {
+    let value: serde_json::Value = serde_json::from_str(contents).ok()?;
+    let schema_version = value.get("schema_version")?.as_u64()? as u32;
+    if !is_supported_schema_version(schema_version) {
+        return None;
+    }
+    let state: PersistedProvenanceState = serde_json::from_value(value).ok()?;
+    if !state.reconciliation.is_valid() {
+        return None;
+    }
+    Some(state)
+}
+
+pub fn is_supported_schema_version(version: u32) -> bool {
+    version == crate::core::types::PERSISTED_PROVENANCE_SCHEMA_VERSION
 }
 
 pub fn resolve_state_file(explicit: Option<PathBuf>) -> Option<PathBuf> {
