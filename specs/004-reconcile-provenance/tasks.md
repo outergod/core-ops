@@ -34,14 +34,14 @@ description: "Task list for provenance and reconciliation revision tracking"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Define persisted provenance state types and invariants in `src/core/types.rs`
-- [ ] T005 Add provenance/state-specific error variants in `src/core/errors.rs`
-- [ ] T006 Create canonical persisted provenance IO boundary in `src/io/state.rs`
-- [ ] T007 Export persisted provenance IO boundary from `src/io/mod.rs`
-- [ ] T008 Add CLI/runtime state path configuration for provenance status file in `src/cli/args.rs`
-- [ ] T009 Wire provenance state path configuration into command execution in `src/main.rs`
-- [ ] T010 [P] Add unit test coverage for provenance type invariants in `tests/unit/test_invariants.rs`
-- [ ] T011 [P] Add unit test coverage for persisted snapshot parsing/validation in `tests/unit/test_state_snapshot.rs`
+- [X] T004 Define persisted provenance state types and invariants in `src/core/types.rs`
+- [X] T005 Add provenance/state-specific error variants in `src/core/errors.rs`
+- [X] T006 Create canonical persisted provenance IO boundary in `src/io/state.rs`
+- [X] T007 Export persisted provenance IO boundary from `src/io/mod.rs`
+- [X] T008 Add CLI/runtime state path configuration for provenance status file in `src/cli/args.rs`
+- [X] T009 Wire provenance state path configuration into command execution in `src/main.rs`
+- [X] T010 [P] Add unit test coverage for provenance type invariants in `tests/unit/test_invariants.rs`
+- [X] T011 [P] Add unit test coverage for persisted snapshot parsing/validation in `tests/unit/test_state_snapshot.rs`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 

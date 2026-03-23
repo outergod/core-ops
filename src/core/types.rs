@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DesiredState {
     pub repository_ref: String,
@@ -303,4 +305,83 @@ pub fn index_workloads(workloads: &[Workload]) -> BTreeMap<String, Workload> {
         map.insert(workload.name.clone(), workload.clone());
     }
     map
+}
+
+pub const PERSISTED_PROVENANCE_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PersistedProvenanceState {
+    pub schema_version: u32,
+    pub controller: ControllerProvenance,
+    pub desired_state: DesiredStateProvenance,
+    pub reconciliation: ReconciliationProvenance,
+}
+
+impl PersistedProvenanceState {
+    pub fn is_supported_schema(&self) -> bool {
+        self.schema_version == PERSISTED_PROVENANCE_SCHEMA_VERSION
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ControllerProvenance {
+    pub version: Option<String>,
+    pub revision: Option<String>,
+    pub build_time: Option<String>,
+    pub tree_state: TreeState,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesiredStateProvenance {
+    pub repository: String,
+    pub requested_ref: String,
+    pub last_observed_revision: Option<String>,
+    pub last_observed_at: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReconciliationProvenance {
+    pub generation: u64,
+    pub status: ReconciliationStatus,
+    pub running: bool,
+    pub last_attempted_revision: Option<String>,
+    pub last_applied_revision: Option<String>,
+    pub last_started_at: Option<String>,
+    pub last_finished_at: Option<String>,
+    pub attempted_observed_divergence: Option<RevisionDivergence>,
+}
+
+impl ReconciliationProvenance {
+    pub fn is_valid(&self) -> bool {
+        if self.running && self.status != ReconciliationStatus::InProgress {
+            return false;
+        }
+        if self.status == ReconciliationStatus::InProgress && self.last_finished_at.is_some() {
+            return false;
+        }
+        true
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RevisionDivergence {
+    pub observed_revision: String,
+    pub attempted_revision: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReconciliationStatus {
+    NeverRun,
+    InProgress,
+    Success,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TreeState {
+    Clean,
+    Dirty,
+    Unknown,
 }

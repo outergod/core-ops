@@ -63,6 +63,9 @@ pub struct ApplyArgs {
     /// Optional directory for persisted audit records.
     #[arg(long)]
     pub audit_dir: Option<PathBuf>,
+    /// Optional path to the canonical persisted provenance status file.
+    #[arg(long)]
+    pub state_file: Option<PathBuf>,
     /// Skip systemd daemon-reload after applying changes.
     #[arg(long)]
     pub no_reload: bool,
@@ -88,6 +91,9 @@ pub struct AgentArgs {
     /// Optional directory for persisted audit records.
     #[arg(long)]
     pub audit_dir: Option<PathBuf>,
+    /// Optional path to the canonical persisted provenance status file.
+    #[arg(long)]
+    pub state_file: Option<PathBuf>,
     /// Path to the run lock file.
     #[arg(long)]
     pub lock_path: Option<PathBuf>,
@@ -98,7 +104,7 @@ pub struct AgentArgs {
 
 #[derive(Args, Debug)]
 pub struct StatusArgs {
-    /// Path to an audit record file.
+    /// Path to a provenance status file.
     #[arg(long)]
-    pub audit_file: PathBuf,
+    pub state_file: PathBuf,
 }

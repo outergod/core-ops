@@ -164,6 +164,7 @@ dependencies = [
  "log",
  "miette",
  "serde",
+ "serde_json",
  "serde_yaml",
  "systemd-journal-logger",
  "tempfile",

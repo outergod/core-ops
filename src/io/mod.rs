@@ -4,4 +4,5 @@ pub mod lock;
 pub mod observed;
 pub mod quadlet;
 pub mod repo;
+pub mod state;
 pub mod systemd;

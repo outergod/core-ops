@@ -5,6 +5,7 @@ use core_ops::cli::agent as agent_cmd;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
 use core_ops::io::{audit as audit_io, observed, repo};
+use core_ops::io::state::STATE_FILE_ENV;
 use core_ops::io::systemd::SYSTEMD_UNIT_DIR_ENV;
 use log::LevelFilter;
 use clap::Parser;
@@ -55,9 +56,11 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let rev = args.rev;
             let quadlet_dir = args.quadlet_dir;
             let audit_dir = args.audit_dir;
+            let state_file = args.state_file;
             let no_reload = args.no_reload;
             set_systemd_unit_dir(&args.systemd_unit_dir);
             set_host_override(&args.host);
+            set_state_file(&state_file);
 
             let (result, report, plan) =
                 apply_cmd::apply_with_report(&repo_source, &rev, &quadlet_dir, !no_reload)?;
@@ -107,9 +110,11 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let audit_dir = args
                 .audit_dir
                 .or_else(|| std::env::var_os("CORE_OPS_AUDIT_DIR").map(PathBuf::from));
+            let state_file = args.state_file;
             let lock_path = args
                 .lock_path
                 .or_else(|| std::env::var_os("CORE_OPS_LOCK_PATH").map(PathBuf::from));
+            set_state_file(&state_file);
 
             let config = agent_cmd::AgentConfig {
                 repo,
@@ -126,8 +131,8 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             Ok(())
         }
         Commands::Status(args) => {
-            let audit_file = args.audit_file;
-            let contents = std::fs::read_to_string(&audit_file).map_err(map_plan_error)?;
+            let state_file = args.state_file;
+            let contents = std::fs::read_to_string(&state_file).map_err(map_plan_error)?;
             println!("{}", core_ops::cli::status::format_status_text(&contents));
             Ok(())
         }
@@ -175,5 +180,11 @@ fn set_systemd_unit_dir(value: &Option<PathBuf>) {
 fn set_host_override(value: &Option<String>) {
     if let Some(host) = value {
         std::env::set_var("CORE_OPS_HOST", host);
+    }
+}
+
+fn set_state_file(value: &Option<PathBuf>) {
+    if let Some(path) = value {
+        std::env::set_var(STATE_FILE_ENV, path);
     }
 }
