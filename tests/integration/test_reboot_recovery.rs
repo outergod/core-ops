@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::{reconcile_apply, ReconcileDependencies};
+use core_ops::io::state::STATE_FILE_ENV;
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::read_observed_state;
 use core_ops::io::repo::load_desired_state;
@@ -126,6 +127,56 @@ fn reconcile_recovers_after_reboot() {
     assert_eq!(second.run.summary, "converged");
 }
 
+#[test]
+fn apply_persists_status_snapshot_across_repeat_runs() {
+    let _lock = path_lock().lock().expect("path lock");
+    let repo = temp_dir("core_ops_repo_state");
+    let rev = init_git_repo(&repo);
+
+    let temp = temp_dir("core_ops_state");
+    fs::create_dir_all(&temp).expect("temp dir");
+    write_systemctl_stub(&temp);
+
+    let old_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{}", temp.display(), old_path);
+    std::env::set_var("PATH", new_path);
+    let _guard = PathGuard { previous: old_path };
+
+    let state_file = temp.join("status.json");
+    std::env::set_var(STATE_FILE_ENV, &state_file);
+    let _state_guard = StateFileGuard;
+
+    let host_quadlets = temp.join("host_quadlets");
+    fs::create_dir_all(&host_quadlets).expect("host quadlets");
+
+    let first = core_ops::cli::apply::apply_with_report(
+        repo.to_str().expect("repo path"),
+        &rev,
+        &host_quadlets,
+        true,
+    )
+    .expect("first apply");
+    assert_eq!(first.0.run.summary, "converged");
+
+    let first_contents = fs::read_to_string(&state_file).expect("read first state file");
+    assert!(first_contents.contains("\"controller\""));
+    assert!(first_contents.contains("\"desired_state\""));
+    assert!(first_contents.contains("\"reconciliation\""));
+    assert!(first_contents.contains("\"generation\": 1"));
+
+    let second = core_ops::cli::apply::apply_with_report(
+        repo.to_str().expect("repo path"),
+        &rev,
+        &host_quadlets,
+        true,
+    )
+    .expect("second apply");
+    assert_eq!(second.0.run.summary, "converged");
+
+    let second_contents = fs::read_to_string(&state_file).expect("read second state file");
+    assert!(second_contents.contains("\"generation\": 2"));
+}
+
 fn map_io_error<E: std::fmt::Display>(err: E) -> CoreError {
     CoreError {
         class: core_ops::core::types::FailureClass::Apply,
@@ -140,5 +191,13 @@ struct PathGuard {
 impl Drop for PathGuard {
     fn drop(&mut self) {
         std::env::set_var("PATH", &self.previous);
+    }
+}
+
+struct StateFileGuard;
+
+impl Drop for StateFileGuard {
+    fn drop(&mut self) {
+        std::env::remove_var(STATE_FILE_ENV);
     }
 }

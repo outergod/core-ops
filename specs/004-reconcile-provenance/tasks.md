@@ -55,18 +55,18 @@ description: "Task list for provenance and reconciliation revision tracking"
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T012 [P] [US1] Unit test for atomic snapshot read/write behavior in `tests/unit/test_state_snapshot.rs`
-- [ ] T013 [P] [US1] Integration test for canonical status file persistence across restart in `tests/integration/test_reboot_recovery.rs`
-- [ ] T014 [P] [US1] Integration test for CLI status reflecting canonical file contents in `tests/integration/test_status_state.rs`
+- [X] T012 [P] [US1] Unit test for atomic snapshot read/write behavior in `tests/unit/test_state_snapshot.rs`
+- [X] T013 [P] [US1] Integration test for canonical status file persistence across restart in `tests/integration/test_reboot_recovery.rs`
+- [X] T014 [P] [US1] Integration test for CLI status reflecting canonical file contents in `tests/integration/test_status_state.rs`
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Implement canonical provenance snapshot serialization and validation in `src/io/state.rs`
-- [ ] T016 [US1] Capture controller identity provenance for persisted snapshots in `src/main.rs`
-- [ ] T017 [US1] Persist successful current-state provenance snapshots from reconcile/apply flows in `src/cli/apply.rs`
-- [ ] T018 [US1] Persist successful current-state provenance snapshots from agent flows in `src/cli/agent.rs`
-- [ ] T019 [US1] Implement CLI status loading/rendering from the canonical status file in `src/cli/status.rs`
-- [ ] T020 [US1] Wire the status command to the canonical provenance file path in `src/main.rs`
+- [X] T015 [US1] Implement canonical provenance snapshot serialization and validation in `src/io/state.rs`
+- [X] T016 [US1] Capture controller identity provenance for persisted snapshots in `src/main.rs`
+- [X] T017 [US1] Persist successful current-state provenance snapshots from reconcile/apply flows in `src/cli/apply.rs`
+- [X] T018 [US1] Persist successful current-state provenance snapshots from agent flows in `src/cli/agent.rs`
+- [X] T019 [US1] Implement CLI status loading/rendering from the canonical status file in `src/cli/status.rs`
+- [X] T020 [US1] Wire the status command to the canonical provenance file path in `src/main.rs`
 
 **Checkpoint**: User Story 1 should be fully functional and testable independently
 

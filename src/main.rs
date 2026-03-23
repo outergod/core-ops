@@ -5,13 +5,17 @@ use core_ops::cli::agent as agent_cmd;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
 use core_ops::io::{audit as audit_io, observed, repo};
-use core_ops::io::state::STATE_FILE_ENV;
+use core_ops::io::state::{
+    CONTROLLER_BUILD_TIME_ENV, CONTROLLER_REVISION_ENV, CONTROLLER_TREE_STATE_ENV,
+    CONTROLLER_VERSION_ENV, STATE_FILE_ENV,
+};
 use core_ops::io::systemd::SYSTEMD_UNIT_DIR_ENV;
 use log::LevelFilter;
 use clap::Parser;
 use std::path::PathBuf;
 
 fn main() {
+    set_controller_provenance_defaults();
     init_logging();
     let cli = Cli::parse();
     if let Err(err) = run(cli) {
@@ -121,6 +125,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                 rev,
                 quadlet_dir,
                 audit_dir,
+                state_file,
                 reload_systemd: !args.no_reload,
                 lock_path,
             };
@@ -186,5 +191,27 @@ fn set_host_override(value: &Option<String>) {
 fn set_state_file(value: &Option<PathBuf>) {
     if let Some(path) = value {
         std::env::set_var(STATE_FILE_ENV, path);
+    }
+}
+
+fn set_controller_provenance_defaults() {
+    if std::env::var_os(CONTROLLER_VERSION_ENV).is_none() {
+        std::env::set_var(CONTROLLER_VERSION_ENV, env!("CARGO_PKG_VERSION"));
+    }
+    if std::env::var_os(CONTROLLER_REVISION_ENV).is_none() {
+        if let Some(revision) = option_env!("CORE_OPS_BUILD_REVISION") {
+            std::env::set_var(CONTROLLER_REVISION_ENV, revision);
+        }
+    }
+    if std::env::var_os(CONTROLLER_BUILD_TIME_ENV).is_none() {
+        if let Some(build_time) = option_env!("CORE_OPS_BUILD_TIME") {
+            std::env::set_var(CONTROLLER_BUILD_TIME_ENV, build_time);
+        }
+    }
+    if std::env::var_os(CONTROLLER_TREE_STATE_ENV).is_none() {
+        std::env::set_var(
+            CONTROLLER_TREE_STATE_ENV,
+            option_env!("CORE_OPS_TREE_STATE").unwrap_or("unknown"),
+        );
     }
 }

@@ -6,6 +6,7 @@ use crate::core::types::{FailureClass, ReconcileRun};
 use crate::io::apply::apply_plan;
 use crate::io::observed::read_observed_state;
 use crate::io::repo::load_desired_state;
+use crate::io::state::{persist_success_state, resolve_state_file};
 use crate::cli::report::format_plan_report;
 
 pub fn apply(
@@ -55,6 +56,12 @@ pub fn apply_with_report(
     let plan_result = reconcile_plan(&deps)?;
     let report = format_plan_report(&plan_result.plan, &plan_result.diffs);
     let result = reconcile_apply(&deps)?;
+    if result.run.status == crate::core::types::RunStatus::Success {
+        if let Some(path) = resolve_state_file(None) {
+            persist_success_state(&path, &repo_source, revision, &result.desired.revision_id)
+                .map_err(map_apply_error)?;
+        }
+    }
     Ok((result, report, plan_result.plan))
 }
 
