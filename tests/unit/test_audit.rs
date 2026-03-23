@@ -18,6 +18,7 @@ fn desired_state() -> DesiredState {
             restart_policy: RestartPolicy::Always,
         }],
         managed_config_paths: Vec::new(),
+        managed_config_roots: Vec::new(),
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
         boundaries: Boundaries {
             scopes: vec![BoundaryScope::QuadletSystemd],

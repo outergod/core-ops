@@ -10,6 +10,7 @@ fn idempotent_apply_invariant_is_allowed() {
         revision_id: "rev".to_string(),
         workloads: Vec::new(),
         managed_config_paths: Vec::new(),
+        managed_config_roots: Vec::new(),
         invariants: vec![
             Invariant::BoundariesDeclared,
             Invariant::DeterministicPlan,

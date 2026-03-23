@@ -21,6 +21,7 @@ pub const HOST_OVERRIDE_ENV: &str = "CORE_OPS_HOST";
 
 #[derive(Debug)]
 pub struct LayeredRepo {
+    _repo_temp: TempDir,
     pub repo_path: PathBuf,
     pub revision_id: String,
     pub host: HostDeclaration,
@@ -117,6 +118,7 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
         revision_id,
         workloads,
         Vec::new(),
+        Vec::new(),
     ))
 }
 
@@ -157,6 +159,7 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     overlays.config_overrides = filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
 
     Ok(LayeredRepo {
+        _repo_temp: temp,
         repo_path,
         revision_id: revision_id.to_string(),
         host: host_decl,
@@ -195,6 +198,9 @@ fn load_layered_desired_state(
     let mut config_paths = collect_config_paths(&host_decl.services, &catalog, &overlays);
     config_paths.sort();
     config_paths.dedup();
+    let mut config_roots = config_roots_for_services(&host_decl.services);
+    config_roots.sort();
+    config_roots.dedup();
     validate_config_paths(&config_paths)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
 
@@ -211,6 +217,7 @@ fn load_layered_desired_state(
         revision_id,
         workloads,
         config_paths,
+        config_roots,
     ))
 }
 
@@ -219,12 +226,14 @@ pub fn desired_state_from_workloads(
     revision_id: &str,
     workloads: Vec<Workload>,
     managed_config_paths: Vec<String>,
+    managed_config_roots: Vec<String>,
 ) -> DesiredState {
     DesiredState {
         repository_ref: repo_path.display().to_string(),
         revision_id: revision_id.to_string(),
         workloads,
         managed_config_paths,
+        managed_config_roots,
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
         boundaries: Boundaries {
             scopes: vec![BoundaryScope::QuadletSystemd],
@@ -606,6 +615,13 @@ fn config_prefixes_for_services(services: &[String]) -> Vec<String> {
     services
         .iter()
         .map(|service| format!("/etc/{service}/"))
+        .collect()
+}
+
+fn config_roots_for_services(services: &[String]) -> Vec<String> {
+    services
+        .iter()
+        .map(|service| format!("/etc/{service}"))
         .collect()
 }
 

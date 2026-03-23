@@ -79,6 +79,8 @@ description: "Task list for layered overrides feature"
 
 - [X] T018 [P] [US2] Unit test for drop-in ordering/precedence in `tests/unit/test_dropin_order.rs`
 - [X] T019 [P] [US2] Integration test for host overlays application in `tests/integration/test_host_overrides.rs`
+- [X] T041 [P] [US2] Integration test for stale managed config removal via root scanning in `tests/integration/test_config_cleanup.rs`
+- [X] T042 [P] [US2] Integration test for managed config root closure behavior in `tests/integration/test_config_roots.rs`
 
 ### Implementation for User Story 2
 
@@ -94,6 +96,8 @@ description: "Task list for layered overrides feature"
 - [X] T038 [US2] Apply config layering rules (whole-file replacement + directory overlay) in `src/core/evaluate.rs`
 - [X] T039 [US2] Materialize config payloads to bounded host paths in `src/io/apply.rs`
 - [X] T040 [US2] Validate bounded config roots and reject unsupported formats in `src/core/validation.rs`
+- [X] T043 [US2] Add managed config roots to desired state in `src/core/types.rs`
+- [X] T044 [US2] Read managed config roots when building observed state in `src/io/observed.rs`
 
 **Checkpoint**: User Story 2 functional and testable
 
