@@ -130,20 +130,24 @@ outputs and stable diagnostics.
 - **FR-011**: The system MUST clearly distinguish Quadlet drop-ins from native
   systemd drop-ins in validation and evaluation rules.
 - **FR-012**: Selected services MAY include managed config files and directories
-  that are materialized to bounded host paths (e.g., `/etc/<service>`) and then
-  mounted or referenced by Quadlets.
+  that are materialized to bounded host paths (e.g., `/etc/traefik`) and then
+  mounted or referenced by Quadlets. Those bounded host paths are determined by
+  the declared config payload target paths, not by the selected service name.
 - **FR-013**: Config payloads MUST support shared base definitions plus
   host-specific overrides using whole-file replacement and directory layering.
 - **FR-014**: The system MUST NOT implement semantic merging of TOML/YAML/JSON
   config formats and MUST preserve explicit boundaries to avoid becoming a
   general configuration management system.
-- **FR-015**: Managed config roots for selected services (e.g., `/etc/<service>/`)
+- **FR-015**: Managed config roots for selected services (e.g., `/etc/traefik/`)
   are authoritative, closed-world directories for core-ops and MUST NOT contain
-  unmanaged files.
+  unmanaged files. Managed config roots MUST be derived from the concrete
+  bounded target paths in evaluated desired state rather than inferred from the
+  selected service name.
 - **FR-016**: During reconciliation, any file within a managed config root that
   is not present in the concrete desired state MUST be removed.
 - **FR-017**: Deletions of managed config files MUST be explicit in plan/apply
-  output and constrained to the managed config roots for selected services.
+  output and constrained to the managed config roots derived from the evaluated
+  desired config payload target paths.
 - **FR-018**: Partial apply or failed reconciliation MUST leave the system in a
   recoverable state; a subsequent apply MUST converge by re-applying desired
   config files and re-attempting deletions.
@@ -170,6 +174,9 @@ outputs and stable diagnostics.
   materialized to bounded host paths and referenced by Quadlets.
 - **Config Overlay**: Host-specific config files/directories that replace or
   layer on top of base config payloads.
+- **Managed Config Root**: The authoritative host directory boundary derived
+  from evaluated config payload target paths. Multiple service definitions MAY
+  legitimately materialize into the same managed config root.
 
 ## Repository Structure Example
 

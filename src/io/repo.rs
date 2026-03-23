@@ -155,7 +155,7 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let mut overlays = load_host_overrides(&host_dir)?;
-    let allowed_prefixes = config_prefixes_for_services(&host_decl.services);
+    let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
     }
@@ -193,7 +193,7 @@ fn load_layered_desired_state(
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let mut overlays = load_host_overrides(&host_dir)?;
-    let allowed_prefixes = config_prefixes_for_services(&host_decl.services);
+    let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
     }
@@ -203,7 +203,7 @@ fn load_layered_desired_state(
     let mut config_paths = collect_config_paths(&host_decl.services, &catalog, &overlays);
     config_paths.sort();
     config_paths.dedup();
-    let mut config_roots = config_roots_for_services(&host_decl.services);
+    let mut config_roots = config_roots_for_paths(&config_paths);
     config_roots.sort();
     config_roots.dedup();
     validate_config_paths(&config_paths)
@@ -633,18 +633,34 @@ fn collect_config_paths(
     paths
 }
 
-fn config_prefixes_for_services(services: &[String]) -> Vec<String> {
-    services
+fn config_prefixes_for_services(
+    selected_services: &[String],
+    catalog: &ServiceCatalog,
+) -> Vec<String> {
+    let paths: Vec<String> = selected_services
         .iter()
-        .map(|service| format!("/etc/{service}/"))
+        .filter_map(|service_name| catalog.services.get(service_name))
+        .flat_map(|service| service.config_files.iter().map(|f| f.target_path.clone()))
+        .collect();
+    config_roots_for_paths(&paths)
+        .into_iter()
+        .map(|root| format!("{root}/"))
         .collect()
 }
 
-fn config_roots_for_services(services: &[String]) -> Vec<String> {
-    services
-        .iter()
-        .map(|service| format!("/etc/{service}"))
+fn config_roots_for_paths(paths: &[String]) -> Vec<String> {
+    paths.iter()
+        .filter_map(|path| managed_config_root(path))
         .collect()
+}
+
+fn managed_config_root(path: &str) -> Option<String> {
+    let trimmed = path.strip_prefix("/etc/")?;
+    let first_component = trimmed.split('/').next()?;
+    if first_component.is_empty() {
+        return None;
+    }
+    Some(format!("/etc/{first_component}"))
 }
 
 fn validate_config_overrides(

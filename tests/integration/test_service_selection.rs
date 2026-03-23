@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::integration::env_lock::path_lock;
 use core_ops::io::repo::load_desired_state;
 
 fn temp_repo() -> PathBuf {
@@ -71,6 +72,7 @@ fn init_layered_repo(repo: &PathBuf) -> String {
 
 #[test]
 fn selects_services_per_host() {
+    let _lock = path_lock().lock().expect("path lock");
     let repo = temp_repo();
     let rev = init_layered_repo(&repo);
 
@@ -102,6 +104,28 @@ fn selects_services_per_host() {
     assert!(names.contains(&"vector.container"));
     assert!(!names.contains(&"immich.container"));
     assert!(!names.contains(&"immich.volume"));
+
+    std::env::remove_var("CORE_OPS_HOST");
+}
+
+#[test]
+fn derives_managed_config_roots_from_config_targets_not_service_names() {
+    let _lock = path_lock().lock().expect("path lock");
+    let repo = temp_repo();
+    let rev = init_layered_repo(&repo);
+
+    std::env::set_var("CORE_OPS_HOST", "ulthar-dns");
+    let desired = load_desired_state(repo.to_str().unwrap(), &rev).expect("load desired");
+
+    assert!(desired
+        .managed_config_paths
+        .contains(&"/etc/traefik/traefik.toml".to_string()));
+    assert!(desired
+        .managed_config_roots
+        .contains(&"/etc/traefik".to_string()));
+    assert!(!desired
+        .managed_config_roots
+        .contains(&"/etc/traefik-dnschallenge".to_string()));
 
     std::env::remove_var("CORE_OPS_HOST");
 }

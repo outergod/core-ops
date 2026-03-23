@@ -1,0 +1,6 @@
+[Unit]
+Description=Traefik DNS Challenge
+
+[Container]
+Image=docker.io/library/traefik:v3.0
+Volume=/etc/traefik:/etc/traefik:Z
