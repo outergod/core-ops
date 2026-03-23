@@ -9,6 +9,7 @@ fn validation_failure_is_reported_as_validation_class() {
         repository_ref: "fixture".to_string(),
         revision_id: "rev".to_string(),
         workloads: Vec::new(),
+        managed_config_paths: Vec::new(),
         invariants: vec![Invariant::DeterministicPlan],
         boundaries: Boundaries { scopes: Vec::new() },
     };

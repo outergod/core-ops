@@ -112,7 +112,12 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
         return Err(RepoError::MissingQuadletDir(quadlet_dir));
     }
     let workloads = read_quadlet_dir(&quadlet_dir)?;
-    Ok(desired_state_from_workloads(&repo_path, revision_id, workloads))
+    Ok(desired_state_from_workloads(
+        &repo_path,
+        revision_id,
+        workloads,
+        Vec::new(),
+    ))
 }
 
 pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<LayeredRepo, RepoError> {
@@ -177,7 +182,9 @@ fn load_layered_desired_state(
     let overlays = load_host_overrides(&host_dir)?;
     let all_artifacts = all_service_artifacts(&catalog);
     validate_dropin_targets(&catalog, &overlays, &all_artifacts)?;
-    let config_paths = collect_config_paths(&catalog, &overlays);
+    let mut config_paths = collect_config_paths(&catalog, &overlays);
+    config_paths.sort();
+    config_paths.dedup();
     validate_config_paths(&config_paths)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
 
@@ -189,18 +196,25 @@ fn load_layered_desired_state(
     let output = evaluate_desired_state(&input)
         .map_err(|err| RepoError::EvaluationFailed(err.to_string()))?;
     let workloads = workloads_from_evaluation(&output);
-    Ok(desired_state_from_workloads(repo_path, revision_id, workloads))
+    Ok(desired_state_from_workloads(
+        repo_path,
+        revision_id,
+        workloads,
+        config_paths,
+    ))
 }
 
 pub fn desired_state_from_workloads(
     repo_path: &Path,
     revision_id: &str,
     workloads: Vec<Workload>,
+    managed_config_paths: Vec<String>,
 ) -> DesiredState {
     DesiredState {
         repository_ref: repo_path.display().to_string(),
         revision_id: revision_id.to_string(),
         workloads,
+        managed_config_paths,
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
         boundaries: Boundaries {
             scopes: vec![BoundaryScope::QuadletSystemd],

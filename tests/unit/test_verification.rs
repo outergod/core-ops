@@ -20,6 +20,7 @@ fn desired_state(workloads: Vec<Workload>) -> DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
         workloads,
+        managed_config_paths: Vec::new(),
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
         boundaries: Boundaries {
             scopes: vec![BoundaryScope::QuadletSystemd],

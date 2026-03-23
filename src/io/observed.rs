@@ -63,7 +63,7 @@ pub fn read_observed_state(
     workloads.extend(socket_units);
     workloads.extend(socket_dropins);
     if let Some(desired) = desired {
-        workloads.extend(read_config_files(desired)?);
+        workloads.extend(read_config_files(&desired.managed_config_paths)?);
     }
     let units = read_systemd_units(&workloads)?;
 
@@ -179,22 +179,19 @@ fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, Obser
     Ok(units)
 }
 
-fn read_config_files(desired: &DesiredState) -> Result<Vec<Workload>, ObservedError> {
+fn read_config_files(paths: &[String]) -> Result<Vec<Workload>, ObservedError> {
     let mut workloads = Vec::new();
-    for workload in &desired.workloads {
-        if workload.quadlet_type != QuadletType::ConfigFile {
-            continue;
-        }
-        let path = Path::new(&workload.systemd_unit_name);
+    for config_path in paths {
+        let path = Path::new(config_path);
         if !path.exists() {
             continue;
         }
         let contents = std::fs::read_to_string(path)?;
         workloads.push(Workload {
-            name: workload.systemd_unit_name.clone(),
+            name: config_path.clone(),
             quadlet_type: QuadletType::ConfigFile,
             quadlet_contents: contents,
-            systemd_unit_name: workload.systemd_unit_name.clone(),
+            systemd_unit_name: config_path.clone(),
             enabled_state: EnabledState::Enabled,
             restart_policy: RestartPolicy::Always,
         });

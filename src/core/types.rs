@@ -5,6 +5,7 @@ pub struct DesiredState {
     pub repository_ref: String,
     pub revision_id: String,
     pub workloads: Vec<Workload>,
+    pub managed_config_paths: Vec<String>,
     pub invariants: Vec<Invariant>,
     pub boundaries: Boundaries,
 }
