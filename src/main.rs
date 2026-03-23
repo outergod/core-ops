@@ -28,11 +28,13 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let quadlet_dir = args.quadlet_dir;
             let audit_dir = args.audit_dir;
             set_systemd_unit_dir(&args.systemd_unit_dir);
+            set_host_override(&args.host);
 
             let deps = ReconcileDependencies {
                 load_desired: &|| repo::load_desired_state(&repo_source, &rev).map_err(map_plan_error),
-                read_observed: &|| {
-                    observed::read_observed_state(&quadlet_dir, None).map_err(map_plan_error)
+                read_observed: &|desired| {
+                    observed::read_observed_state(&quadlet_dir, Some(desired), None)
+                        .map_err(map_plan_error)
                 },
                 apply_plan: &|_, _| Ok(()),
             };
@@ -55,6 +57,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let audit_dir = args.audit_dir;
             let no_reload = args.no_reload;
             set_systemd_unit_dir(&args.systemd_unit_dir);
+            set_host_override(&args.host);
 
             let (result, report, plan) =
                 apply_cmd::apply_with_report(&repo_source, &rev, &quadlet_dir, !no_reload)?;
@@ -66,12 +69,15 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             );
             audit_io::emit_journal_event(&event).map_err(map_apply_error)?;
             if let Some(dir) = audit_dir {
-                let record = core_ops::core::audit::build_audit_record(
+                let mut record = core_ops::core::audit::build_audit_record(
                     &run.run_id,
                     Vec::new(),
                     &plan,
                     result.verification_results,
                 );
+                record
+                    .operator_messages
+                    .push(core_ops::core::audit::summarize_evaluation(&result.desired));
                 let _ = audit_io::write_audit_record(&dir, &record).map_err(map_apply_error)?;
             }
 
@@ -91,6 +97,12 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                 .or_else(|| std::env::var_os(SYSTEMD_UNIT_DIR_ENV).map(PathBuf::from))
             {
                 std::env::set_var(SYSTEMD_UNIT_DIR_ENV, systemd_unit_dir);
+            }
+            if let Some(host_override) = args
+                .host
+                .or_else(|| std::env::var("CORE_OPS_HOST").ok())
+            {
+                std::env::set_var("CORE_OPS_HOST", host_override);
             }
             let audit_dir = args
                 .audit_dir
@@ -157,5 +169,11 @@ fn resolve_env(value: Option<String>, key: &str) -> Result<String, CoreError> {
 fn set_systemd_unit_dir(value: &Option<PathBuf>) {
     if let Some(dir) = value {
         std::env::set_var(SYSTEMD_UNIT_DIR_ENV, dir);
+    }
+}
+
+fn set_host_override(value: &Option<String>) {
+    if let Some(host) = value {
+        std::env::set_var("CORE_OPS_HOST", host);
     }
 }

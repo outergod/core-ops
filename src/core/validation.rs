@@ -1,13 +1,116 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use crate::core::errors::{ValidationError, ValidationErrorKind};
-use crate::core::types::{Boundaries, BoundaryScope, DesiredState, Invariant, Workload};
+use crate::core::types::{
+    ArtifactSource, Boundaries, BoundaryScope, DesiredState, DropInSource, HostDeclaration,
+    Invariant, ServiceCatalog, Workload,
+};
 
 pub fn validate_desired_state(desired: &DesiredState) -> Result<(), ValidationError> {
     validate_invariants(&desired.invariants)?;
     validate_boundaries(&desired.boundaries)?;
     validate_workloads(&desired.workloads)?;
     Ok(())
+}
+
+pub fn validate_service_selection(
+    host: &HostDeclaration,
+    catalog: &ServiceCatalog,
+) -> Result<(), ValidationError> {
+    for service in &host.services {
+        if !catalog.services.contains_key(service) {
+            return Err(ValidationError::new(
+                ValidationErrorKind::UndefinedServiceSelection,
+                format!("undefined service selection: {}", service),
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_dropin_targets(
+    dropins: &[DropInSource],
+    artifacts: &[ArtifactSource],
+) -> Result<(), ValidationError> {
+    let targets: HashSet<String> = artifacts.iter().map(|a| a.name.clone()).collect();
+    for dropin in dropins {
+        if !targets.contains(&dropin.target) {
+            return Err(ValidationError::new(
+                ValidationErrorKind::MissingArtifactTarget,
+                format!("drop-in target does not exist: {}", dropin.target),
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_socket_dropin_precedence(
+    base_dropins: &[DropInSource],
+    host_dropins: &[DropInSource],
+) -> Result<(), ValidationError> {
+    let mut base_max: HashMap<&str, String> = HashMap::new();
+    for dropin in base_dropins {
+        if !dropin.target.ends_with(".socket") {
+            continue;
+        }
+        let file_name = dropin_file_name(&dropin.source_path);
+        base_max
+            .entry(dropin.target.as_str())
+            .and_modify(|current| {
+                if file_name > *current {
+                    *current = file_name.clone();
+                }
+            })
+            .or_insert(file_name);
+    }
+
+    for dropin in host_dropins {
+        if !dropin.target.ends_with(".socket") {
+            continue;
+        }
+        let Some(base_name) = base_max.get(dropin.target.as_str()) else {
+            continue;
+        };
+        let file_name = dropin_file_name(&dropin.source_path);
+        if file_name <= *base_name {
+            return Err(ValidationError::new(
+                ValidationErrorKind::InvalidDropInOrdering,
+                format!(
+                    "host socket drop-in must sort after base drop-ins: target={} host={} base_max={}",
+                    dropin.target, file_name, base_name
+                ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+pub fn validate_config_paths(paths: &[String]) -> Result<(), ValidationError> {
+    for path in paths {
+        if !path.starts_with("/etc/") {
+            return Err(ValidationError::new(
+                ValidationErrorKind::MissingArtifactTarget,
+                format!("config path outside allowed root: {}", path),
+            ));
+        }
+        if path.contains("..") {
+            return Err(ValidationError::new(
+                ValidationErrorKind::MissingArtifactTarget,
+                format!("config path traversal not allowed: {}", path),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn dropin_file_name(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(path)
+        .to_string()
 }
 
 fn validate_invariants(invariants: &[Invariant]) -> Result<(), ValidationError> {

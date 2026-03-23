@@ -69,6 +69,8 @@ fn actions_for_diff(
     container_stems: &HashSet<String>,
 ) -> Vec<PlanAction> {
     let manage_unit = match quadlet_type {
+        Some(QuadletType::SocketDropIn) => false,
+        Some(QuadletType::ConfigFile) => false,
         Some(QuadletType::Volume) => false,
         Some(QuadletType::Container) => {
             let stem = stem_for_unit_name(name);
@@ -79,14 +81,22 @@ fn actions_for_diff(
         }
         _ => true,
     };
+    let reload_systemd = !matches!(quadlet_type, Some(QuadletType::ConfigFile));
     match kind {
         DiffKind::Add => {
             let mut actions = vec![
                 action(PlanActionType::WriteQuadlet, name),
-                action(PlanActionType::ReloadSystemd, name),
             ];
+            if reload_systemd {
+                actions.push(action(PlanActionType::ReloadSystemd, name));
+            }
             if manage_unit {
                 actions.push(action(PlanActionType::StartUnit, name));
+            }
+            if should_restart_socket_for_dropin(quadlet_type.as_ref(), name) {
+                if let Some(socket_unit) = socket_unit_from_dropin_name(name) {
+                    actions.push(action(PlanActionType::RestartUnit, &socket_unit));
+                }
             }
             if should_start_service_for_socket(quadlet_type.as_ref(), name, container_stems) {
                 actions.push(action(
@@ -102,16 +112,36 @@ fn actions_for_diff(
                 actions.push(action(PlanActionType::StopUnit, name));
             }
             actions.push(action(PlanActionType::RemoveQuadlet, name));
-            actions.push(action(PlanActionType::ReloadSystemd, name));
+            if reload_systemd {
+                actions.push(action(PlanActionType::ReloadSystemd, name));
+            }
+            if should_restart_socket_for_dropin(quadlet_type.as_ref(), name) {
+                if let Some(socket_unit) = socket_unit_from_dropin_name(name) {
+                    actions.push(action(PlanActionType::RestartUnit, &socket_unit));
+                }
+            }
             actions
         }
         DiffKind::Change => {
             let mut actions = vec![
                 action(PlanActionType::WriteQuadlet, name),
-                action(PlanActionType::ReloadSystemd, name),
             ];
+            if reload_systemd {
+                actions.push(action(PlanActionType::ReloadSystemd, name));
+            }
             if manage_unit {
-                actions.push(action(PlanActionType::StartUnit, name));
+                actions.push(action(PlanActionType::RestartUnit, name));
+            }
+            if should_restart_socket_for_dropin(quadlet_type.as_ref(), name) {
+                if let Some(socket_unit) = socket_unit_from_dropin_name(name) {
+                    actions.push(action(PlanActionType::RestartUnit, &socket_unit));
+                }
+            }
+            if should_restart_service_for_container(quadlet_type.as_ref(), name, socket_stems) {
+                actions.push(action(
+                    PlanActionType::RestartUnit,
+                    &format!("{}.service", stem_for_unit_name(name).unwrap_or(name)),
+                ));
             }
             if should_start_service_for_socket(quadlet_type.as_ref(), name, container_stems) {
                 actions.push(action(
@@ -158,6 +188,33 @@ fn should_start_service_for_socket(
     }
 }
 
+fn should_restart_service_for_container(
+    quadlet_type: Option<&QuadletType>,
+    name: &str,
+    socket_stems: &HashSet<String>,
+) -> bool {
+    if !matches!(quadlet_type, Some(QuadletType::Container)) {
+        return false;
+    }
+    match stem_for_unit_name(name) {
+        Some(stem) => socket_stems.contains(stem),
+        None => false,
+    }
+}
+
+fn should_restart_socket_for_dropin(
+    quadlet_type: Option<&QuadletType>,
+    name: &str,
+) -> bool {
+    matches!(quadlet_type, Some(QuadletType::SocketDropIn))
+        && socket_unit_from_dropin_name(name).is_some()
+}
+
+fn socket_unit_from_dropin_name(name: &str) -> Option<String> {
+    let marker = ".socket.d/";
+    name.find(marker).map(|idx| name[..idx + ".socket".len()].to_string())
+}
+
 fn order_diffs(diffs: &mut [DiffItem]) {
     diffs.sort_by(|a, b| {
         let a_key = ordering_key(a);
@@ -183,23 +240,27 @@ fn ordering_key(diff: &DiffItem) -> (u8, String) {
 
 fn order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
     match quadlet_type {
-        Some(QuadletType::Volume) => 0,
-        Some(QuadletType::Container) => 1,
-        Some(QuadletType::Socket) => 2,
-        Some(QuadletType::Pod) => 3,
-        Some(QuadletType::Network) => 4,
-        None => 5,
+        Some(QuadletType::ConfigFile) => 0,
+        Some(QuadletType::Volume) => 1,
+        Some(QuadletType::Network) => 2,
+        Some(QuadletType::Container) => 3,
+        Some(QuadletType::SocketDropIn) => 4,
+        Some(QuadletType::Socket) => 5,
+        Some(QuadletType::Pod) => 6,
+        None => 7,
     }
 }
 
 fn reverse_order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
     match quadlet_type {
-        Some(QuadletType::Socket) => 0,
-        Some(QuadletType::Container) => 1,
-        Some(QuadletType::Volume) => 2,
-        Some(QuadletType::Pod) => 3,
+        Some(QuadletType::SocketDropIn) => 0,
+        Some(QuadletType::Socket) => 1,
+        Some(QuadletType::Container) => 2,
+        Some(QuadletType::Volume) => 3,
         Some(QuadletType::Network) => 4,
-        None => 5,
+        Some(QuadletType::ConfigFile) => 5,
+        Some(QuadletType::Pod) => 6,
+        None => 7,
     }
 }
 

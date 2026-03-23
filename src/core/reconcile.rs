@@ -2,14 +2,16 @@ use crate::core::diff::diff_workloads;
 use crate::core::errors::CoreError;
 use crate::core::planner::plan;
 use crate::core::types::{
-    DiffItem, FailureClass, ReconcileMode, ReconcileRun, ReconciliationPlan, RunStatus,
-    VerificationResult, VerificationStatus,
+    DesiredState, DiffItem, FailureClass, ReconcileMode, ReconcileRun, ReconciliationPlan,
+    RunStatus, VerificationResult, VerificationStatus,
 };
 use crate::core::verify::verify_state;
 
 pub struct ReconcileDependencies<'a> {
     pub load_desired: &'a dyn Fn() -> Result<crate::core::types::DesiredState, CoreError>,
-    pub read_observed: &'a dyn Fn() -> Result<crate::core::types::ObservedState, CoreError>,
+    pub read_observed: &'a dyn Fn(
+        &crate::core::types::DesiredState,
+    ) -> Result<crate::core::types::ObservedState, CoreError>,
     pub apply_plan:
         &'a dyn Fn(&crate::core::types::ReconciliationPlan, &crate::core::types::DesiredState)
             -> Result<(), CoreError>,
@@ -19,16 +21,18 @@ pub struct PlanResult {
     pub run: ReconcileRun,
     pub plan: ReconciliationPlan,
     pub diffs: Vec<DiffItem>,
+    pub desired: DesiredState,
 }
 
 pub struct ApplyResult {
     pub run: ReconcileRun,
     pub verification_results: Vec<VerificationResult>,
+    pub desired: DesiredState,
 }
 
 pub fn reconcile_plan(deps: &ReconcileDependencies<'_>) -> Result<PlanResult, CoreError> {
     let desired = (deps.load_desired)()?;
-    let observed = (deps.read_observed)()?;
+    let observed = (deps.read_observed)(&desired)?;
 
     let plan = plan(&desired, &observed)?;
     let diffs = diff_workloads(&desired.workloads, &observed.workloads);
@@ -41,12 +45,17 @@ pub fn reconcile_plan(deps: &ReconcileDependencies<'_>) -> Result<PlanResult, Co
         summary: "planned".to_string(),
     };
 
-    Ok(PlanResult { run, plan, diffs })
+    Ok(PlanResult {
+        run,
+        plan,
+        diffs,
+        desired,
+    })
 }
 
 pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, CoreError> {
     let desired = (deps.load_desired)()?;
-    let observed = (deps.read_observed)()?;
+    let observed = (deps.read_observed)(&desired)?;
 
     let plan = plan(&desired, &observed)?;
 
@@ -54,7 +63,7 @@ pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, 
         (deps.apply_plan)(&plan, &desired)?;
     }
 
-    let observed_after = (deps.read_observed)()?;
+    let observed_after = (deps.read_observed)(&desired)?;
     let diffs = diff_workloads(&desired.workloads, &observed_after.workloads);
     let verification_results = verify_state(&desired, &observed_after);
     let has_failures = verification_results
@@ -82,5 +91,6 @@ pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, 
     Ok(ApplyResult {
         run,
         verification_results,
+        desired,
     })
 }

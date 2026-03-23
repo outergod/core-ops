@@ -1,6 +1,9 @@
 mod test_audit;
 mod test_invariants;
 mod test_planner;
+mod test_repo_selection;
+mod test_dropin_order;
+mod test_evaluation_determinism;
 mod test_types;
 mod test_verification;
 mod test_validation;

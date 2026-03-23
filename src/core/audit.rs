@@ -1,6 +1,6 @@
 use crate::core::types::{
     AuditRecord, DiffItem, FailureClass, PlanAction, ReconcileRun, ReconciliationPlan, RunStatus,
-    VerificationResult, VerificationStatus,
+    DesiredState, QuadletType, VerificationResult, VerificationStatus,
 };
 
 pub fn build_audit_record(
@@ -50,6 +50,30 @@ pub fn format_audit_record(record: &AuditRecord) -> String {
         record.verification_results.len()
     ));
     output
+}
+
+pub fn summarize_evaluation(desired: &DesiredState) -> String {
+    let mut socket_dropins = 0;
+    let mut sockets = 0;
+    let mut containers = 0;
+    let mut volumes = 0;
+    for workload in &desired.workloads {
+        match workload.quadlet_type {
+            QuadletType::SocketDropIn => socket_dropins += 1,
+            QuadletType::Socket => sockets += 1,
+            QuadletType::Container => containers += 1,
+            QuadletType::Volume => volumes += 1,
+            _ => {}
+        }
+    }
+    format!(
+        "evaluation: workloads={}, containers={}, volumes={}, sockets={}, socket_dropins={}",
+        desired.workloads.len(),
+        containers,
+        volumes,
+        sockets,
+        socket_dropins
+    )
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

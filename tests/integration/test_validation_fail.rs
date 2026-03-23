@@ -9,6 +9,8 @@ fn validation_failure_is_reported_as_validation_class() {
         repository_ref: "fixture".to_string(),
         revision_id: "rev".to_string(),
         workloads: Vec::new(),
+        managed_config_paths: Vec::new(),
+        managed_config_roots: Vec::new(),
         invariants: vec![Invariant::DeterministicPlan],
         boundaries: Boundaries { scopes: Vec::new() },
     };
@@ -23,7 +25,7 @@ fn validation_failure_is_reported_as_validation_class() {
 
     let deps = ReconcileDependencies {
         load_desired: &|| Ok(desired.clone()),
-        read_observed: &|| Ok(observed.clone()),
+        read_observed: &|_desired| Ok(observed.clone()),
         apply_plan: &|_, _| Ok(()),
     };
 

@@ -1,9 +1,10 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::core::types::{
-    EnabledState, ObservedState, ObservedUnit, QuadletType, RestartPolicy, UnitActiveState,
-    Workload,
+    DesiredState, EnabledState, ObservedState, ObservedUnit, QuadletType, RestartPolicy,
+    UnitActiveState, Workload,
 };
 use crate::io::quadlet::{
     normalize_socket_contents, parse_quadlet_name, read_quadlet_dir, QuadletError,
@@ -49,6 +50,7 @@ impl std::error::Error for ObservedError {}
 
 pub fn read_observed_state(
     quadlet_dir: &Path,
+    desired: Option<&DesiredState>,
     observed_revision_id: Option<String>,
 ) -> Result<ObservedState, ObservedError> {
     if !quadlet_dir.exists() {
@@ -57,7 +59,16 @@ pub fn read_observed_state(
 
     let mut workloads: Vec<Workload> = read_quadlet_dir(quadlet_dir)?;
     let socket_dir = systemd_unit_dir();
-    workloads.extend(read_socket_units(&socket_dir)?);
+    let socket_units = read_socket_units(&socket_dir)?;
+    let allowed_socket_dropins = desired
+        .map(desired_socket_dropins)
+        .unwrap_or_default();
+    let socket_dropins = read_socket_dropins(&socket_dir, &socket_units, &allowed_socket_dropins)?;
+    workloads.extend(socket_units);
+    workloads.extend(socket_dropins);
+    if let Some(desired) = desired {
+        workloads.extend(read_config_files(&desired.managed_config_roots)?);
+    }
     let units = read_systemd_units(&workloads)?;
 
     Ok(ObservedState {
@@ -113,6 +124,60 @@ fn read_socket_units(dir: &Path) -> Result<Vec<Workload>, ObservedError> {
     Ok(workloads)
 }
 
+fn read_socket_dropins(
+    dir: &Path,
+    sockets: &[Workload],
+    allowed_dropins: &HashSet<String>,
+) -> Result<Vec<Workload>, ObservedError> {
+    if allowed_dropins.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut workloads = Vec::new();
+    for socket in sockets {
+        let dropin_dir = dir.join(format!("{}.d", socket.systemd_unit_name));
+        if !dropin_dir.exists() {
+            continue;
+        }
+        for entry in std::fs::read_dir(dropin_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                continue;
+            }
+            let file_name = match path.file_name().and_then(|name| name.to_str()) {
+                Some(name) if !name.starts_with('.') => name.to_string(),
+                _ => continue,
+            };
+            if !file_name.ends_with(".conf") {
+                continue;
+            }
+            let contents = std::fs::read_to_string(&path)?;
+            let unit_name = format!("{}.d/{}", socket.systemd_unit_name, file_name);
+            if !allowed_dropins.contains(&unit_name) {
+                continue;
+            }
+            workloads.push(Workload {
+                name: unit_name.clone(),
+                quadlet_type: QuadletType::SocketDropIn,
+                quadlet_contents: contents,
+                systemd_unit_name: unit_name,
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            });
+        }
+    }
+    Ok(workloads)
+}
+
+fn desired_socket_dropins(desired: &DesiredState) -> HashSet<String> {
+    desired
+        .workloads
+        .iter()
+        .filter(|workload| workload.quadlet_type == QuadletType::SocketDropIn)
+        .map(|workload| workload.systemd_unit_name.clone())
+        .collect()
+}
+
 fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, ObservedError> {
     if !systemctl_available() {
         log::warn!("systemctl unavailable; skipping unit discovery");
@@ -121,6 +186,9 @@ fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, Obser
 
     let mut units = Vec::new();
     for workload in workloads {
+        if matches!(workload.quadlet_type, QuadletType::SocketDropIn | QuadletType::ConfigFile) {
+            continue;
+        }
         let unit_name = systemd_unit_for_quadlet_file(&workload.systemd_unit_name);
         match query_unit_state(&unit_name)? {
             Some(unit) => units.push(unit),
@@ -129,6 +197,55 @@ fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, Obser
     }
 
     Ok(units)
+}
+
+fn read_config_files(paths: &[String]) -> Result<Vec<Workload>, ObservedError> {
+    let mut workloads = Vec::new();
+    for config_path in paths {
+        let path = Path::new(config_path);
+        if !path.exists() {
+            continue;
+        }
+        if path.is_dir() {
+            read_config_dir(path, &mut workloads)?;
+        } else if path.is_file() {
+            let contents = std::fs::read_to_string(path)?;
+            workloads.push(Workload {
+                name: config_path.clone(),
+                quadlet_type: QuadletType::ConfigFile,
+                quadlet_contents: contents,
+                systemd_unit_name: config_path.clone(),
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            });
+        }
+    }
+    Ok(workloads)
+}
+
+fn read_config_dir(dir: &Path, workloads: &mut Vec<Workload>) -> Result<(), ObservedError> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            read_config_dir(&path, workloads)?;
+            continue;
+        }
+        if !path.is_file() {
+            continue;
+        }
+        let contents = std::fs::read_to_string(&path)?;
+        let path_str = path.display().to_string();
+        workloads.push(Workload {
+            name: path_str.clone(),
+            quadlet_type: QuadletType::ConfigFile,
+            quadlet_contents: contents,
+            systemd_unit_name: path_str,
+            enabled_state: EnabledState::Enabled,
+            restart_policy: RestartPolicy::Always,
+        });
+    }
+    Ok(())
 }
 
 fn systemctl_available() -> bool {

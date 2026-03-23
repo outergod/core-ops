@@ -8,6 +8,12 @@ pub fn verify_state(desired: &DesiredState, observed: &ObservedState) -> Vec<Ver
     desired
         .workloads
         .iter()
+        .filter(|workload| {
+            !matches!(
+                workload.quadlet_type,
+                QuadletType::SocketDropIn | QuadletType::ConfigFile
+            )
+        })
         .map(|workload| {
             verify_workload(
                 workload.quadlet_type.clone(),

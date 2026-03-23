@@ -28,6 +28,9 @@ pub enum ValidationErrorKind {
     DuplicateWorkload,
     DuplicateUnitName,
     UnsupportedQuadletType,
+    UndefinedServiceSelection,
+    MissingArtifactTarget,
+    InvalidDropInOrdering,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
@@ -41,6 +44,20 @@ impl ValidationError {
     pub fn new(kind: ValidationErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
+            message: message.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[error("{message}")]
+pub struct EvaluationError {
+    pub message: String,
+}
+
+impl EvaluationError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
             message: message.into(),
         }
     }

@@ -109,8 +109,8 @@ fn repeated_runs_remain_converged() {
 
     let deps = ReconcileDependencies {
         load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
-        read_observed: &|| {
-            read_observed_state(&host_quadlets, Some("obs".to_string())).map_err(map_io_error)
+        read_observed: &|desired| {
+            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string())).map_err(map_io_error)
         },
         apply_plan: &|plan, desired| {
             apply_plan(plan, &desired.workloads, &host_quadlets, true)

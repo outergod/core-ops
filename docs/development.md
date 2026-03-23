@@ -47,3 +47,18 @@ Timer enablement example:
 ```
 systemctl enable --now core-ops.timer
 ```
+
+## Layered Overrides Development
+
+Use the layered overrides fixture in `tests/fixtures/layered_overrides/` for
+local testing. The repository layout should include:
+
+- `services/<service>/` for base artifacts and base drop-ins
+- `hosts/<host>/host.yaml` with explicit service selection
+- `hosts/<host>/overrides/` for host-specific drop-ins
+
+Override host selection during development with:
+
+```
+CORE_OPS_HOST=<host> core-ops plan --repo <repo> --rev <rev>
+```

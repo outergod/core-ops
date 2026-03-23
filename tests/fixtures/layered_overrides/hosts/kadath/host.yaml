@@ -1,0 +1,4 @@
+host: kadath
+services:
+  - traefik
+  - immich

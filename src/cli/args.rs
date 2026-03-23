@@ -29,6 +29,9 @@ pub struct PlanArgs {
     /// Git revision (branch, tag, or commit).
     #[arg(long)]
     pub rev: String,
+    /// Host identity override for selecting hosts/<host>.
+    #[arg(long)]
+    pub host: Option<String>,
     /// System-level Quadlet directory.
     #[arg(long, default_value = "/etc/containers/systemd")]
     pub quadlet_dir: PathBuf,
@@ -48,6 +51,9 @@ pub struct ApplyArgs {
     /// Git revision (branch, tag, or commit).
     #[arg(long)]
     pub rev: String,
+    /// Host identity override for selecting hosts/<host>.
+    #[arg(long)]
+    pub host: Option<String>,
     /// System-level Quadlet directory.
     #[arg(long, default_value = "/etc/containers/systemd")]
     pub quadlet_dir: PathBuf,
@@ -70,6 +76,9 @@ pub struct AgentArgs {
     /// Git revision (branch, tag, or commit).
     #[arg(long)]
     pub rev: Option<String>,
+    /// Host identity override for selecting hosts/<host>.
+    #[arg(long)]
+    pub host: Option<String>,
     /// System-level Quadlet directory.
     #[arg(long)]
     pub quadlet_dir: Option<PathBuf>,

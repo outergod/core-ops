@@ -5,8 +5,88 @@ pub struct DesiredState {
     pub repository_ref: String,
     pub revision_id: String,
     pub workloads: Vec<Workload>,
+    pub managed_config_paths: Vec<String>,
+    pub managed_config_roots: Vec<String>,
     pub invariants: Vec<Invariant>,
     pub boundaries: Boundaries,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServiceCatalog {
+    pub services: BTreeMap<String, ServiceDefinition>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServiceDefinition {
+    pub name: String,
+    pub artifacts: Vec<ArtifactSource>,
+    pub base_dropins: Vec<DropInSource>,
+    pub config_files: Vec<ConfigFileSource>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostDeclaration {
+    pub host: String,
+    pub services: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostOverlaySet {
+    pub host: String,
+    pub overrides: Vec<DropInSource>,
+    pub config_overrides: Vec<ConfigFileSource>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArtifactSource {
+    pub name: String,
+    pub quadlet_type: QuadletType,
+    pub contents: String,
+    pub source_path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DropInSource {
+    pub target: String,
+    pub contents: String,
+    pub source_path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfigFileSource {
+    pub target_path: String,
+    pub contents: String,
+    pub source_path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvaluationInput {
+    pub host: HostDeclaration,
+    pub catalog: ServiceCatalog,
+    pub overlays: HostOverlaySet,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvaluatedArtifact {
+    pub name: String,
+    pub quadlet_type: QuadletType,
+    pub contents: String,
+    pub source_layers: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvaluatedDropIn {
+    pub target: String,
+    pub file_name: String,
+    pub contents: String,
+    pub source_path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvaluatedConfigFile {
+    pub target_path: String,
+    pub contents: String,
+    pub source_layers: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,6 +184,8 @@ pub enum DiffKind {
 pub enum QuadletType {
     Container,
     Socket,
+    SocketDropIn,
+    ConfigFile,
     Pod,
     Volume,
     Network,
@@ -137,6 +219,7 @@ pub enum PlanActionType {
     DisableUnit,
     ReloadSystemd,
     StartUnit,
+    RestartUnit,
     StopUnit,
     Unknown(String),
 }

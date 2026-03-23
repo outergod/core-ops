@@ -53,33 +53,64 @@ pub fn apply_plan(
     let mut files_written = Vec::new();
     let mut files_removed = Vec::new();
 
+    let mut deferred_units: Vec<(PlanActionType, String)> = Vec::new();
+
     for action in &plan.actions {
         match &action.action_type {
             PlanActionType::WriteQuadlet => {
                 let workload = find_workload(desired_workloads, &action.target)?;
-                let path = target_dir_for_workload(quadlet_dir, workload)
-                    .join(&workload.systemd_unit_name);
+                let path = if workload.quadlet_type == QuadletType::ConfigFile {
+                    PathBuf::from(&workload.systemd_unit_name)
+                } else {
+                    target_dir_for_workload(quadlet_dir, workload).join(&workload.systemd_unit_name)
+                };
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
                 fs::write(&path, &workload.quadlet_contents)?;
                 files_written.push(path.display().to_string());
             }
             PlanActionType::RemoveQuadlet => {
-                let target_dir = target_dir_for_name(quadlet_dir, &action.target);
-                let mut removed = false;
-                for entry in fs::read_dir(&target_dir)? {
-                    let entry = entry?;
-                    let path = entry.path();
-                    if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
-                        if file_name == action.target
-                            || file_name.starts_with(&format!("{}.", action.target))
-                        {
-                            fs::remove_file(&path)?;
-                            files_removed.push(path.display().to_string());
-                            removed = true;
+                if action.target.contains(".socket.d/") {
+                    let path = systemd_unit_dir().join(&action.target);
+                    if path.exists() {
+                        fs::remove_file(&path)?;
+                        files_removed.push(path.display().to_string());
+                        if let Some(parent) = path.parent() {
+                            if parent.read_dir()?.next().is_none() {
+                                let _ = fs::remove_dir(parent);
+                            }
+                        }
+                    } else {
+                        return Err(ApplyError::MissingWorkload(action.target.clone()));
+                    }
+                } else if action.target.starts_with("/etc/") {
+                    let path = PathBuf::from(&action.target);
+                    if path.exists() {
+                        fs::remove_file(&path)?;
+                        files_removed.push(path.display().to_string());
+                    } else {
+                        return Err(ApplyError::MissingWorkload(action.target.clone()));
+                    }
+                } else {
+                    let target_dir = target_dir_for_name(quadlet_dir, &action.target);
+                    let mut removed = false;
+                    for entry in fs::read_dir(&target_dir)? {
+                        let entry = entry?;
+                        let path = entry.path();
+                        if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
+                            if file_name == action.target
+                                || file_name.starts_with(&format!("{}.", action.target))
+                            {
+                                fs::remove_file(&path)?;
+                                files_removed.push(path.display().to_string());
+                                removed = true;
+                            }
                         }
                     }
-                }
-                if !removed {
-                    return Err(ApplyError::MissingWorkload(action.target.clone()));
+                    if !removed {
+                        return Err(ApplyError::MissingWorkload(action.target.clone()));
+                    }
                 }
             }
             PlanActionType::EnableUnit => {
@@ -89,12 +120,14 @@ pub fn apply_plan(
                 // Quadlet-generated units rely on [Install] processing; no disable call is needed.
             }
             PlanActionType::StartUnit => {
-                let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &action.target)?;
-                run_systemctl(&["start", &unit])?;
+                deferred_units.push((PlanActionType::StartUnit, action.target.clone()));
+            }
+            PlanActionType::RestartUnit => {
+                deferred_units.push((PlanActionType::RestartUnit, action.target.clone()));
             }
             PlanActionType::StopUnit => {
                 let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &action.target)?;
-                run_systemctl(&["stop", &unit])?;
+                run_systemctl_allow_not_loaded(&["stop", &unit])?;
             }
             PlanActionType::ReloadSystemd => {
                 if reload_systemd {
@@ -110,6 +143,31 @@ pub fn apply_plan(
         }
     }
 
+    let mut restarted = std::collections::HashSet::new();
+    let mut started = std::collections::HashSet::new();
+    for (action_type, target) in deferred_units {
+        match action_type {
+            PlanActionType::RestartUnit => {
+                let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &target)?;
+                run_systemctl(&["restart", &unit])?;
+                restarted.insert(target.clone());
+                started.insert(target);
+            }
+            PlanActionType::StartUnit => {
+                if restarted.contains(&target) {
+                    continue;
+                }
+                if started.contains(&target) {
+                    continue;
+                }
+                let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &target)?;
+                run_systemctl(&["start", &unit])?;
+                started.insert(target);
+            }
+            _ => {}
+        }
+    }
+
     Ok(ApplyOutcome {
         actions_applied: plan.actions.clone(),
         files_written,
@@ -119,18 +177,22 @@ pub fn apply_plan(
 
 fn target_dir_for_workload(quadlet_dir: &Path, workload: &Workload) -> PathBuf {
     match workload.quadlet_type {
-        QuadletType::Socket => systemd_unit_dir(),
+        QuadletType::Socket | QuadletType::SocketDropIn => systemd_unit_dir(),
+        QuadletType::ConfigFile => PathBuf::from("/"),
         _ => quadlet_dir.to_path_buf(),
     }
 }
 
 fn target_dir_for_name(quadlet_dir: &Path, target: &str) -> PathBuf {
-    if Path::new(target)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        == Some("socket")
+    if target.contains(".socket.d/")
+        || Path::new(target)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            == Some("socket")
     {
         systemd_unit_dir()
+    } else if target.starts_with("/etc/") {
+        PathBuf::from("/")
     } else {
         quadlet_dir.to_path_buf()
     }
@@ -157,6 +219,21 @@ fn run_systemctl(args: &[&str]) -> Result<(), ApplyError> {
         ));
     }
     Ok(())
+}
+
+fn run_systemctl_allow_not_loaded(args: &[&str]) -> Result<(), ApplyError> {
+    let output = std::process::Command::new("systemctl")
+        .args(args)
+        .output()
+        .map_err(|err| ApplyError::SystemdCommandFailed(err.to_string()))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("not loaded") || stderr.contains("not found") {
+        return Ok(());
+    }
+    Err(ApplyError::SystemdCommandFailed(stderr.to_string()))
 }
 
 
