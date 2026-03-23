@@ -112,6 +112,8 @@
 - **Idempotence & convergence**: [How retries and reapplication behave]
 - **Explicit effects/failures**: [Failure modes and assumptions surfaced]
 - **Observability**: [Diffs, plans, actions, diagnostics, dry-run/audit]
+- **Provenance & traceability**: [Machine-readable reconciler revision,
+  desired-state revision, reconciliation status, and behavioral comparison signals]
 - **Safe defaults**: [Risky actions require explicit intent]
 - **Compatibility**: [Backward-compatibility strategy and migrations]
 - **Test contract**: [Invariants, external behavior, convergence, failure tests]

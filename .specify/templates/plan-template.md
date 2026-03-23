@@ -38,6 +38,8 @@
 - Idempotence and convergence strategy are defined, including retry behavior.
 - Open standards and native interfaces are preferred; deviations justified.
 - Observability plan covers diffs, plans, actions, failures, and dry-run/audit needs.
+- Provenance and status surfaces identify reconciler revision, desired-state revision,
+  and applied outcome in machine-readable form.
 - Safe defaults are documented; destructive actions require explicit intent.
 - Compatibility impact is assessed; breaking changes are documented with migration.
 - Test strategy covers invariants, external behavior, convergence, and failures.
