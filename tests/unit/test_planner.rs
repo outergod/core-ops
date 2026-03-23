@@ -52,6 +52,17 @@ fn observed_state(workloads: Vec<Workload>) -> ObservedState {
     }
 }
 
+fn socket_dropin_workload(name: &str) -> Workload {
+    Workload {
+        name: name.to_string(),
+        quadlet_type: QuadletType::SocketDropIn,
+        quadlet_contents: "[Socket]".to_string(),
+        systemd_unit_name: name.to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    }
+}
+
 #[test]
 fn plan_is_deterministic_by_name_order() {
     let desired = desired_state(vec![workload("beta"), workload("alpha")]);
@@ -117,4 +128,28 @@ fn plan_orders_actions_by_quadlet_type() {
     assert_eq!(&targets[2..5], &network_prefix[..]);
     assert_eq!(&targets[5..8], &container_prefix[..]);
     assert_eq!(&targets[8..11], &socket_prefix[..]);
+}
+
+#[test]
+fn plan_restarts_socket_when_socket_dropin_removed() {
+    let desired = desired_state(Vec::new());
+    let observed = observed_state(vec![socket_dropin_workload(
+        "alpha.socket.d/10-host.conf",
+    )]);
+
+    let plan = plan(&desired, &observed).expect("plan should succeed");
+
+    let actions: Vec<_> = plan.actions.iter().map(|a| (a.action_type, a.target.as_str())).collect();
+    assert!(actions.iter().any(|(action, target)| {
+        *action == core_ops::core::types::PlanActionType::RemoveQuadlet
+            && *target == "alpha.socket.d/10-host.conf"
+    }));
+    assert!(actions.iter().any(|(action, target)| {
+        *action == core_ops::core::types::PlanActionType::ReloadSystemd
+            && *target == "alpha.socket.d/10-host.conf"
+    }));
+    assert!(actions.iter().any(|(action, target)| {
+        *action == core_ops::core::types::PlanActionType::RestartUnit
+            && *target == "alpha.socket"
+    }));
 }

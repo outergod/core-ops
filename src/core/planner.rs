@@ -115,6 +115,11 @@ fn actions_for_diff(
             if reload_systemd {
                 actions.push(action(PlanActionType::ReloadSystemd, name));
             }
+            if should_restart_socket_for_dropin(quadlet_type.as_ref(), name) {
+                if let Some(socket_unit) = socket_unit_from_dropin_name(name) {
+                    actions.push(action(PlanActionType::RestartUnit, &socket_unit));
+                }
+            }
             actions
         }
         DiffKind::Change => {
