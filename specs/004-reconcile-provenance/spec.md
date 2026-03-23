@@ -26,6 +26,7 @@
 - Q: How is divergence between attempted and observed revisions represented? → A: If the attempted revision differs from the most recently observed revision, that divergence must be explicitly represented in the provenance model.
 - Q: Which persisted source is authoritative for provenance in this iteration? → A: The canonical local status file is the authoritative source of persisted provenance for this iteration, and other interfaces reflect its contents rather than maintaining independent state.
 - Q: When is persisted provenance state considered valid? → A: Persisted provenance state is valid only if it is a complete snapshot with a supported schema version. Invalid or partial state is ignored and treated as absent.
+- Q: How must controller versioning react to observable behavior or persisted-state compatibility changes under this spec? → A: Changes merged under this spec that alter externally observable controller behavior or persisted-state compatibility must update the controller version in Cargo.toml according to the versioning policy, and backward-incompatible persisted-state schema changes must trigger at least a minor or major version review.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -195,15 +196,21 @@ internal implementation details.
   treated as valid current provenance.
 - **FR-010c**: Persisted provenance state MUST be considered valid only if it is
   a complete snapshot.
-- **FR-011**: Persisted state MUST include an explicit schema version.
-- **FR-011a**: Schema version changes MUST be detectable before persisted state
-  is interpreted.
-- **FR-011b**: Persisted provenance state MUST be considered valid only if its
-  schema version is supported.
-- **FR-011c**: Invalid, partial, or unsupported persisted provenance state MUST
-  be ignored and treated as absent.
+- **FR-011**: Persisted provenance state MUST include an explicit schema
+  version, check that version before interpretation, treat only complete
+  snapshots with supported schema versions as valid, and ignore invalid,
+  partial, or unsupported persisted provenance state as absent.
 - **FR-012**: Backward-incompatible changes to persisted provenance state MUST
   be versioned and migrated deliberately.
+- **FR-012a**: Changes merged under this spec that alter externally
+  observable controller behavior or persisted provenance compatibility MUST
+  update the controller version in `Cargo.toml` according to the project's
+  versioning policy.
+- **FR-012b**: Backward-incompatible persisted provenance schema changes MUST
+  trigger at least a minor or major controller version review according to the
+  compatibility policy.
+- **FR-012c**: The canonical controller version reported by this feature MUST
+  come from the package version declared in `Cargo.toml`.
 - **FR-013**: Loss of persisted local state MUST NOT permanently prevent CoreOps
   from determining desired state from the configured source after fresh
   observation.
@@ -290,6 +297,10 @@ internal implementation details.
   reducing the risk of creating a second hidden source of truth.
 - **Compatibility**: Persisted provenance data requires explicit schema
   versioning and deliberate migration for incompatible format changes.
+- **Release version policy**: Any change to externally observable
+  controller behavior or persisted provenance compatibility must evaluate and
+  update the controller version in `Cargo.toml`, with backward-incompatible
+  schema changes requiring at least a minor or major version review.
 - **Test contract**: Tests must cover successful apply, failed reconcile,
   restart survival, machine-readable exposure, and comparison across runs.
 - **Regenerability**: Stable provenance structures and behavioral tests allow
@@ -314,6 +325,12 @@ internal implementation details.
   current-state or last-outcome snapshots and identify the source of
   behavioral difference within 5 minutes without inspecting internal
   implementation code.
+- **SC-005**: In 100% of feature changes under this spec that alter
+  externally observable controller behavior or persisted provenance
+  compatibility, the merged change updates the controller version in
+  `Cargo.toml` according to the project's versioning policy, and every
+  backward-incompatible persisted schema change records a minor-or-major
+  version review in the change artifacts.
 
 ## Assumptions
 
@@ -325,6 +342,14 @@ internal implementation details.
   requirements.
 - Controller revision metadata is available at build or release time for normal
   releases, even if some fields may be absent in exceptional builds.
+- The canonical controller version exposed by this feature is the package
+  version declared in `Cargo.toml`.
+- Changes merged under this spec that alter externally observable controller
+  behavior or persisted provenance compatibility update the controller version
+  in `Cargo.toml` according to the project's versioning policy.
+- Backward-incompatible persisted provenance schema changes trigger at least a
+  minor or major controller version review according to the compatibility
+  policy.
 - Desired-state sources provide immutable revision identifiers suitable for
   comparison.
 - Observing desired state includes resolving the configured requested ref to an

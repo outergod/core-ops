@@ -117,6 +117,8 @@ description: "Task list for provenance and reconciliation revision tracking"
 - [ ] T036 [US3] Emit audit/journald provenance fields consistent with canonical persisted state in `src/core/audit.rs`
 - [ ] T037 [US3] Update audit IO to log machine-readable provenance fields derived from canonical state in `src/io/audit.rs`
 - [ ] T038 [US3] Implement explicit schema migration or incompatibility handling policy in `src/io/state.rs`
+- [ ] T039 [US3] Source controller version provenance from the package version in `Cargo.toml` within `src/main.rs`
+- [ ] T040 [P] [US3] Integration test for controller version provenance matching `Cargo.toml` in `tests/integration/test_status_contract.rs`
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -126,12 +128,14 @@ description: "Task list for provenance and reconciliation revision tracking"
 
 **Purpose**: Documentation, compatibility, and end-to-end validation across all stories
 
-- [ ] T039 [P] Update developer guidance for canonical persisted provenance state in `docs/development.md`
-- [ ] T040 [P] Update CLI usage/help text for provenance status paths and behavior in `src/cli/args.rs`
-- [ ] T041 [P] Validate quickstart scenarios against persisted provenance behavior in `tests/integration/test_quickstart_validation.rs`
-- [ ] T042 [P] Add schema compatibility tests for persisted provenance versions in `tests/unit/test_state_snapshot.rs`
-- [ ] T043 [P] Add test asserting no journal/history artifact is required for provenance state in `tests/unit/test_state_snapshot.rs`
-- [ ] T044 Run the full test suite covering provenance state, status CLI, and reconcile flows with `cargo test`
+- [ ] T041 [P] Update developer guidance for canonical persisted provenance state in `docs/development.md`
+- [ ] T042 [P] Update CLI usage/help text for provenance status paths and behavior in `src/cli/args.rs`
+- [ ] T043 [P] Validate quickstart scenarios against persisted provenance behavior in `tests/integration/test_quickstart_validation.rs`
+- [ ] T044 [P] Add schema compatibility tests for persisted provenance versions in `tests/unit/test_state_snapshot.rs`
+- [ ] T045 [P] Add test asserting no journal/history artifact is required for provenance state in `tests/unit/test_state_snapshot.rs`
+- [ ] T046 [P] Document minor-or-major version review outcomes for incompatible persisted schema changes in `specs/004-reconcile-provenance/plan.md`
+- [ ] T047 [P] Evaluate and apply any required controller version update in `Cargo.toml` for merged observable or compatibility-affecting changes
+- [ ] T048 Run the full test suite covering provenance state, status CLI, and reconcile flows with `cargo test`
 
 ---
 
@@ -163,8 +167,8 @@ description: "Task list for provenance and reconciliation revision tracking"
 - T010 and T011 can run in parallel once foundational types are sketched
 - T012, T013, and T014 can run in parallel for US1
 - T021, T022, T023, and T024 can run in parallel for US2
-- T031, T032, and T033 can run in parallel for US3
-- T039, T040, T041, T042, and T043 can run in parallel in Polish
+- T031, T032, T033, and T040 can run in parallel for US3
+- T041, T042, T043, T044, T045, T046, and T047 can run in parallel in Polish
 
 ---
 

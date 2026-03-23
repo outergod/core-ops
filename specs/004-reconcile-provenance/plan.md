@@ -8,6 +8,9 @@
 ## Summary
 
 Add a canonical persisted provenance snapshot for CoreOps that records controller identity, desired-state observation, and the latest reconciliation outcome. The implementation adds a validated snapshot state model, atomic persisted-state updates, explicit never-run/in-progress/success/failed semantics, and mirrored CLI/status surfaces without introducing independent history or a second authoritative state source.
+Merged changes under this feature may require a `Cargo.toml` package-version
+update when they alter externally observable behavior or persisted-state
+compatibility.
 
 ## Technical Context
 
@@ -17,7 +20,7 @@ Add a canonical persisted provenance snapshot for CoreOps that records controlle
 **Testing**: `cargo test` (unit + integration)
 **Target Platform**: Linux host, primarily Fedora CoreOS / systemd-managed environments
 **Project Type**: CLI + systemd service/timer agent
-**Performance Goals**: Persist/read provenance snapshots with negligible overhead relative to reconciliation; status reads should remain effectively instantaneous for single-host operator use
+**Performance Goals**: Persist/read provenance snapshots with negligible overhead relative to reconciliation; status reads should complete in under 100 ms on a single host for a valid canonical snapshot under normal local-disk conditions
 **Constraints**: Complete-snapshot readability; atomic reader-visible updates; invalid/partial/unsupported state treated as absent; derivative local state only; no bounded history journal; current state + last outcome only; CLI/log views must mirror canonical file contents
 **Scale/Scope**: Single-host provenance snapshot per CoreOps-managed host; one canonical status file and mirrored interfaces
 
@@ -36,6 +39,11 @@ Add a canonical persisted provenance snapshot for CoreOps that records controlle
   and applied outcome in machine-readable form.
 - Safe defaults are documented; destructive actions require explicit intent.
 - Compatibility impact is assessed; breaking changes are documented with migration.
+- Release version policy impact is assessed; changes to observable behavior,
+  persisted schema, CLI output, reconciliation semantics, or compatibility
+  update the controller version in `Cargo.toml` when required.
+- Canonical controller version is sourced from `Cargo.toml` and surfaced
+  consistently in provenance outputs.
 - Test strategy covers invariants, external behavior, convergence, and failures.
 - Modules are structured to be regenerable from specs and tests.
 
