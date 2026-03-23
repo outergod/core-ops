@@ -24,3 +24,4 @@ mod test_validation_fail;
 mod test_systemd_units;
 mod test_verification;
 mod test_journald_audit;
+mod test_socket_dropins;

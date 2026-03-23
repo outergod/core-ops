@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -59,7 +60,10 @@ pub fn read_observed_state(
     let mut workloads: Vec<Workload> = read_quadlet_dir(quadlet_dir)?;
     let socket_dir = systemd_unit_dir();
     let socket_units = read_socket_units(&socket_dir)?;
-    let socket_dropins = read_socket_dropins(&socket_dir, &socket_units)?;
+    let allowed_socket_dropins = desired
+        .map(desired_socket_dropins)
+        .unwrap_or_default();
+    let socket_dropins = read_socket_dropins(&socket_dir, &socket_units, &allowed_socket_dropins)?;
     workloads.extend(socket_units);
     workloads.extend(socket_dropins);
     if let Some(desired) = desired {
@@ -123,7 +127,11 @@ fn read_socket_units(dir: &Path) -> Result<Vec<Workload>, ObservedError> {
 fn read_socket_dropins(
     dir: &Path,
     sockets: &[Workload],
+    allowed_dropins: &HashSet<String>,
 ) -> Result<Vec<Workload>, ObservedError> {
+    if allowed_dropins.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut workloads = Vec::new();
     for socket in sockets {
         let dropin_dir = dir.join(format!("{}.d", socket.systemd_unit_name));
@@ -145,6 +153,9 @@ fn read_socket_dropins(
             }
             let contents = std::fs::read_to_string(&path)?;
             let unit_name = format!("{}.d/{}", socket.systemd_unit_name, file_name);
+            if !allowed_dropins.contains(&unit_name) {
+                continue;
+            }
             workloads.push(Workload {
                 name: unit_name.clone(),
                 quadlet_type: QuadletType::SocketDropIn,
@@ -156,6 +167,15 @@ fn read_socket_dropins(
         }
     }
     Ok(workloads)
+}
+
+fn desired_socket_dropins(desired: &DesiredState) -> HashSet<String> {
+    desired
+        .workloads
+        .iter()
+        .filter(|workload| workload.quadlet_type == QuadletType::SocketDropIn)
+        .map(|workload| workload.systemd_unit_name.clone())
+        .collect()
 }
 
 fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, ObservedError> {

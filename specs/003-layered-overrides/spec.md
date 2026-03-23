@@ -95,7 +95,6 @@ outputs and stable diagnostics.
 - A drop-in targets a base artifact that does not exist.
 - A host selects a service that is not defined in the base repository.
 - Overlays introduce unsupported file types or extensions.
-- A service is deselected while managed config files still exist on disk.
 - A managed config path is renamed or removed between revisions.
 - Apply fails after writing some config files but before completing all deletes.
 
@@ -143,11 +142,9 @@ outputs and stable diagnostics.
   unmanaged files.
 - **FR-016**: During reconciliation, any file within a managed config root that
   is not present in the concrete desired state MUST be removed.
-- **FR-017**: When a service is deselected for a host, all managed config files
-  previously materialized for that service MUST be removed.
-- **FR-018**: Deletions of managed config files MUST be explicit in plan/apply
+- **FR-017**: Deletions of managed config files MUST be explicit in plan/apply
   output and constrained to the managed config roots for selected services.
-- **FR-019**: Partial apply or failed reconciliation MUST leave the system in a
+- **FR-018**: Partial apply or failed reconciliation MUST leave the system in a
   recoverable state; a subsequent apply MUST converge by re-applying desired
   config files and re-attempting deletions.
 
@@ -296,3 +293,5 @@ services:
   clear and actionable.
 - Native drop-in semantics differ between Quadlet and systemd; evaluation rules
   must avoid surprising merges.
+- Managed config cleanup for deselected services requires a three-way state
+  model and is deferred to a later iteration.
