@@ -22,9 +22,9 @@ description: "Task list for provenance and reconciliation revision tracking"
 
 **Purpose**: Add provenance-specific fixtures and test scaffolding
 
-- [ ] T001 Create persisted provenance fixture snapshots in `tests/fixtures/provenance_state/`
-- [ ] T002 [P] Create valid/invalid canonical status snapshot fixtures in `tests/fixtures/provenance_state/`
-- [ ] T003 [P] Add fixture-driven status contract test scaffolding in `tests/integration/test_status_contract.rs`
+- [X] T001 Create persisted provenance fixture snapshots in `tests/fixtures/provenance_state/`
+- [X] T002 [P] Create valid/invalid canonical status snapshot fixtures in `tests/fixtures/provenance_state/`
+- [X] T003 [P] Add fixture-driven status contract test scaffolding in `tests/integration/test_status_contract.rs`
 
 ---
 
