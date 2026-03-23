@@ -149,7 +149,12 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     let host_dir = hosts_dir.join(&host_id);
     let host_decl = load_host_declaration(&host_dir)?;
     let catalog = load_service_catalog(&services_dir)?;
-    let overlays = load_host_overrides(&host_dir)?;
+    let mut overlays = load_host_overrides(&host_dir)?;
+    let allowed_prefixes = config_prefixes_for_services(&host_decl.services);
+    if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
+        return Err(RepoError::ValidationFailed(err));
+    }
+    overlays.config_overrides = filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
 
     Ok(LayeredRepo {
         repo_path,
@@ -179,10 +184,15 @@ fn load_layered_desired_state(
     let catalog = load_service_catalog(&services_dir)?;
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
-    let overlays = load_host_overrides(&host_dir)?;
+    let mut overlays = load_host_overrides(&host_dir)?;
+    let allowed_prefixes = config_prefixes_for_services(&host_decl.services);
+    if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
+        return Err(RepoError::ValidationFailed(err));
+    }
+    overlays.config_overrides = filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
     let all_artifacts = all_service_artifacts(&catalog);
     validate_dropin_targets(&catalog, &overlays, &all_artifacts)?;
-    let mut config_paths = collect_config_paths(&catalog, &overlays);
+    let mut config_paths = collect_config_paths(&host_decl.services, &catalog, &overlays);
     config_paths.sort();
     config_paths.dedup();
     validate_config_paths(&config_paths)
@@ -572,10 +582,16 @@ fn walk_config_dir(root: &Path) -> Result<Vec<PathBuf>, RepoError> {
     Ok(files)
 }
 
-fn collect_config_paths(catalog: &ServiceCatalog, overlays: &HostOverlaySet) -> Vec<String> {
+fn collect_config_paths(
+    selected_services: &[String],
+    catalog: &ServiceCatalog,
+    overlays: &HostOverlaySet,
+) -> Vec<String> {
     let mut paths = Vec::new();
-    for service in catalog.services.values() {
-        paths.extend(service.config_files.iter().map(|f| f.target_path.clone()));
+    for service_name in selected_services {
+        if let Some(service) = catalog.services.get(service_name) {
+            paths.extend(service.config_files.iter().map(|f| f.target_path.clone()));
+        }
     }
     paths.extend(
         overlays
@@ -584,6 +600,45 @@ fn collect_config_paths(catalog: &ServiceCatalog, overlays: &HostOverlaySet) -> 
             .map(|f| f.target_path.clone()),
     );
     paths
+}
+
+fn config_prefixes_for_services(services: &[String]) -> Vec<String> {
+    services
+        .iter()
+        .map(|service| format!("/etc/{service}/"))
+        .collect()
+}
+
+fn validate_config_overrides(
+    overrides: &[ConfigFileSource],
+    allowed_prefixes: &[String],
+) -> Option<String> {
+    let invalid: Vec<&ConfigFileSource> = overrides
+        .iter()
+        .filter(|cfg| !allowed_prefixes.iter().any(|prefix| cfg.target_path.starts_with(prefix)))
+        .collect();
+    if invalid.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "host config override outside selected services: {}",
+        invalid
+            .iter()
+            .map(|cfg| cfg.target_path.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
+fn filter_config_overrides(
+    overrides: &[ConfigFileSource],
+    allowed_prefixes: &[String],
+) -> Vec<ConfigFileSource> {
+    overrides
+        .iter()
+        .filter(|cfg| allowed_prefixes.iter().any(|prefix| cfg.target_path.starts_with(prefix)))
+        .cloned()
+        .collect()
 }
 
 fn read_quadlet_files(dir: &Path) -> Result<Vec<ArtifactSource>, RepoError> {
