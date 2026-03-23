@@ -27,6 +27,7 @@
 - Q: Which persisted source is authoritative for provenance in this iteration? → A: The canonical local status file is the authoritative source of persisted provenance for this iteration, and other interfaces reflect its contents rather than maintaining independent state.
 - Q: When is persisted provenance state considered valid? → A: Persisted provenance state is valid only if it is a complete snapshot with a supported schema version. Invalid or partial state is ignored and treated as absent.
 - Q: How must controller versioning react to observable behavior or persisted-state compatibility changes under this spec? → A: Changes merged under this spec that alter externally observable controller behavior or persisted-state compatibility must update the controller version in Cargo.toml according to the versioning policy, and backward-incompatible persisted-state schema changes must trigger at least a minor or major version review.
+- Q: What should the default persistence behavior be for the canonical provenance state file? → A: `apply` and `agent` must maintain `/var/lib/core-ops/status.json` by default, with an optional explicit state-file override; bypassing state updates requires an explicit force-style option, while `plan` remains read-only.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -178,6 +179,9 @@ internal implementation details.
 - **FR-008a**: A local machine-readable status file is the canonical provenance
   interface for this iteration. CLI status output and structured logs MAY read
   from or mirror that status file.
+- **FR-008e**: The canonical provenance state file path for this iteration MUST
+  default to `/var/lib/core-ops/status.json` unless the operator explicitly
+  overrides it.
 - **FR-008c**: The canonical local status file is the authoritative source of
   persisted provenance for this iteration.
 - **FR-008d**: Other interfaces that expose provenance MUST reflect the
@@ -190,6 +194,15 @@ internal implementation details.
   controller revision, desired-state revision, or reconciliation outcome.
 - **FR-010**: Persisted provenance state MUST survive controller restart and
   remain readable until superseded by a later reconcile attempt.
+- **FR-010d**: Successful `apply` and `agent` executions MUST update the
+  canonical provenance state file by default, including creation of a valid
+  first snapshot when no prior state file exists.
+- **FR-010e**: Running `apply` without updating the canonical provenance state
+  file MUST require an explicit force-style operator opt-out and MUST NOT be
+  the default behavior. `agent` runs MUST continue to maintain the canonical
+  provenance state file.
+- **FR-010f**: `plan` execution MUST remain read-only with respect to the
+  canonical provenance state file and MUST NOT create or mutate it.
 - **FR-010a**: Updates to persisted provenance state MUST be atomic from the
   perspective of readers.
 - **FR-010b**: A failed or interrupted write MUST NOT cause partial state to be
@@ -239,6 +252,10 @@ internal implementation details.
 - **FR-020**: CoreOps MUST explicitly represent the state in which no
   reconciliation has ever run, rather than inferring it from missing or
   malformed fields.
+- **FR-020a**: On the first `agent` or `apply` run that uses the default or an
+  explicitly configured canonical state path, CoreOps MUST create a valid
+  initial persisted snapshot before or during reconciliation so that the file
+  does not remain absent after a successful stateful run.
 - **FR-021**: This iteration MUST support attribution of current state and the
   last reconciliation outcome only and MUST NOT require historical sequence
   analysis across multiple reconciliation events.
@@ -265,7 +282,8 @@ internal implementation details.
   derived or reconstructible data unless needed for performance or failure
   recovery. It must be readable as a complete valid snapshot and replaced
   atomically from the perspective of readers. In this iteration, it is
-  authoritatively represented by the canonical local status file.
+  authoritatively represented by the canonical local status file, which
+  defaults to `/var/lib/core-ops/status.json` unless explicitly overridden.
 - **Repository Cache**: Optional locally cached source data that may improve
   performance or failure recovery but is not required to preserve
   reconstructibility.
@@ -294,7 +312,8 @@ internal implementation details.
   constitution requirement that runtime behavior be attributable to controller
   revision, desired-state revision, and reconcile outcome.
 - **Safe defaults**: Persisted local state is explicitly derivative and bounded,
-  reducing the risk of creating a second hidden source of truth.
+  reducing the risk of creating a second hidden source of truth, and stateful
+  reconcile paths are expected to update the canonical status file by default.
 - **Compatibility**: Persisted provenance data requires explicit schema
   versioning and deliberate migration for incompatible format changes.
 - **Release version policy**: Any change to externally observable
@@ -302,7 +321,9 @@ internal implementation details.
   update the controller version in `Cargo.toml`, with backward-incompatible
   schema changes requiring at least a minor or major version review.
 - **Test contract**: Tests must cover successful apply, failed reconcile,
-  restart survival, machine-readable exposure, and comparison across runs.
+  restart survival, machine-readable exposure, comparison across runs,
+  default-path first-run state creation, and explicit forced opt-out behavior
+  for `apply` without state persistence.
 - **Regenerability**: Stable provenance structures and behavioral tests allow
   the feature to be reimplemented without preserving incidental storage
   internals.
@@ -318,6 +339,12 @@ internal implementation details.
 - **SC-002**: In 100% of failed reconciliation scenarios covered by feature
   acceptance tests, CoreOps preserves a visible difference between the last
   attempted revision and the last successfully applied revision.
+- **SC-006**: In 100% of successful `apply` and `agent` scenarios covered by
+  feature acceptance tests, CoreOps creates or updates
+  `/var/lib/core-ops/status.json` by default unless an explicit force-style
+  opt-out is used.
+- **SC-007**: In 100% of `plan` scenarios covered by feature acceptance tests,
+  CoreOps leaves the canonical provenance state file untouched.
 - **SC-003**: After a controller restart, provenance and reconciliation status
   remain available without data loss in 100% of restart recovery scenarios
   covered by feature tests.

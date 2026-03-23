@@ -139,6 +139,24 @@ description: "Task list for provenance and reconciliation revision tracking"
 
 ---
 
+## Phase 7: Default Canonical State Path Follow-up
+
+**Purpose**: Align runtime defaults with the canonical provenance-state contract
+
+- [ ] T049 [P] Add unit coverage for default canonical state-file resolution to `/var/lib/core-ops/status.json` in `tests/unit/test_state_snapshot.rs`
+- [ ] T050 [P] Add integration coverage for first-run `apply` creating the default canonical provenance snapshot in `tests/integration/test_status_state.rs`
+- [ ] T051 [P] Add integration coverage for `plan` remaining read-only and not creating the canonical provenance snapshot in `tests/integration/test_status_state.rs`
+- [ ] T052 [P] Add integration coverage for explicit force-style opt-out of state updates during `apply` in `tests/integration/test_status_state.rs`
+- [ ] T053 Implement default canonical state-file resolution in `src/io/state.rs`
+- [ ] T054 Update `apply` to persist canonical provenance by default and require explicit force-style opt-out for non-persisting runs in `src/cli/apply.rs`
+- [ ] T055 Update `agent` to use the default canonical state path when no override is provided in `src/cli/agent.rs`
+- [ ] T056 Update `status` to read the default canonical state path when no explicit path is provided in `src/cli/status.rs`
+- [ ] T057 Update CLI argument/help text and documentation for default canonical state persistence and explicit opt-out behavior in `src/cli/args.rs`
+- [ ] T058 [P] Document Phase 7 version-review outcome for default canonical state persistence changes in `specs/004-reconcile-provenance/plan.md`
+- [ ] T059 [P] Evaluate and apply any required controller version update in `Cargo.toml` for default canonical state persistence behavior
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -147,6 +165,7 @@ description: "Task list for provenance and reconciliation revision tracking"
 - **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
 - **User Stories (Phase 3+)**: All depend on Foundational phase completion
 - **Polish (Phase 6)**: Depends on all desired user stories being complete
+- **Default Canonical State Path Follow-up (Phase 7)**: Depends on prior phases and reopens implementation to align runtime defaults with the spec
 
 ### User Story Dependencies
 

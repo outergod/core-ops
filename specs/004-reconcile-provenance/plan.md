@@ -11,17 +11,20 @@ Add a canonical persisted provenance snapshot for CoreOps that records controlle
 Merged changes under this feature may require a `Cargo.toml` package-version
 update when they alter externally observable behavior or persisted-state
 compatibility.
+The canonical persisted provenance path defaults to
+`/var/lib/core-ops/status.json` for `apply` and `agent`; `plan` remains
+read-only, and bypassing state updates requires an explicit force-style opt-out.
 
 ## Technical Context
 
 **Language/Version**: Rust (stable toolchain, edition 2021)
 **Primary Dependencies**: clap, thiserror, miette, log, systemd-journal-logger, tempfile, serde, serde_json
-**Storage**: Files on disk under a runtime state directory for canonical persisted provenance; optional repository cache remains separate and non-authoritative
+**Storage**: Files on disk under a runtime state directory for canonical persisted provenance, with `/var/lib/core-ops/status.json` as the default canonical path; optional repository cache remains separate and non-authoritative
 **Testing**: `cargo test` (unit + integration)
 **Target Platform**: Linux host, primarily Fedora CoreOS / systemd-managed environments
 **Project Type**: CLI + systemd service/timer agent
 **Performance Goals**: Persist/read provenance snapshots with negligible overhead relative to reconciliation; status reads should complete in under 100 ms on a single host for a valid canonical snapshot under normal local-disk conditions
-**Constraints**: Complete-snapshot readability; atomic reader-visible updates; invalid/partial/unsupported state treated as absent; derivative local state only; no bounded history journal; current state + last outcome only; CLI/log views must mirror canonical file contents
+**Constraints**: Complete-snapshot readability; atomic reader-visible updates; invalid/partial/unsupported state treated as absent; derivative local state only; no bounded history journal; current state + last outcome only; CLI/log views must mirror canonical file contents; `apply` and `agent` persist state by default; `plan` is read-only; non-persisting `apply` requires explicit force-style intent
 **Scale/Scope**: Single-host provenance snapshot per CoreOps-managed host; one canonical status file and mirrored interfaces
 
 ## Constitution Check
@@ -38,6 +41,9 @@ compatibility.
 - Provenance and status surfaces identify reconciler revision, desired-state revision,
   and applied outcome in machine-readable form.
 - Safe defaults are documented; destructive actions require explicit intent.
+- Safe provenance persistence defaults are documented; stateful reconcile paths
+  update the canonical file by default and bypass requires explicit force-style
+  intent.
 - Compatibility impact is assessed; breaking changes are documented with migration.
 - Release version policy impact is assessed; changes to observable behavior,
   persisted schema, CLI output, reconciliation semantics, or compatibility
@@ -117,3 +123,6 @@ tests/
 - Controller package version update selected: `0.1.0 -> 0.2.0`.
 - Rationale: behavior and persisted-state compatibility change materially, but
   they do not require a major policy break for the current pre-1.0 controller.
+- Phase 7 follow-up: default canonical state persistence changes reopen
+  release-version-policy review; the final version decision remains pending
+  implementation and validation of the new default-path behavior.
