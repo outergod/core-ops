@@ -53,8 +53,7 @@ pub fn apply_plan(
     let mut files_written = Vec::new();
     let mut files_removed = Vec::new();
 
-    let mut deferred_starts: Vec<String> = Vec::new();
-    let mut deferred_restarts: Vec<String> = Vec::new();
+    let mut deferred_units: Vec<(PlanActionType, String)> = Vec::new();
 
     for action in &plan.actions {
         match &action.action_type {
@@ -121,10 +120,10 @@ pub fn apply_plan(
                 // Quadlet-generated units rely on [Install] processing; no disable call is needed.
             }
             PlanActionType::StartUnit => {
-                deferred_starts.push(action.target.clone());
+                deferred_units.push((PlanActionType::StartUnit, action.target.clone()));
             }
             PlanActionType::RestartUnit => {
-                deferred_restarts.push(action.target.clone());
+                deferred_units.push((PlanActionType::RestartUnit, action.target.clone()));
             }
             PlanActionType::StopUnit => {
                 let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &action.target)?;
@@ -145,17 +144,28 @@ pub fn apply_plan(
     }
 
     let mut restarted = std::collections::HashSet::new();
-    for target in deferred_restarts {
-        let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &target)?;
-        run_systemctl(&["restart", &unit])?;
-        restarted.insert(target);
-    }
-    for target in deferred_starts {
-        if restarted.contains(&target) {
-            continue;
+    let mut started = std::collections::HashSet::new();
+    for (action_type, target) in deferred_units {
+        match action_type {
+            PlanActionType::RestartUnit => {
+                let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &target)?;
+                run_systemctl(&["restart", &unit])?;
+                restarted.insert(target.clone());
+                started.insert(target);
+            }
+            PlanActionType::StartUnit => {
+                if restarted.contains(&target) {
+                    continue;
+                }
+                if started.contains(&target) {
+                    continue;
+                }
+                let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &target)?;
+                run_systemctl(&["start", &unit])?;
+                started.insert(target);
+            }
+            _ => {}
         }
-        let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &target)?;
-        run_systemctl(&["start", &unit])?;
     }
 
     Ok(ApplyOutcome {

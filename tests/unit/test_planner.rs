@@ -139,7 +139,11 @@ fn plan_restarts_socket_when_socket_dropin_removed() {
 
     let plan = plan(&desired, &observed).expect("plan should succeed");
 
-    let actions: Vec<_> = plan.actions.iter().map(|a| (a.action_type, a.target.as_str())).collect();
+    let actions: Vec<_> = plan
+        .actions
+        .iter()
+        .map(|a| (a.action_type.clone(), a.target.as_str()))
+        .collect();
     assert!(actions.iter().any(|(action, target)| {
         *action == core_ops::core::types::PlanActionType::RemoveQuadlet
             && *target == "alpha.socket.d/10-host.conf"

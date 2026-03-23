@@ -85,6 +85,65 @@ fn apply_executes_unit_lifecycle_actions() {
     assert!(log_contents.contains("stop alpha.service"));
 }
 
+#[test]
+fn apply_preserves_start_restart_order() {
+    let _lock = path_lock().lock().expect("path lock");
+    let temp = temp_dir("core_ops_order");
+    fs::create_dir_all(&temp).expect("temp dir");
+
+    let log_path = temp.join("systemctl.log");
+    write_systemctl_stub(&temp, &log_path);
+
+    let old_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{}", temp.display(), old_path);
+    std::env::set_var("PATH", new_path);
+    let _guard = PathGuard { previous: old_path };
+
+    let quadlet_dir = temp.join("quadlets");
+    fs::create_dir_all(&quadlet_dir).expect("quadlet dir");
+
+    let dep = Workload {
+        name: "dep".to_string(),
+        quadlet_type: core_ops::core::types::QuadletType::Container,
+        quadlet_contents: "[Container]\nImage=alpine".to_string(),
+        systemd_unit_name: "dep.container".to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    };
+    let svc = Workload {
+        name: "svc".to_string(),
+        quadlet_type: core_ops::core::types::QuadletType::Container,
+        quadlet_contents: "[Container]\nImage=alpine".to_string(),
+        systemd_unit_name: "svc.container".to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    };
+
+    let plan = ReconciliationPlan {
+        plan_id: "plan:test".to_string(),
+        desired_revision_id: "rev".to_string(),
+        observed_revision_id: None,
+        actions: vec![
+            action(PlanActionType::WriteQuadlet, "dep.container"),
+            action(PlanActionType::WriteQuadlet, "svc.container"),
+            action(PlanActionType::ReloadSystemd, "dep.container"),
+            action(PlanActionType::ReloadSystemd, "svc.container"),
+            action(PlanActionType::StartUnit, "dep.container"),
+            action(PlanActionType::RestartUnit, "svc.container"),
+        ],
+        safety_checks: Vec::new(),
+        expected_outcomes: Vec::new(),
+    };
+
+    let result = apply_plan(&plan, &[dep, svc], &quadlet_dir, true);
+    assert!(result.is_ok());
+
+    let log_contents = fs::read_to_string(&log_path).expect("read log");
+    let start_idx = log_contents.find("start dep.service").expect("start");
+    let restart_idx = log_contents.find("restart svc.service").expect("restart");
+    assert!(start_idx < restart_idx);
+}
+
 fn action(action_type: PlanActionType, target: &str) -> PlanAction {
     PlanAction {
         action_type,
