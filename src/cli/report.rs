@@ -1,4 +1,6 @@
-use crate::core::types::{DiffItem, QuadletType, ReconciliationPlan};
+use crate::core::types::{
+    DiffItem, QuadletType, ReconcileRun, ReconciliationPlan, VerificationResult,
+};
 
 pub fn format_plan_report(plan: &ReconciliationPlan, diffs: &[DiffItem]) -> String {
     let mut output = String::new();
@@ -32,6 +34,23 @@ pub fn append_provenance_report(base: &str, contents: Option<&str>) -> String {
         Some(contents) => format!("{base}\n{}", crate::cli::status::format_status_text(contents)),
         None => base.to_string(),
     }
+}
+
+pub fn format_apply_report_json(
+    run: &ReconcileRun,
+    verification_results: &[VerificationResult],
+) -> String {
+    serde_json::json!({
+        "run_id": run.run_id,
+        "status": format!("{:?}", run.status).to_lowercase(),
+        "summary": run.summary,
+        "verification_results": verification_results.iter().map(|result| serde_json::json!({
+            "target": result.target,
+            "status": format!("{:?}", result.status).to_lowercase(),
+            "details": result.details,
+        })).collect::<Vec<_>>(),
+    })
+    .to_string()
 }
 
 fn quadlet_type_label(quadlet_type: Option<QuadletType>) -> &'static str {

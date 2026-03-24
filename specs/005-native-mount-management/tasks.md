@@ -86,19 +86,19 @@ description: "Task list for native mount management"
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T028 [P] [US2] Add integration test for invalid mount declarations and blocked dependent services in `tests/integration/test_mount_failures.rs`
-- [ ] T029 [P] [US2] Add integration test for recovery after a previously failed mount becomes reachable in `tests/integration/test_mount_failures.rs`
-- [ ] T030 [P] [US2] Add integration test for managed mount removal and explicit busy-removal failure in `tests/integration/test_mount_removal.rs`
-- [ ] T031 [P] [US2] Add unit tests for removal-state transitions and degraded-service semantics in `tests/unit/test_evaluation_determinism.rs`
+- [X] T028 [P] [US2] Add integration test for invalid mount declarations and blocked dependent services in `tests/integration/test_mount_failures.rs`
+- [X] T029 [P] [US2] Add integration test for recovery after a previously failed mount becomes reachable in `tests/integration/test_mount_failures.rs`
+- [X] T030 [P] [US2] Add integration test for managed mount removal and explicit busy-removal failure in `tests/integration/test_mount_removal.rs`
+- [X] T031 [P] [US2] Add unit tests for removal-state transitions and degraded-service semantics in `tests/unit/test_evaluation_determinism.rs`
 
 ### Implementation for User Story 2
 
-- [ ] T032 [US2] Implement explicit mount failure, degraded dependency, and recovery transitions in `src/core/reconcile.rs`
-- [ ] T033 [US2] Implement diagnostics for validation, verification, and busy-removal failures in `src/cli/diagnostics.rs`
-- [ ] T034 [US2] Extend apply orchestration to stop dependent managed services before mount removal and fail on busy teardown in `src/io/apply.rs`
-- [ ] T035 [US2] Extend verification reporting to distinguish blocked, degraded, removing, removed, and busy states in `src/core/verify.rs`
-- [ ] T036 [US2] Emit mount failure and removal outcomes in machine-readable reports and audit output in `src/cli/report.rs`
-- [ ] T037 [US2] Include mount failure and removal details in journald audit payloads in `src/io/audit.rs`
+- [X] T032 [US2] Implement explicit mount failure, degraded dependency, and recovery transitions in `src/core/reconcile.rs`
+- [X] T033 [US2] Implement diagnostics for validation, verification, and busy-removal failures in `src/cli/diagnostics.rs`
+- [X] T034 [US2] Extend apply orchestration to stop dependent managed services before mount removal and fail on busy teardown in `src/io/apply.rs`
+- [X] T035 [US2] Extend verification reporting to distinguish blocked, degraded, removing, removed, and busy states in `src/core/verify.rs`
+- [X] T036 [US2] Emit mount failure and removal outcomes in machine-readable reports and audit output in `src/cli/report.rs`
+- [X] T037 [US2] Include mount failure and removal details in journald audit payloads in `src/io/audit.rs`
 
 **Checkpoint**: User Story 2 should be fully functional and testable independently
 

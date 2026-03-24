@@ -49,7 +49,7 @@ fn verify_workload(
         (QuadletType::Volume, None) => failure(unit_name, "volume unit not found"),
         (QuadletType::Mount, Some(unit)) => {
             if unit.active_state != UnitActiveState::Active {
-                return failure(unit_name, &format!("unit not active: {:?}", unit.active_state));
+                return failure(unit_name, &format!("blocked: unit not active: {:?}", unit.active_state));
             }
             let Some(mount) = mount else {
                 return failure(unit_name, "mount declaration missing");
@@ -57,14 +57,14 @@ fn verify_workload(
             if is_target_path_mounted(&mount.target_path) {
                 success(unit_name)
             } else {
-                failure(unit_name, "mount target not mounted")
+                failure(unit_name, "degraded: mount target not mounted")
             }
         }
         (QuadletType::Automount, Some(unit)) => {
             if unit.active_state == UnitActiveState::Active {
                 success(unit_name)
             } else {
-                failure(unit_name, &format!("unit not active: {:?}", unit.active_state))
+                failure(unit_name, &format!("blocked: unit not active: {:?}", unit.active_state))
             }
         }
         (_, Some(unit)) => {

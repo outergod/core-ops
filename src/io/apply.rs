@@ -100,6 +100,17 @@ pub fn apply_plan_with_desired(
                 files_written.push(path.display().to_string());
             }
             PlanActionType::RemoveQuadlet => {
+                if is_mount_unit_target(&action.target) {
+                    stop_managed_service_workloads(&desired.workloads, quadlet_dir)?;
+                    if let Some(target_path) = target_path_for_mount_unit(&action.target)? {
+                        if is_mount_target_active(&target_path) {
+                            return Err(ApplyError::SystemdCommandFailed(format!(
+                                "busy mount removal: {}",
+                                target_path
+                            )));
+                        }
+                    }
+                }
                 if action.target.contains(".socket.d/") {
                     let path = systemd_unit_dir().join(&action.target);
                     if path.exists() {
@@ -273,6 +284,43 @@ fn prepare_target_paths(mounts: &[MountDeclaration]) -> Result<(), ApplyError> {
         }
     }
     Ok(())
+}
+
+fn is_mount_unit_target(target: &str) -> bool {
+    target.ends_with(".mount") || target.ends_with(".automount")
+}
+
+fn stop_managed_service_workloads(workloads: &[Workload], quadlet_dir: &Path) -> Result<(), ApplyError> {
+    for workload in workloads {
+        if matches!(workload.quadlet_type, QuadletType::Container | QuadletType::Pod) {
+            let unit = unit_name_for_start_stop(workloads, quadlet_dir, &workload.systemd_unit_name)?;
+            run_systemctl_allow_not_loaded(&["stop", &unit])?;
+        }
+    }
+    Ok(())
+}
+
+fn target_path_for_mount_unit(unit_name: &str) -> Result<Option<String>, ApplyError> {
+    let path = systemd_unit_dir().join(unit_name);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let contents = fs::read_to_string(path)?;
+    Ok(contents
+        .lines()
+        .find_map(|line| line.strip_prefix("Where=").map(str::to_string)))
+}
+
+fn is_mount_target_active(target_path: &str) -> bool {
+    let mountinfo_path = std::env::var("CORE_OPS_MOUNTINFO_PATH")
+        .unwrap_or_else(|_| "/proc/self/mountinfo".to_string());
+    let Ok(contents) = fs::read_to_string(mountinfo_path) else {
+        return false;
+    };
+    contents.lines().any(|line| {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        fields.get(4).copied() == Some(target_path)
+    })
 }
 
 fn find_workload<'a>(

@@ -145,6 +145,20 @@ pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, 
     let has_failures = verification_results
         .iter()
         .any(|result| result.status == VerificationStatus::Failure);
+    let has_degraded_mount = verification_results.iter().any(|result| {
+        result
+            .details
+            .as_deref()
+            .map(|details| details.starts_with("degraded:"))
+            .unwrap_or(false)
+    });
+    let has_blocked_mount = verification_results.iter().any(|result| {
+        result
+            .details
+            .as_deref()
+            .map(|details| details.starts_with("blocked:"))
+            .unwrap_or(false)
+    });
 
     let (status, failure_class, summary) = if diffs.is_empty() && !has_failures {
         (
@@ -161,7 +175,13 @@ pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, 
             RunStatus::Failure,
             Some(FailureClass::Verify),
             if !desired.mount_declarations.is_empty() {
-                "mount verification failed".to_string()
+                if has_degraded_mount {
+                    "mount degraded".to_string()
+                } else if has_blocked_mount {
+                    "mount blocked".to_string()
+                } else {
+                    "mount verification failed".to_string()
+                }
             } else {
                 "verification failed".to_string()
             },
