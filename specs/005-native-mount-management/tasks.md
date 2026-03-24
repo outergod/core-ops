@@ -153,19 +153,19 @@ description: "Task list for native mount management"
 
 Note: Phases 2-6 reflect the superseded YAML-first mount design and are retained only as historical context. Phase 7 defines the active implementation path for this feature.
 
-- [X] T058 [P] Update feature documentation and contracts for native-artifact-primary mount metadata in `specs/005-native-mount-management/spec.md`
-- [X] T059 [P] Update implementation plan to describe embedded `[X-CoreOps]` metadata, native-artifact-primary behavior, and reopened version review in `specs/005-native-mount-management/plan.md`
-- [X] T060 [P] Add integration test fixtures for user-authored native `.mount` and optional `.automount` artifacts with embedded `[X-CoreOps]` metadata in `tests/fixtures/mount_management/`
-- [X] T061 [P] Add integration tests for native `.mount`/`.automount` artifacts carrying `[X-CoreOps]` metadata in `tests/integration/test_mount_contracts.rs`
-- [X] T062 [P] Add integration tests for native-artifact-primary mount parsing, systemd-like override layering, and service-defined consumer relationships in `tests/integration/test_mount_reuse.rs`
-- [X] T063 Replace YAML-first mount declaration loading with parsing of embedded `[X-CoreOps]` metadata from user-authored native `.mount` and `.automount` artifacts while keeping service definitions authoritative for consumer relationships in `src/io/repo.rs`
-- [X] T064 Implement validation rules for embedded `[X-CoreOps]` metadata, including mount identity, bounded metadata scope, and consistency with native unit contents in `src/core/validation.rs`
+- [X] T058 [P] Update feature documentation and contracts for native-artifact-primary mount metadata, native stem-derived references, and `CreateMountpoint` semantics in `specs/005-native-mount-management/spec.md`
+- [X] T059 [P] Update implementation plan to describe minimal embedded `[X-CoreOps]` metadata, native-artifact-primary behavior, and reopened version review in `specs/005-native-mount-management/plan.md`
+- [ ] T060 [P] Rework the `[X-CoreOps]` schema contract in `specs/005-native-mount-management/contracts/mount-declaration.md` and related spec references so managed `.mount` artifacts allow only `CreateMountpoint` (default `true`) and disallow `Id`, `PreparedPath`, ownership/mode fields, `RemovalPolicy`, and `VerificationMode`
+- [ ] T061 [P] Add/update integration coverage in `tests/integration/test_mount_contracts.rs` for native `.mount`/`.automount` artifacts with minimal `[X-CoreOps]` metadata, including `CreateMountpoint` defaults, invalid removed fields, and native stem-derived service references
+- [X] T062 [P] Add integration tests for native-artifact-primary mount parsing, systemd-like override layering, native stem-derived mount references, and service-defined consumer relationships in `tests/integration/test_mount_reuse.rs`
+- [X] T063 Replace YAML-first mount declaration loading with parsing of embedded `[X-CoreOps]` metadata from user-authored native `.mount` and `.automount` artifacts while deriving managed mount references from native `.mount` stems and keeping service definitions authoritative for consumer relationships in `src/io/repo.rs`
+- [ ] T064 Update validation rules in `src/core/validation.rs` and `tests/unit/test_verification.rs` so CoreOps accepts only the minimal `[X-CoreOps]` schema, derives service-referenced mount identity from the native `.mount` stem, rejects removed fields, and enforces `FR-013c` for service-referenced mounts
 - [X] T065 Refactor evaluation and planner flows to operate on managed native mount artifacts and embedded metadata rather than YAML-first declarations in `src/core/evaluate.rs`
-- [X] T066 Implement parsing and normalization helpers for `[X-CoreOps]` metadata carried by native mount artifacts using native unit layering semantics and effective-value overrides in `src/io/repo.rs`
-- [X] T067 Update apply and observed-state flows to preserve native-unit-primary behavior for managed mount artifacts with `[X-CoreOps]` metadata, including runtime handling of deployed units that retain the section unchanged, in `src/io/apply.rs`
-- [X] T068 Update operator-facing reporting and help text to describe embedded `[X-CoreOps]` metadata and native-artifact-primary behavior in `src/cli/plan.rs`
+- [ ] T066 Simplify `[X-CoreOps]` parsing and normalization in `src/io/repo.rs` and related loaders to support only `CreateMountpoint` on managed `.mount` artifacts, apply systemd-like layering before validation, and remove parsing of `Id`, `PreparedPath`, ownership/mode, removal, and verification fields
+- [ ] T067 Align apply and observed-state behavior in `src/io/apply.rs`, `src/io/observed.rs`, and related tests so `CreateMountpoint` controls mountpoint creation for `Where=`, retained `[X-CoreOps]` metadata does not cause drift unless effective CoreOps reconciliation semantics change, and removed metadata fields are ignored as unsupported input
+- [ ] T068 Update operator diagnostics, reporting, and audit coverage in `src/cli/report.rs`, `src/cli/status.rs`, `src/io/audit.rs`, and related tests to use native `.mount` stem references, `CreateMountpoint` semantics, and error messages for unsupported `[X-CoreOps]` fields
 - [X] T069 Record the redesigned release-version-policy review outcome for embedded `[X-CoreOps]` metadata in `specs/005-native-mount-management/plan.md`
-- [X] T070 Evaluate and apply any required controller package-version update after the redesign in `Cargo.toml`
+- [ ] T070 Revalidate documentation, quickstart, and release readiness in `docs/development.md`, `specs/005-native-mount-management/quickstart.md`, and final validation notes so they describe the minimal `[X-CoreOps]` schema, native stem-derived references, and the simplified mountpoint-creation behavior
 
 ---
 

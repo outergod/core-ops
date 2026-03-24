@@ -7,7 +7,7 @@
 
 ## Summary
 
-Add native mount management to CoreOps as a first-class reconciled artifact for host services while keeping user-authored native `.mount` and optional `.automount` units primary. The design embeds a small `[X-CoreOps]` metadata section into those native units for managed identity, bounded path preparation, removal ownership, and related reconciliation-only metadata, while service definitions remain authoritative for consumer relationships. Service dependency semantics are materialized directly into generated dependent units, and automount remains optional and network-backed only. Release-version-policy review is reopened because this design change materially changes the operator contract from the earlier YAML-first approach.
+Add native mount management to CoreOps as a first-class reconciled artifact for host services while keeping user-authored native `.mount` and optional `.automount` units primary. The design embeds a minimal `[X-CoreOps]` metadata section into those native units for bounded mountpoint-creation policy only, while service definitions remain authoritative for consumer relationships and managed mount references are derived from native `.mount` unit stems. Service dependency semantics are materialized directly into generated dependent units, and automount remains optional and network-backed only. Release-version-policy review is reopened because this design change materially changes the operator contract from the earlier YAML-first approach.
 
 ## Technical Context
 
@@ -18,7 +18,7 @@ Add native mount management to CoreOps as a first-class reconciled artifact for 
 **Target Platform**: Linux host, primarily Fedora CoreOS / systemd-managed environments  
 **Project Type**: CLI + systemd service/timer agent  
 **Performance Goals**: Planning should remain operator-interactive for typical single-host configs with up to 10 managed mounts; this is a planning guideline rather than a release-blocking latency SLO. Reconciliation should add only bounded mount verification and dependency generation overhead relative to existing single-host flows.  
-**Constraints**: Remain systemd-native; keep native mount and automount artifacts operator-authored and primary; use `[X-CoreOps]` as the extension section mechanism for embedded metadata; no Kubernetes-style storage abstractions; no generic network share management beyond native unit semantics; bounded directory preparation only; idempotent reapply; explicit failure diagnostics; path-based plus explicit unit dependency materialization; conservative removal that fails explicitly if the mount remains busy; keep embedded metadata narrow and reconciliation-specific  
+**Constraints**: Remain systemd-native; keep native mount and automount artifacts operator-authored and primary; use `[X-CoreOps]` as the extension section mechanism for embedded metadata; no Kubernetes-style storage abstractions; no generic network share management beyond native unit semantics; bounded mountpoint creation only; idempotent reapply; explicit failure diagnostics; path-based plus explicit unit dependency materialization; conservative removal that fails explicitly if the mount remains busy; keep embedded metadata narrow and reconciliation-specific  
 **Scale/Scope**: Single-host reconciliation for mount-backed services with dozens of native artifacts and a small number of managed mounts per host
 
 ## Constitution Check
@@ -26,7 +26,7 @@ Add native mount management to CoreOps as a first-class reconciled artifact for 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 - Functional core and imperative shell boundaries are explicit; side effects remain isolated to filesystem preparation, native artifact reads, generated dependent unit writes, systemd reloads, and native mount activation/deactivation.
-- Desired state, observed state, reconciliation plans, and outcomes remain explicit data structures, extended with managed native mount artifacts, embedded `[X-CoreOps]` metadata, and service-to-mount dependencies.
+- Desired state, observed state, reconciliation plans, and outcomes remain explicit data structures, extended with managed native mount artifacts, embedded `[X-CoreOps]` metadata, and service-to-mount dependencies derived from native unit stems.
 - Abstractions stay minimal by extending existing reconciliation and native-unit generation flows rather than introducing a parallel storage subsystem or YAML-first mount DSL.
 - Effects, assumptions, and failure modes remain explicit, including blocked services, degraded mount dependencies, and busy mount removals.
 - Idempotence and convergence are preserved: unchanged desired state produces no unintended remounts or service churn; retries converge after transient mount recovery.
@@ -106,7 +106,7 @@ tests/
     └── test_evaluation_determinism.rs
 ```
 
-**Structure Decision**: Keep the existing single-project Rust layout. Extend `core` with managed mount identity parsing, dependency materialization, removal planning, and lifecycle verification; extend `io` with mount-aware repo loading from native units carrying `[X-CoreOps]` metadata, observation, and native systemd application boundaries; extend CLI/reporting surfaces to expose mount diffs and failure/removal results without creating a new subsystem.
+**Structure Decision**: Keep the existing single-project Rust layout. Extend `core` with native mount stem/path parsing, dependency materialization, removal planning, and lifecycle verification; extend `io` with mount-aware repo loading from native units carrying `[X-CoreOps]` metadata, observation, and native systemd application boundaries; extend CLI/reporting surfaces to expose mount diffs and failure/removal results without creating a new subsystem.
 
 ## Complexity Tracking
 
