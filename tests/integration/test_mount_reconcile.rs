@@ -1,18 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
 
+use crate::integration::env_lock::path_lock;
 use core_ops::core::types::{
     Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, MountDeclaration,
     MountDependency, MountVerificationMode, PathDependencyMode, PlanAction, PlanActionType,
     QuadletType, ReconciliationPlan, RestartPolicy, UnitDependencyMode, Workload,
 };
 use core_ops::io::apply::apply_plan_with_desired;
-
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
 
 fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mount_management")
@@ -37,7 +32,7 @@ fn reconcile_fixture_covers_invalid_and_busy_removal_paths() {
 
 #[test]
 fn apply_prepares_target_path_and_starts_mount_before_service() {
-    let _env_lock = env_lock().lock().expect("lock env");
+    let _env_lock = path_lock().lock().expect("lock env");
     let temp = std::env::temp_dir().join(format!(
         "core_ops_mount_apply_{}",
         std::time::SystemTime::now()
@@ -145,7 +140,7 @@ fn apply_prepares_target_path_and_starts_mount_before_service() {
 
 #[test]
 fn apply_starts_automount_before_service_without_starting_mount_unit() {
-    let _env_lock = env_lock().lock().expect("lock env");
+    let _env_lock = path_lock().lock().expect("lock env");
     let temp = std::env::temp_dir().join(format!(
         "core_ops_automount_apply_{}",
         std::time::SystemTime::now()

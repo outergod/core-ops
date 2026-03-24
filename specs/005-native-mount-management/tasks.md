@@ -153,19 +153,19 @@ description: "Task list for native mount management"
 
 Note: Phases 2-6 reflect the superseded YAML-first mount design and are retained only as historical context. Phase 7 defines the active implementation path for this feature.
 
-- [ ] T058 [P] Update feature documentation and contracts for native-artifact-primary mount metadata in `specs/005-native-mount-management/spec.md`
-- [ ] T059 [P] Update implementation plan to describe embedded `[X-CoreOps]` metadata, native-artifact-primary behavior, and reopened version review in `specs/005-native-mount-management/plan.md`
-- [ ] T060 [P] Add integration test fixtures for user-authored native `.mount` and optional `.automount` artifacts with embedded `[X-CoreOps]` metadata in `tests/fixtures/mount_management/`
-- [ ] T061 [P] Add integration tests for native `.mount`/`.automount` artifacts carrying `[X-CoreOps]` metadata in `tests/integration/test_mount_contracts.rs`
-- [ ] T062 [P] Add integration tests for native-artifact-primary mount parsing, systemd-like override layering, and service-defined consumer relationships in `tests/integration/test_mount_reuse.rs`
-- [ ] T063 Replace YAML-first mount declaration loading with parsing of embedded `[X-CoreOps]` metadata from user-authored native `.mount` and `.automount` artifacts while keeping service definitions authoritative for consumer relationships in `src/io/repo.rs`
-- [ ] T064 Implement validation rules for embedded `[X-CoreOps]` metadata, including mount identity, bounded metadata scope, and consistency with native unit contents in `src/core/validation.rs`
-- [ ] T065 Refactor evaluation and planner flows to operate on managed native mount artifacts and embedded metadata rather than YAML-first declarations in `src/core/evaluate.rs`
-- [ ] T066 Implement parsing and normalization helpers for `[X-CoreOps]` metadata carried by native mount artifacts using native unit layering semantics and effective-value overrides in `src/io/repo.rs`
-- [ ] T067 Update apply and observed-state flows to preserve native-unit-primary behavior for managed mount artifacts with `[X-CoreOps]` metadata, including runtime handling of deployed units that retain the section unchanged, in `src/io/apply.rs`
-- [ ] T068 Update operator-facing reporting and help text to describe embedded `[X-CoreOps]` metadata and native-artifact-primary behavior in `src/cli/plan.rs`
-- [ ] T069 Record the redesigned release-version-policy review outcome for embedded `[X-CoreOps]` metadata in `specs/005-native-mount-management/plan.md`
-- [ ] T070 Evaluate and apply any required controller package-version update after the redesign in `Cargo.toml`
+- [X] T058 [P] Update feature documentation and contracts for native-artifact-primary mount metadata in `specs/005-native-mount-management/spec.md`
+- [X] T059 [P] Update implementation plan to describe embedded `[X-CoreOps]` metadata, native-artifact-primary behavior, and reopened version review in `specs/005-native-mount-management/plan.md`
+- [X] T060 [P] Add integration test fixtures for user-authored native `.mount` and optional `.automount` artifacts with embedded `[X-CoreOps]` metadata in `tests/fixtures/mount_management/`
+- [X] T061 [P] Add integration tests for native `.mount`/`.automount` artifacts carrying `[X-CoreOps]` metadata in `tests/integration/test_mount_contracts.rs`
+- [X] T062 [P] Add integration tests for native-artifact-primary mount parsing, systemd-like override layering, and service-defined consumer relationships in `tests/integration/test_mount_reuse.rs`
+- [X] T063 Replace YAML-first mount declaration loading with parsing of embedded `[X-CoreOps]` metadata from user-authored native `.mount` and `.automount` artifacts while keeping service definitions authoritative for consumer relationships in `src/io/repo.rs`
+- [X] T064 Implement validation rules for embedded `[X-CoreOps]` metadata, including mount identity, bounded metadata scope, and consistency with native unit contents in `src/core/validation.rs`
+- [X] T065 Refactor evaluation and planner flows to operate on managed native mount artifacts and embedded metadata rather than YAML-first declarations in `src/core/evaluate.rs`
+- [X] T066 Implement parsing and normalization helpers for `[X-CoreOps]` metadata carried by native mount artifacts using native unit layering semantics and effective-value overrides in `src/io/repo.rs`
+- [X] T067 Update apply and observed-state flows to preserve native-unit-primary behavior for managed mount artifacts with `[X-CoreOps]` metadata, including runtime handling of deployed units that retain the section unchanged, in `src/io/apply.rs`
+- [X] T068 Update operator-facing reporting and help text to describe embedded `[X-CoreOps]` metadata and native-artifact-primary behavior in `src/cli/plan.rs`
+- [X] T069 Record the redesigned release-version-policy review outcome for embedded `[X-CoreOps]` metadata in `specs/005-native-mount-management/plan.md`
+- [X] T070 Evaluate and apply any required controller package-version update after the redesign in `Cargo.toml`
 
 ---
 

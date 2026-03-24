@@ -1,0 +1,16 @@
+[Unit]
+After=network-online.target
+Wants=network-online.target
+
+[Mount]
+What=nas:/volume2/media
+Where=/srv/immich/media
+Type=nfs
+Options=rw,hard,noatime
+
+[X-CoreOps]
+Id=immich-media
+OwnershipScope=immich
+PreparedPath=/srv/immich/media
+PreparedCreateIfMissing=true
+PreparedServiceConsumed=true

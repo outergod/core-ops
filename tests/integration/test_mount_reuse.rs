@@ -23,9 +23,13 @@ fn init_repo(repo: &PathBuf) -> String {
 
     std::fs::create_dir_all(repo.join("services/immich")).expect("service dir");
     std::fs::create_dir_all(repo.join("hosts/alpha")).expect("host alpha");
-    std::fs::create_dir_all(repo.join("hosts/beta/overrides")).expect("host beta");
+    std::fs::create_dir_all(repo.join("hosts/beta/overrides/var-lib-immich-media.mount.d"))
+        .expect("beta mount overrides");
+    std::fs::create_dir_all(repo.join("hosts/beta/overrides/var-lib-immich-media.automount.d"))
+        .expect("beta automount overrides");
     std::fs::create_dir_all(repo.join("hosts/gamma/overrides")).expect("host gamma");
-    std::fs::create_dir_all(repo.join("hosts/invalid/overrides")).expect("host invalid");
+    std::fs::create_dir_all(repo.join("hosts/invalid/overrides/var-lib-immich-media.mount.d"))
+        .expect("host invalid");
 
     std::fs::write(
         repo.join("services/immich/immich.container"),
@@ -34,24 +38,54 @@ fn init_repo(repo: &PathBuf) -> String {
     .expect("write artifact");
     std::fs::write(
         repo.join("services/immich/service.yaml"),
-        r#"
-mounts:
-  - id: immich-media
-    target_path: /var/lib/immich/media
-    source: nas:/volume1/media
-    fstype: nfs
-    network_backed: true
-    ownership_scope: [immich]
-  - id: immich-cache
-    target_path: /var/lib/immich/cache
-    source: /var/cache/immich
-    fstype: none
-    ownership_scope: [immich]
-requires_mounts:
-  - immich-media
-"#,
+        "requires_mounts:\n  - immich-media\n",
     )
     .expect("write service yaml");
+    std::fs::write(
+        repo.join("services/immich/var-lib-immich-media.mount"),
+        r#"[Unit]
+After=network-online.target
+Wants=network-online.target
+
+[Mount]
+What=nas:/volume1/media
+Where=/var/lib/immich/media
+Type=nfs
+Options=rw,hard
+
+[X-CoreOps]
+Id=immich-media
+OwnershipScope=immich
+PreparedPath=/var/lib/immich/media
+PreparedCreateIfMissing=true
+PreparedServiceConsumed=true
+"#,
+    )
+    .expect("write media mount");
+    std::fs::write(
+        repo.join("services/immich/var-lib-immich-media.automount"),
+        r#"[Automount]
+Where=/var/lib/immich/media
+
+[X-CoreOps]
+Id=immich-media
+"#,
+    )
+    .expect("write media automount");
+    std::fs::write(
+        repo.join("services/immich/var-lib-immich-cache.mount"),
+        r#"[Mount]
+What=/var/cache/immich
+Where=/var/lib/immich/cache
+Type=none
+Options=bind
+
+[X-CoreOps]
+Id=immich-cache
+OwnershipScope=immich
+"#,
+    )
+    .expect("write cache mount");
 
     for host in ["alpha", "beta", "gamma", "invalid"] {
         std::fs::write(
@@ -62,19 +96,23 @@ requires_mounts:
     }
 
     std::fs::write(
-        repo.join("hosts/beta/overrides/mounts.yaml"),
-        r#"
-mounts:
-  - id: immich-media
-    target_path: /srv/immich/media
-    source: nas:/volume2/media
-    fstype: nfs
-    network_backed: true
-    automount: true
-    ownership_scope: [immich]
+        repo.join("hosts/beta/overrides/var-lib-immich-media.mount.d/20-host.conf"),
+        r#"[Mount]
+What=nas:/volume2/media
+Where=/srv/immich/media
+
+[X-CoreOps]
+PreparedPath=/srv/immich/media
 "#,
     )
-    .expect("write beta overrides");
+    .expect("write beta mount drop-in");
+    std::fs::write(
+        repo.join("hosts/beta/overrides/var-lib-immich-media.automount.d/20-host.conf"),
+        r#"[Automount]
+Where=/srv/immich/media
+"#,
+    )
+    .expect("write beta automount drop-in");
 
     std::fs::write(
         repo.join("hosts/gamma/overrides/mounts.yaml"),
@@ -87,15 +125,9 @@ service_mounts:
     .expect("write gamma overrides");
 
     std::fs::write(
-        repo.join("hosts/invalid/overrides/mounts.yaml"),
-        r#"
-mounts:
-  - id: unknown-mount
-    target_path: /srv/invalid
-    source: nas:/invalid
-    fstype: nfs
-    network_backed: true
-    ownership_scope: [immich]
+        repo.join("hosts/invalid/overrides/var-lib-immich-media.mount.d/20-host.conf"),
+        r#"[X-CoreOps]
+OwnershipScope=other-service
 "#,
     )
     .expect("write invalid overrides");
@@ -131,19 +163,24 @@ mounts:
 }
 
 #[test]
-fn reusable_mount_declarations_support_host_overrides_and_dependency_switches() {
+fn reusable_mount_declarations_support_layered_native_overrides_and_service_dependencies() {
     let _lock = path_lock().lock().expect("path lock");
     let repo = temp_repo();
     let rev = init_repo(&repo);
 
     let previous = std::env::var_os("CORE_OPS_HOST");
     let _guard = HostGuard(previous);
+
     std::env::set_var("CORE_OPS_HOST", "alpha");
     let alpha = load_desired_state(repo.to_str().expect("repo str"), &rev).expect("load alpha");
     assert!(alpha
         .workloads
         .iter()
         .any(|workload| workload.systemd_unit_name == "var-lib-immich-media.mount"));
+    assert!(alpha
+        .workloads
+        .iter()
+        .any(|workload| workload.systemd_unit_name == "var-lib-immich-media.automount"));
     let alpha_service = alpha
         .workloads
         .iter()
@@ -155,10 +192,12 @@ fn reusable_mount_declarations_support_host_overrides_and_dependency_switches() 
 
     std::env::set_var("CORE_OPS_HOST", "beta");
     let beta = load_desired_state(repo.to_str().expect("repo str"), &rev).expect("load beta");
-    assert!(beta
-        .workloads
+    let beta_mount = beta
+        .mount_declarations
         .iter()
-        .any(|workload| workload.systemd_unit_name == "srv-immich-media.automount"));
+        .find(|mount| mount.id == "immich-media")
+        .expect("beta mount");
+    assert_eq!(beta_mount.target_path, "/srv/immich/media");
     let beta_service = beta
         .workloads
         .iter()
@@ -167,6 +206,9 @@ fn reusable_mount_declarations_support_host_overrides_and_dependency_switches() 
     assert!(beta_service
         .quadlet_contents
         .contains("RequiresMountsFor=/srv/immich/media"));
+    assert!(beta_service
+        .quadlet_contents
+        .contains("After=srv-immich-media.automount srv-immich-media.mount"));
 
     std::env::set_var("CORE_OPS_HOST", "gamma");
     let gamma = load_desired_state(repo.to_str().expect("repo str"), &rev).expect("load gamma");
@@ -184,7 +226,9 @@ fn reusable_mount_declarations_support_host_overrides_and_dependency_switches() 
 
     std::env::set_var("CORE_OPS_HOST", "invalid");
     let err = load_desired_state(repo.to_str().expect("repo str"), &rev).expect_err("invalid override");
-    assert!(err.to_string().contains("host mount override outside selected services"));
+    assert!(err
+        .to_string()
+        .contains("mount declaration scope outside selected services"));
 }
 
 struct HostGuard(Option<std::ffi::OsString>);

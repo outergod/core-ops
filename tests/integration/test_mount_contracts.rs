@@ -23,7 +23,10 @@ fn mount_management_fixture_scenarios_exist() {
     let dir = fixture_dir();
     assert!(dir.join("README.md").exists());
     assert!(dir.join("normal-nfs/scenario.yaml").exists());
+    assert!(dir.join("normal-nfs/var-lib-immich-media.mount").exists());
     assert!(dir.join("network-automount/scenario.yaml").exists());
+    assert!(dir.join("network-automount/srv-immich-media.mount").exists());
+    assert!(dir.join("network-automount/srv-immich-media.automount").exists());
     assert!(dir.join("invalid-definition/scenario.yaml").exists());
     assert!(dir.join("busy-removal/scenario.yaml").exists());
 }
@@ -32,12 +35,23 @@ fn mount_management_fixture_scenarios_exist() {
 fn contract_fixture_covers_normal_and_automount_dependency_semantics() {
     let normal = read_scenario("normal-nfs");
     let automount = read_scenario("network-automount");
+    let normal_mount = fs::read_to_string(fixture_dir().join("normal-nfs/var-lib-immich-media.mount"))
+        .expect("read normal mount fixture");
+    let automount_mount = fs::read_to_string(fixture_dir().join("network-automount/srv-immich-media.mount"))
+        .expect("read automount mount fixture");
+    let automount_unit = fs::read_to_string(
+        fixture_dir().join("network-automount/srv-immich-media.automount"),
+    )
+    .expect("read automount fixture");
 
     assert!(normal.contains("named-mount-declaration"));
     assert!(normal.contains("requires-mounts-for"));
     assert!(automount.contains("automount-enabled"));
     assert!(automount.contains("explicit-unit-dependencies"));
     assert!(automount.contains("path-based-dependencies"));
+    assert!(normal_mount.contains("[X-CoreOps]"));
+    assert!(automount_mount.contains("Id=immich-media"));
+    assert!(automount_unit.contains("[Automount]"));
 }
 
 #[test]

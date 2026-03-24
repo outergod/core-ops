@@ -15,9 +15,9 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Compute a reconciliation plan, including mount and automount artifacts plus generated native dependency semantics.
+    /// Compute a reconciliation plan, including native .mount/.automount artifacts with [X-CoreOps] metadata and generated dependency semantics.
     Plan(PlanArgs),
-    /// Apply a reconciliation plan, including bounded mount path preparation and mount-aware unit activation.
+    /// Apply a reconciliation plan, including bounded mount path preparation and mount-aware native unit activation.
     Apply(ApplyArgs),
     /// Run the agent once (intended for systemd service execution).
     Agent(AgentArgs),

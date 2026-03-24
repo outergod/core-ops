@@ -10,7 +10,6 @@ use crate::core::types::{
     HostDeclaration, HostOverlaySet, Invariant, MountDeclaration, MountVerificationMode,
     PreparedTargetPath, QuadletType, RestartPolicy, ServiceCatalog, ServiceDefinition, Workload,
 };
-use crate::io::quadlet::render_native_mount_units;
 use crate::io::quadlet::{parse_quadlet_name, read_quadlet_dir, QuadletError};
 use crate::core::validation::{
     validate_config_paths, validate_dropin_targets as validate_dropin_targets_fn,
@@ -535,11 +534,31 @@ fn workloads_from_evaluation(output: &EvaluationOutput) -> Vec<Workload> {
         .iter()
         .map(workload_from_artifact)
         .collect();
+    let existing_native_units: std::collections::BTreeSet<String> = workloads
+        .iter()
+        .filter(|workload| matches!(workload.quadlet_type, QuadletType::Mount | QuadletType::Automount))
+        .map(|workload| workload.systemd_unit_name.clone())
+        .collect();
     workloads.extend(output.mount_declarations.iter().flat_map(|mount| {
-        render_native_mount_units(mount)
-            .into_iter()
-            .map(|(name, contents)| workload_from_native_unit(&name, &contents))
-            .collect::<Vec<_>>()
+        let mut units = Vec::new();
+        if !existing_native_units.contains(&mount.mount_unit_name()) {
+            units.push(workload_from_native_unit(
+                &mount.mount_unit_name(),
+                &format!(
+                    "[Mount]\nWhat={}\nWhere={}\nType={}\n",
+                    mount.source, mount.target_path, mount.fstype
+                ),
+            ));
+        }
+        if let Some(automount_name) = mount.automount_unit_name() {
+            if !existing_native_units.contains(&automount_name) {
+                units.push(workload_from_native_unit(
+                    &automount_name,
+                    &format!("[Automount]\nWhere={}\n", mount.target_path),
+                ));
+            }
+        }
+        units
     }));
     workloads.extend(
         output
@@ -666,7 +685,21 @@ fn validate_mount_overrides(
     let base_mount_ids: std::collections::BTreeSet<String> = selected_services
         .iter()
         .filter_map(|service_name| catalog.services.get(service_name))
-        .flat_map(|service| service.mount_declarations.iter().map(|mount| mount.id.clone()))
+        .flat_map(|service| {
+            let mut ids: Vec<String> = service
+                .mount_declarations
+                .iter()
+                .map(|mount| mount.id.clone())
+                .collect();
+            ids.extend(
+                service
+                    .artifacts
+                    .iter()
+                    .filter(|artifact| matches!(artifact.quadlet_type, QuadletType::Mount | QuadletType::Automount))
+                    .filter_map(|artifact| managed_mount_id_from_contents(&artifact.contents)),
+            );
+            ids
+        })
         .collect();
 
     for mount in &overlays.mount_overrides {
@@ -698,6 +731,28 @@ fn validate_mount_overrides(
     }
 
     Ok(())
+}
+
+fn managed_mount_id_from_contents(contents: &str) -> Option<String> {
+    let mut in_section = false;
+    for raw_line in contents.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            in_section = line[1..line.len() - 1].trim() == "X-CoreOps";
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        let (key, value) = line.split_once('=')?;
+        if key.trim() == "Id" {
+            return Some(value.trim().to_string());
+        }
+    }
+    None
 }
 
 fn read_config_files(config_root: &Path) -> Result<Vec<ConfigFileSource>, RepoError> {

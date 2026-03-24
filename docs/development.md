@@ -93,6 +93,8 @@ package version in `Cargo.toml`.
 
 - Declare managed mounts in `services/<service>/service.yaml` using stable mount
   identities rather than raw paths as the only key.
+- Author managed mounts as native `.mount` and optional `.automount` artifacts
+  and embed only reconciliation-specific metadata in an `[X-CoreOps]` section.
 - Use `requires_mounts` on the consuming service so CoreOps can materialize
   native dependency semantics directly into the generated unit configuration.
 - Keep ordinary `.mount` behavior as the default. Set `automount: true` only

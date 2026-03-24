@@ -45,7 +45,8 @@ fn quickstart_mentions_mount_management_workflow_and_version_outcome() {
     let quickstart = root.join("specs/005-native-mount-management/quickstart.md");
     let contents = fs::read_to_string(&quickstart).expect("read quickstart");
 
-    assert!(contents.contains("named mount declaration"));
+    assert!(contents.contains("native `.mount` artifact"));
+    assert!(contents.contains("[X-CoreOps]"));
     assert!(contents.contains("RequiresMountsFor"));
     assert!(contents.contains(".automount"));
     assert!(contents.contains("busy"));

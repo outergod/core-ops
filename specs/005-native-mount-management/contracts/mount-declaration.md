@@ -1,25 +1,26 @@
-# Contract: Mount Declaration and Dependency Model
+# Contract: Native Mount Artifact and Dependency Model
 
 ## Purpose
-Define the desired-state contract for managed mounts and service-to-mount dependency references.
+Define the desired-state contract for managed native `.mount` / optional `.automount`
+artifacts and service-to-mount dependency references.
 
-## Mount Declaration Rules
+## Managed Mount Artifact Rules
 
-A valid mount declaration MUST provide:
-- a stable declaration identity
+A valid managed native mount artifact MUST provide:
+- a stable identity through embedded `[X-CoreOps]` metadata
 - exactly one target path
 - a native source and filesystem type
 - native mount options when required
 - selected-service ownership boundaries
 - optional bounded target-path preparation metadata
-- optional automount intent only for declared network-backed mounts
+- optional `.automount` companion only for declared network-backed mounts
 
 ## Service Dependency Rules
 
 A valid service dependency MUST:
 - reference mount declaration identities, not raw paths alone
 - resolve each referenced identity within the selected services for the host
-- derive consumed mounted paths from the referenced declarations
+- derive consumed mounted paths from the referenced managed artifacts
 - materialize dependency semantics in the generated native unit configuration
 
 ## Generated Native Dependency Semantics

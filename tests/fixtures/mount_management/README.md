@@ -7,3 +7,6 @@ Scenarios:
 - `network-automount/`: explicit automount for a network-backed mount such as NFS
 - `invalid-definition/`: invalid mount declaration and ownership/validation failures
 - `busy-removal/`: previously managed mount that cannot be cleanly removed
+
+The `normal-nfs/` and `network-automount/` scenarios include example native
+`.mount` / `.automount` artifacts carrying bounded `[X-CoreOps]` metadata.

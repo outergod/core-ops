@@ -119,6 +119,6 @@ tests/
 ## Version Review Record
 
 - Trigger: this feature introduces new managed mount artifacts, new generated native dependency semantics, and new externally observable removal behavior, and the design has now shifted from YAML-first mount declarations to embedded `[X-CoreOps]` metadata inside native systemd units.
-- Compatibility policy review: reopened and pending confirmation after redesign implementation and validation.
-- Current controller package version remains `0.4.0`; final outcome must be re-evaluated after the redesign lands.
-- Rationale: the redesign improves native transparency and operator legibility, but it also changes the operator-facing source model enough that version policy must be reviewed again rather than assumed from the earlier design.
+- Compatibility policy review: confirmed after redesign implementation and validation.
+- Current controller package version remains `0.4.0`; no additional version bump is required beyond the already recorded `0.3.0 -> 0.4.0` outcome for feature 005.
+- Rationale: the redesign preserves the already-reviewed externally observable behavior change while moving the source model closer to native systemd artifacts; that refinement does not require a second bump beyond the approved minor-version outcome.

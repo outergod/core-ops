@@ -1,0 +1,5 @@
+[Automount]
+Where=/srv/immich/media
+
+[X-CoreOps]
+Id=immich-media

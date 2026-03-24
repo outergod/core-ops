@@ -19,7 +19,7 @@ pub fn plan(deps: &ReconcileDependencies<'_>) -> Result<PlanOutput, CoreError> {
         .push(summarize_evaluation(&result.desired));
     if !result.desired.mount_declarations.is_empty() {
         audit.operator_messages.push(format!(
-            "mounts: declarations={}, dependencies={}",
+            "mounts: native-artifacts={}, dependencies={}",
             result.desired.mount_declarations.len(),
             result.desired.mount_dependencies.len()
         ));
@@ -54,7 +54,7 @@ fn append_mount_plan_summary(base: &str, desired: &crate::core::types::DesiredSt
         .collect::<Vec<_>>()
         .join(", ");
     let mut summary = format!(
-        "{base}\nmount ids: {}\nmount dependencies: {}",
+        "{base}\nmount ids: {}\nmount dependencies: {}\nmount metadata: [X-CoreOps]",
         mount_ids,
         desired.mount_dependencies.len()
     );

@@ -5,9 +5,9 @@ Declare a native managed mount, attach a service dependency to it, and verify re
 
 ## Example Workflow
 
-1. Add a named mount declaration for a network-backed share used by a selected service.
-2. Reference that mount declaration identity from the service definition.
-3. If the mount is network-backed and on-demand activation is desired, explicitly enable automount for that declaration.
+1. Add a native `.mount` artifact for a network-backed share used by a selected service and embed its managed identity in `[X-CoreOps]`.
+2. Reference that managed mount identity from the service definition.
+3. If the mount is network-backed and on-demand activation is desired, add the matching `.automount` artifact.
 4. Run `core-ops plan` and verify that the plan includes:
    - the generated `.mount` unit
    - the optional `.automount` unit only when explicitly requested for a network-backed mount
@@ -28,7 +28,7 @@ For a service consuming a mounted host path:
 ## Failure and Recovery Checks
 
 ### Mount Activation Failure
-- Confirm reconciliation reports which mount declaration failed.
+- Confirm reconciliation reports which managed mount identity failed.
 - Confirm the dependent service is blocked rather than reported healthy.
 
 ### Mount Loss After Service Start
@@ -37,7 +37,7 @@ For a service consuming a mounted host path:
 - Confirm future starts or restarts remain prevented until the mount recovers.
 
 ### Mount Removal
-- Remove the mount declaration from desired state.
+- Remove the managed mount artifact from desired state.
 - Confirm dependent managed services are stopped first.
 - Confirm generated mount or automount units are removed only after the mount is no longer active.
 - Confirm reconciliation fails explicitly if the mount remains busy or cannot be cleanly removed.
