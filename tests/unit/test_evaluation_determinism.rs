@@ -29,6 +29,8 @@ fn evaluation_is_deterministic_for_same_input() {
             source_path: "/services/alpha/alpha.container.d/10-x.conf".to_string(),
         }],
         config_files: Vec::new(),
+        mount_declarations: Vec::new(),
+        service_mounts: Vec::new(),
     };
 
     let mut services = BTreeMap::new();

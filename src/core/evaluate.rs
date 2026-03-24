@@ -1,7 +1,8 @@
 use crate::core::errors::EvaluationError;
 use crate::core::types::{
     ConfigFileSource, DropInSource, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn,
-    EvaluationInput, QuadletType,
+    EvaluationInput, MountDependency, MountDeclaration, PathDependencyMode, QuadletType,
+    UnitDependencyMode,
 };
 use std::path::Path;
 
@@ -10,6 +11,8 @@ pub struct EvaluationOutput {
     pub artifacts: Vec<EvaluatedArtifact>,
     pub socket_dropins: Vec<EvaluatedDropIn>,
     pub config_files: Vec<EvaluatedConfigFile>,
+    pub mount_declarations: Vec<MountDeclaration>,
+    pub mount_dependencies: Vec<MountDependency>,
 }
 
 pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutput, EvaluationError> {
@@ -60,6 +63,8 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
         .cloned()
         .collect::<Vec<_>>();
     let config_files = overlay_config_files(&base_configs, &host_configs);
+    let mount_declarations = collect_mount_declarations(input);
+    let mount_dependencies = expand_mount_dependencies(input, &mount_declarations)?;
     artifacts.sort_by(|a, b| a.name.cmp(&b.name));
     socket_dropins.sort_by(|a, b| {
         (a.target.clone(), a.file_name.clone()).cmp(&(b.target.clone(), b.file_name.clone()))
@@ -68,7 +73,60 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
         artifacts,
         socket_dropins,
         config_files,
+        mount_declarations,
+        mount_dependencies,
     })
+}
+
+fn collect_mount_declarations(input: &EvaluationInput) -> Vec<MountDeclaration> {
+    let mut mounts = Vec::new();
+    for service_name in &input.host.services {
+        if let Some(service) = input.catalog.services.get(service_name) {
+            mounts.extend(service.mount_declarations.iter().cloned());
+        }
+    }
+    mounts.sort_by(|a, b| a.id.cmp(&b.id));
+    mounts
+}
+
+fn expand_mount_dependencies(
+    input: &EvaluationInput,
+    declarations: &[MountDeclaration],
+) -> Result<Vec<MountDependency>, EvaluationError> {
+    let declaration_map: std::collections::BTreeMap<&str, &MountDeclaration> = declarations
+        .iter()
+        .map(|decl| (decl.id.as_str(), decl))
+        .collect();
+    let mut dependencies = Vec::new();
+    for service_name in &input.host.services {
+        let Some(service) = input.catalog.services.get(service_name) else {
+            continue;
+        };
+        if service.service_mounts.is_empty() {
+            continue;
+        }
+        let mut consumed_paths = Vec::new();
+        for mount_id in &service.service_mounts {
+            let declaration = declaration_map.get(mount_id.as_str()).ok_or_else(|| {
+                EvaluationError::new(format!(
+                    "service {} references missing mount declaration {}",
+                    service_name, mount_id
+                ))
+            })?;
+            consumed_paths.push(declaration.target_path.clone());
+        }
+        consumed_paths.sort();
+        consumed_paths.dedup();
+        dependencies.push(MountDependency {
+            service_name: service_name.clone(),
+            mount_ids: service.service_mounts.clone(),
+            consumed_paths,
+            path_dependency_mode: PathDependencyMode::RequiresMountsFor,
+            unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
+        });
+    }
+    dependencies.sort_by(|a, b| a.service_name.cmp(&b.service_name));
+    Ok(dependencies)
 }
 
 fn collect_dropins(dropins: &[DropInSource], target: &str) -> Vec<DropInSource> {

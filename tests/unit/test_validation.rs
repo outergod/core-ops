@@ -1,8 +1,10 @@
 use core_ops::core::types::{
-    Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, PlanAction,
-    PlanActionType, QuadletType, ReconciliationPlan, RestartPolicy, Workload,
+    Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, MountDeclaration,
+    MountDependency, MountVerificationMode, PathDependencyMode, PlanAction, PlanActionType,
+    PreparedTargetPath, QuadletType, ReconciliationPlan, RestartPolicy, UnitDependencyMode,
+    Workload,
 };
-use core_ops::core::validation::validate_desired_state;
+use core_ops::core::validation::{validate_desired_state, validate_mount_model};
 use core_ops::core::boundaries::enforce_plan_boundaries;
 
 fn base_desired() -> DesiredState {
@@ -17,6 +19,8 @@ fn base_desired() -> DesiredState {
             enabled_state: EnabledState::Enabled,
             restart_policy: RestartPolicy::Always,
         }],
+        mount_declarations: Vec::new(),
+        mount_dependencies: Vec::new(),
         managed_config_paths: Vec::new(),
         managed_config_roots: Vec::new(),
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
@@ -119,4 +123,80 @@ fn fails_on_duplicate_unit_name() {
 
     let err = validate_desired_state(&desired).unwrap_err();
     assert!(err.message.contains("duplicate unit"));
+}
+
+#[test]
+fn rejects_automount_for_non_network_mounts() {
+    let mounts = vec![MountDeclaration {
+        id: "local-data".to_string(),
+        target_path: "/srv/data".to_string(),
+        source: "/dev/vdb1".to_string(),
+        fstype: "xfs".to_string(),
+        mount_options: Vec::new(),
+        network_backed: false,
+        automount: true,
+        verification_mode: MountVerificationMode::UnitAndPath,
+        ownership_scope: vec!["alpha".to_string()],
+        prepared_path: None,
+    }];
+
+    let err = validate_mount_model(&mounts, &[], Some(&["alpha".to_string()])).unwrap_err();
+    assert!(err.message.contains("network-backed"));
+}
+
+#[test]
+fn rejects_prepared_ownership_for_non_service_consumed_paths() {
+    let mounts = vec![MountDeclaration {
+        id: "immich-media".to_string(),
+        target_path: "/var/lib/immich/media".to_string(),
+        source: "nas:/media".to_string(),
+        fstype: "nfs".to_string(),
+        mount_options: Vec::new(),
+        network_backed: true,
+        automount: false,
+        verification_mode: MountVerificationMode::UnitAndPath,
+        ownership_scope: vec!["immich".to_string()],
+        prepared_path: Some(PreparedTargetPath {
+            path: "/var/lib/immich/media".to_string(),
+            create_if_missing: true,
+            owner: Some("1000".to_string()),
+            group: None,
+            mode: None,
+            service_consumed: false,
+        }),
+    }];
+
+    let err = validate_mount_model(&mounts, &[], Some(&["immich".to_string()])).unwrap_err();
+    assert!(err.message.contains("service-consumed"));
+}
+
+#[test]
+fn rejects_mount_dependency_outside_ownership_scope() {
+    let mounts = vec![MountDeclaration {
+        id: "immich-media".to_string(),
+        target_path: "/var/lib/immich/media".to_string(),
+        source: "nas:/media".to_string(),
+        fstype: "nfs".to_string(),
+        mount_options: Vec::new(),
+        network_backed: true,
+        automount: false,
+        verification_mode: MountVerificationMode::UnitAndPath,
+        ownership_scope: vec!["immich".to_string()],
+        prepared_path: None,
+    }];
+    let dependencies = vec![MountDependency {
+        service_name: "gallery".to_string(),
+        mount_ids: vec!["immich-media".to_string()],
+        consumed_paths: vec!["/var/lib/immich/media".to_string()],
+        path_dependency_mode: PathDependencyMode::RequiresMountsFor,
+        unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
+    }];
+
+    let err = validate_mount_model(
+        &mounts,
+        &dependencies,
+        Some(&["immich".to_string(), "gallery".to_string()]),
+    )
+    .unwrap_err();
+    assert!(err.message.contains("outside ownership scope"));
 }

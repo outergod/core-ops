@@ -28,6 +28,8 @@ fn applies_dropins_in_lexicographic_order_with_host_overrides_last() {
             },
         ],
         config_files: Vec::new(),
+        mount_declarations: Vec::new(),
+        service_mounts: Vec::new(),
     };
 
     let mut services = BTreeMap::new();

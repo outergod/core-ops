@@ -35,17 +35,17 @@ description: "Task list for native mount management"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 Define mount declaration, mount dependency, prepared target path, generated unit set, and mount reconciliation result types in `src/core/types.rs`
-- [ ] T007 Add mount-specific validation and reconciliation error variants in `src/core/errors.rs`
-- [ ] T008 Implement mount declaration validation rules, ownership checks, and automount eligibility rules in `src/core/validation.rs`
-- [ ] T009 Implement desired-state repo loading for named mount declarations and service mount references in `src/io/repo.rs`
-- [ ] T010 Implement mount-aware evaluation output structures and dependency expansion in `src/core/evaluate.rs`
-- [ ] T011 Implement planner primitives for mount actions, dependency edits, and removal candidates in `src/core/planner.rs`
-- [ ] T012 Implement native mount and automount unit rendering plus service dependency materialization helpers in `src/core/unit.rs`
-- [ ] T013 Export mount-aware native unit generation through IO boundaries in `src/io/quadlet.rs`
-- [ ] T014 [P] Add unit tests for mount type invariants and identity rules in `tests/unit/test_types.rs`
-- [ ] T015 [P] Add unit tests for mount validation and ownership-boundary rules in `tests/unit/test_validation.rs`
-- [ ] T016 [P] Add unit tests for planner dependency expansion and deterministic unit generation in `tests/unit/test_planner.rs`
+- [X] T006 Define mount declaration, mount dependency, prepared target path, generated unit set, and mount reconciliation result types in `src/core/types.rs`
+- [X] T007 Add mount-specific validation and reconciliation error variants in `src/core/errors.rs`
+- [X] T008 Implement mount declaration validation rules, ownership checks, and automount eligibility rules in `src/core/validation.rs`
+- [X] T009 Implement desired-state repo loading for named mount declarations and service mount references in `src/io/repo.rs`
+- [X] T010 Implement mount-aware evaluation output structures and dependency expansion in `src/core/evaluate.rs`
+- [X] T011 Implement planner primitives for mount actions, dependency edits, and removal candidates in `src/core/planner.rs`
+- [X] T012 Implement native mount and automount unit rendering plus service dependency materialization helpers in `src/core/unit.rs`
+- [X] T013 Export mount-aware native unit generation through IO boundaries in `src/io/quadlet.rs`
+- [X] T014 [P] Add unit tests for mount type invariants and identity rules in `tests/unit/test_types.rs`
+- [X] T015 [P] Add unit tests for mount validation and ownership-boundary rules in `tests/unit/test_validation.rs`
+- [X] T016 [P] Add unit tests for planner dependency expansion and deterministic unit generation in `tests/unit/test_planner.rs`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 

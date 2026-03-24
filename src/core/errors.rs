@@ -31,6 +31,15 @@ pub enum ValidationErrorKind {
     UndefinedServiceSelection,
     MissingArtifactTarget,
     InvalidDropInOrdering,
+    DuplicateMountId,
+    DuplicateMountTarget,
+    MissingMountReference,
+    InvalidMountTarget,
+    InvalidPreparedPath,
+    InvalidPreparedOwnership,
+    InvalidMountOwnershipScope,
+    InvalidAutomount,
+    ConflictingMountDefinition,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]

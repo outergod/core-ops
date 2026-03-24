@@ -20,6 +20,8 @@ fn desired_state(workloads: Vec<Workload>) -> DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
         workloads,
+        mount_declarations: Vec::new(),
+        mount_dependencies: Vec::new(),
         managed_config_paths: Vec::new(),
         managed_config_roots: Vec::new(),
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],

@@ -10,6 +10,8 @@ fn idempotent_apply_invariant_is_allowed() {
         repository_ref: "fixture".to_string(),
         revision_id: "rev".to_string(),
         workloads: Vec::new(),
+        mount_declarations: Vec::new(),
+        mount_dependencies: Vec::new(),
         managed_config_paths: Vec::new(),
         managed_config_roots: Vec::new(),
         invariants: vec![

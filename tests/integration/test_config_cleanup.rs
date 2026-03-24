@@ -49,6 +49,8 @@ fn removes_stale_config_files_under_managed_root() {
             keep_path.to_string_lossy().as_ref(),
             "keep",
         )],
+        mount_declarations: Vec::new(),
+        mount_dependencies: Vec::new(),
         managed_config_paths: vec![keep_path.to_string_lossy().to_string()],
         managed_config_roots: vec![root.to_string_lossy().to_string()],
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],

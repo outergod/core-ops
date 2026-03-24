@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
 use core_ops::core::types::{
-    Boundaries, BoundaryScope, EnabledState, Invariant, QuadletType, RestartPolicy,
-    Workload,
+    Boundaries, BoundaryScope, EnabledState, Invariant, MountDeclaration, MountDependency,
+    MountVerificationMode, PathDependencyMode, PreparedTargetPath, QuadletType, RestartPolicy,
+    UnitDependencyMode, Workload,
 };
 use core_ops::io::quadlet::read_quadlet_dir;
 
@@ -52,6 +53,50 @@ fn quadlet_type_parsing_supports_socket_and_volume() {
     assert_eq!(workloads[0].quadlet_type, QuadletType::Container);
     assert_eq!(workloads[1].quadlet_type, QuadletType::Socket);
     assert_eq!(workloads[2].quadlet_type, QuadletType::Volume);
+}
+
+#[test]
+fn mount_declaration_derives_native_unit_names() {
+    let mount = MountDeclaration {
+        id: "immich-media".to_string(),
+        target_path: "/var/lib/immich/media".to_string(),
+        source: "nas:/volume1/media".to_string(),
+        fstype: "nfs".to_string(),
+        mount_options: vec!["rw".to_string()],
+        network_backed: true,
+        automount: true,
+        verification_mode: MountVerificationMode::UnitAndPath,
+        ownership_scope: vec!["immich".to_string()],
+        prepared_path: None,
+    };
+
+    assert_eq!(mount.mount_unit_name(), "var-lib-immich-media.mount");
+    assert_eq!(
+        mount.automount_unit_name().as_deref(),
+        Some("var-lib-immich-media.automount")
+    );
+}
+
+#[test]
+fn prepared_target_metadata_and_dependency_identity_are_explicit() {
+    let prepared = PreparedTargetPath {
+        path: "/var/lib/immich/media".to_string(),
+        create_if_missing: true,
+        owner: Some("1000".to_string()),
+        group: Some("1000".to_string()),
+        mode: Some("0755".to_string()),
+        service_consumed: true,
+    };
+    let dependency = MountDependency {
+        service_name: "immich".to_string(),
+        mount_ids: vec!["immich-media".to_string()],
+        consumed_paths: vec!["/var/lib/immich/media".to_string()],
+        path_dependency_mode: PathDependencyMode::RequiresMountsFor,
+        unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
+    };
+
+    assert_eq!(prepared.owner.as_deref(), Some("1000"));
+    assert_eq!(dependency.mount_ids, vec!["immich-media"]);
 }
 
 fn temp_dir(prefix: &str) -> PathBuf {

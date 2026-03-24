@@ -2,8 +2,9 @@ use crate::core::boundaries::enforce_plan_boundaries;
 use crate::core::diff::diff_workloads;
 use crate::core::errors::{CoreError, ValidationError};
 use crate::core::types::{
-    DiffItem, DiffKind, FailureClass, PlanAction, PlanActionType, QuadletType,
-    ReconciliationPlan, SafetyCheck, DesiredState, ObservedState,
+    DesiredState, DiffItem, DiffKind, FailureClass, GeneratedUnitSet, MountDeclaration,
+    MountDependency, PlanAction, PlanActionType, QuadletType, ReconciliationPlan, SafetyCheck,
+    ServiceDependencyEdit, ObservedState,
 };
 use crate::core::validation::validate_desired_state;
 use std::collections::HashSet;
@@ -59,6 +60,44 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
 
     enforce_plan_boundaries(&plan)?;
     Ok(plan)
+}
+
+pub fn plan_mount_units(
+    declaration: &MountDeclaration,
+    dependencies: &[MountDependency],
+) -> GeneratedUnitSet {
+    let mount_unit_name = declaration.mount_unit_name();
+    let automount_unit_name = declaration.automount_unit_name();
+    let service_dependency_edits = dependencies
+        .iter()
+        .filter(|dependency| dependency.mount_ids.iter().any(|id| id == &declaration.id))
+        .map(|dependency| ServiceDependencyEdit {
+            service_name: dependency.service_name.clone(),
+            requires_mounts_for: dependency.consumed_paths.clone(),
+            after_units: explicit_dependency_units(declaration),
+            requires_units: explicit_dependency_units(declaration),
+        })
+        .collect();
+
+    let mut removal_candidates = vec![mount_unit_name.clone()];
+    if let Some(unit) = &automount_unit_name {
+        removal_candidates.insert(0, unit.clone());
+    }
+
+    GeneratedUnitSet {
+        declaration_id: declaration.id.clone(),
+        mount_unit_name,
+        automount_unit_name,
+        service_dependency_edits,
+        removal_candidates,
+    }
+}
+
+fn explicit_dependency_units(declaration: &MountDeclaration) -> Vec<String> {
+    match declaration.automount_unit_name() {
+        Some(automount_unit) => vec![automount_unit, declaration.mount_unit_name()],
+        None => vec![declaration.mount_unit_name()],
+    }
 }
 
 fn actions_for_diff(

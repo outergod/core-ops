@@ -7,12 +7,13 @@ use crate::core::evaluate::{evaluate_desired_state, EvaluationOutput};
 use crate::core::types::{
     ArtifactSource, Boundaries, BoundaryScope, ConfigFileSource, DesiredState, DropInSource,
     EnabledState, EvaluationInput, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn,
-    HostDeclaration, HostOverlaySet, Invariant, QuadletType, RestartPolicy, ServiceCatalog,
-    ServiceDefinition, Workload,
+    HostDeclaration, HostOverlaySet, Invariant, MountDeclaration, MountVerificationMode,
+    PreparedTargetPath, QuadletType, RestartPolicy, ServiceCatalog, ServiceDefinition, Workload,
 };
 use crate::io::quadlet::{parse_quadlet_name, read_quadlet_dir, QuadletError};
 use crate::core::validation::{
     validate_config_paths, validate_dropin_targets as validate_dropin_targets_fn,
+    validate_mount_model,
     validate_service_selection,
 };
 use serde::Deserialize;
@@ -120,6 +121,8 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
         workloads,
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
     ))
 }
 
@@ -216,12 +219,20 @@ fn load_layered_desired_state(
     };
     let output = evaluate_desired_state(&input)
         .map_err(|err| RepoError::EvaluationFailed(err.to_string()))?;
+    validate_mount_model(
+        &output.mount_declarations,
+        &output.mount_dependencies,
+        Some(&input.host.services),
+    )
+    .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let workloads = workloads_from_evaluation(&output);
     let resolved_revision = resolved_head_revision(repo_path)?;
     Ok(desired_state_from_workloads(
         repo_path,
         &resolved_revision,
         workloads,
+        output.mount_declarations,
+        output.mount_dependencies,
         config_paths,
         config_roots,
     ))
@@ -231,6 +242,8 @@ pub fn desired_state_from_workloads(
     repo_path: &Path,
     revision_id: &str,
     workloads: Vec<Workload>,
+    mount_declarations: Vec<MountDeclaration>,
+    mount_dependencies: Vec<crate::core::types::MountDependency>,
     managed_config_paths: Vec<String>,
     managed_config_roots: Vec<String>,
 ) -> DesiredState {
@@ -238,6 +251,8 @@ pub fn desired_state_from_workloads(
         repository_ref: repo_path.display().to_string(),
         revision_id: revision_id.to_string(),
         workloads,
+        mount_declarations,
+        mount_dependencies,
         managed_config_paths,
         managed_config_roots,
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
@@ -316,6 +331,7 @@ fn load_service_definition(
     service_name: &str,
     service_dir: &Path,
 ) -> Result<ServiceDefinition, RepoError> {
+    let service_yaml = load_service_yaml(service_dir)?;
     let mut artifacts = Vec::new();
     let mut base_dropins = Vec::new();
     let mut config_files = Vec::new();
@@ -362,6 +378,26 @@ fn load_service_definition(
         artifacts,
         base_dropins,
         config_files,
+        mount_declarations: service_yaml.mounts,
+        service_mounts: service_yaml.requires_mounts,
+    })
+}
+
+fn load_service_yaml(service_dir: &Path) -> Result<ServiceMountConfig, RepoError> {
+    let path = service_dir.join("service.yaml");
+    if !path.exists() {
+        return Ok(ServiceMountConfig::default());
+    }
+    let contents = fs::read_to_string(&path).map_err(|err| RepoError::Io(err.to_string()))?;
+    let parsed: ServiceYaml =
+        serde_yaml::from_str(&contents).map_err(|err| RepoError::InvalidHostDeclaration(err.to_string()))?;
+    Ok(ServiceMountConfig {
+        mounts: parsed
+            .mounts
+            .into_iter()
+            .map(|mount| mount.into_mount_declaration())
+            .collect(),
+        requires_mounts: parsed.requires_mounts,
     })
 }
 
@@ -743,6 +779,78 @@ fn git_clone(repo: &str, dest: &Path) -> Result<(), RepoError> {
 struct HostYaml {
     host: String,
     services: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+struct ServiceMountConfig {
+    mounts: Vec<MountDeclaration>,
+    requires_mounts: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ServiceYaml {
+    #[serde(default)]
+    mounts: Vec<ServiceMountYaml>,
+    #[serde(default)]
+    requires_mounts: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ServiceMountYaml {
+    id: String,
+    target_path: String,
+    source: String,
+    fstype: String,
+    #[serde(default)]
+    mount_options: Vec<String>,
+    #[serde(default)]
+    network_backed: bool,
+    #[serde(default)]
+    automount: bool,
+    #[serde(default)]
+    ownership_scope: Vec<String>,
+    #[serde(default)]
+    prepared_directory: Option<PreparedDirectoryYaml>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PreparedDirectoryYaml {
+    path: String,
+    #[serde(default = "default_true")]
+    create_if_missing: bool,
+    owner: Option<String>,
+    group: Option<String>,
+    mode: Option<String>,
+    #[serde(default)]
+    service_consumed: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl ServiceMountYaml {
+    fn into_mount_declaration(self) -> MountDeclaration {
+        MountDeclaration {
+            id: self.id,
+            target_path: self.target_path,
+            source: self.source,
+            fstype: self.fstype,
+            mount_options: self.mount_options,
+            network_backed: self.network_backed,
+            automount: self.automount,
+            verification_mode: MountVerificationMode::UnitAndPath,
+            ownership_scope: self.ownership_scope,
+            prepared_path: self.prepared_directory.map(|prepared| PreparedTargetPath {
+                path: prepared.path,
+                create_if_missing: prepared.create_if_missing,
+                owner: prepared.owner,
+                group: prepared.group,
+                mode: prepared.mode,
+                service_consumed: prepared.service_consumed,
+            }),
+        }
+    }
 }
 
 fn git_fetch_revision(repo_path: &Path, revision: &str) -> Result<(), RepoError> {
