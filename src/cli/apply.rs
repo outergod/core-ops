@@ -2,11 +2,12 @@ use std::path::Path;
 
 use crate::core::errors::CoreError;
 use crate::core::reconcile::{reconcile_apply, reconcile_plan, ReconcileDependencies};
-use crate::core::types::{FailureClass, ReconcileRun};
+use crate::core::types::{FailureClass, ReconcileRun, ReconciliationStatus, RunStatus};
+use crate::cli::report::{append_provenance_report, format_plan_report};
 use crate::io::apply::apply_plan;
 use crate::io::observed::read_observed_state;
 use crate::io::repo::load_desired_state;
-use crate::cli::report::format_plan_report;
+use crate::io::state::{persist_finished_state, persist_in_progress_state};
 
 pub fn apply(
     repo_source: &str,
@@ -38,6 +39,7 @@ pub fn apply_with_report(
     revision: &str,
     quadlet_dir: &Path,
     reload_systemd: bool,
+    state_path: Option<std::path::PathBuf>,
 ) -> Result<(ApplyResult, String, crate::core::types::ReconciliationPlan), CoreError> {
     let repo_source = repo_source.to_string();
     let deps = ReconcileDependencies {
@@ -53,8 +55,39 @@ pub fn apply_with_report(
     };
 
     let plan_result = reconcile_plan(&deps)?;
-    let report = format_plan_report(&plan_result.plan, &plan_result.diffs);
+    let mut report = format_plan_report(&plan_result.plan, &plan_result.diffs);
+    let attempt = match state_path.as_ref() {
+        Some(path) => Some(
+            persist_in_progress_state(
+                path,
+                &repo_source,
+                revision,
+                &plan_result.desired.revision_id,
+                None,
+            )
+            .map_err(map_apply_error)?,
+        ),
+        None => None,
+    };
     let result = reconcile_apply(&deps)?;
+    if let (Some(path), Some(attempt)) = (state_path.as_ref(), attempt.as_ref()) {
+        let status = match result.run.status {
+            RunStatus::Success => ReconciliationStatus::Success,
+            RunStatus::Failure => ReconciliationStatus::Failed,
+        };
+        persist_finished_state(
+            path,
+            &repo_source,
+            revision,
+            &result.desired.revision_id,
+            None,
+            attempt,
+            status,
+        )
+        .map_err(map_apply_error)?;
+        let contents = std::fs::read_to_string(path).map_err(map_apply_error)?;
+        report = append_provenance_report(&report, Some(&contents));
+    }
     Ok((result, report, plan_result.plan))
 }
 

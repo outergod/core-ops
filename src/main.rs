@@ -5,12 +5,17 @@ use core_ops::cli::agent as agent_cmd;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
 use core_ops::io::{audit as audit_io, observed, repo};
+use core_ops::io::state::{
+    read_persisted_state, resolve_state_file, CONTROLLER_BUILD_TIME_ENV, CONTROLLER_REVISION_ENV,
+    CONTROLLER_TREE_STATE_ENV, CONTROLLER_VERSION_ENV,
+};
 use core_ops::io::systemd::SYSTEMD_UNIT_DIR_ENV;
 use log::LevelFilter;
 use clap::Parser;
 use std::path::PathBuf;
 
 fn main() {
+    set_controller_provenance_defaults();
     init_logging();
     let cli = Cli::parse();
     if let Err(err) = run(cli) {
@@ -55,17 +60,32 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let rev = args.rev;
             let quadlet_dir = args.quadlet_dir;
             let audit_dir = args.audit_dir;
+            let state_file = if args.force_no_state {
+                None
+            } else {
+                Some(resolve_state_file(args.state_file))
+            };
             let no_reload = args.no_reload;
             set_systemd_unit_dir(&args.systemd_unit_dir);
             set_host_override(&args.host);
 
             let (result, report, plan) =
-                apply_cmd::apply_with_report(&repo_source, &rev, &quadlet_dir, !no_reload)?;
+                apply_cmd::apply_with_report(
+                    &repo_source,
+                    &rev,
+                    &quadlet_dir,
+                    !no_reload,
+                    state_file.clone(),
+                )?;
             let run = result.run;
             let event = core_ops::core::audit::build_audit_event(
                 &run,
                 Some(&plan),
                 &result.verification_results,
+                state_file
+                    .as_ref()
+                    .and_then(|path| read_persisted_state(path).ok().flatten())
+                    .as_ref(),
             );
             audit_io::emit_journal_event(&event).map_err(map_apply_error)?;
             if let Some(dir) = audit_dir {
@@ -107,6 +127,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let audit_dir = args
                 .audit_dir
                 .or_else(|| std::env::var_os("CORE_OPS_AUDIT_DIR").map(PathBuf::from));
+            let state_file = Some(resolve_state_file(args.state_file));
             let lock_path = args
                 .lock_path
                 .or_else(|| std::env::var_os("CORE_OPS_LOCK_PATH").map(PathBuf::from));
@@ -116,6 +137,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                 rev,
                 quadlet_dir,
                 audit_dir,
+                state_file,
                 reload_systemd: !args.no_reload,
                 lock_path,
             };
@@ -126,9 +148,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             Ok(())
         }
         Commands::Status(args) => {
-            let audit_file = args.audit_file;
-            let contents = std::fs::read_to_string(&audit_file).map_err(map_plan_error)?;
-            println!("{}", core_ops::cli::status::format_status_text(&contents));
+            println!("{}", core_ops::cli::status::render_status(args.state_file));
             Ok(())
         }
     }
@@ -176,4 +196,30 @@ fn set_host_override(value: &Option<String>) {
     if let Some(host) = value {
         std::env::set_var("CORE_OPS_HOST", host);
     }
+}
+
+fn set_controller_provenance_defaults() {
+    if std::env::var_os(CONTROLLER_VERSION_ENV).is_none() {
+        std::env::set_var(CONTROLLER_VERSION_ENV, canonical_controller_version());
+    }
+    if std::env::var_os(CONTROLLER_REVISION_ENV).is_none() {
+        if let Some(revision) = option_env!("CORE_OPS_BUILD_REVISION") {
+            std::env::set_var(CONTROLLER_REVISION_ENV, revision);
+        }
+    }
+    if std::env::var_os(CONTROLLER_BUILD_TIME_ENV).is_none() {
+        if let Some(build_time) = option_env!("CORE_OPS_BUILD_TIME") {
+            std::env::set_var(CONTROLLER_BUILD_TIME_ENV, build_time);
+        }
+    }
+    if std::env::var_os(CONTROLLER_TREE_STATE_ENV).is_none() {
+        std::env::set_var(
+            CONTROLLER_TREE_STATE_ENV,
+            option_env!("CORE_OPS_TREE_STATE").unwrap_or("unknown"),
+        );
+    }
+}
+
+fn canonical_controller_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
 }

@@ -108,6 +108,7 @@ fn agent_runs_once_with_service_config() {
         rev,
         quadlet_dir,
         audit_dir: None,
+        state_file: Some(temp.join("status.json")),
         reload_systemd: true,
         lock_path: Some(temp.join("agent.lock")),
     };

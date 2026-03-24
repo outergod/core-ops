@@ -36,6 +36,11 @@ pub fn write_audit_record(dir: &Path, record: &AuditRecord) -> Result<String, Au
 
 pub fn emit_journal_event(event: &AuditEvent) -> Result<(), AuditError> {
     let payload = format_audit_event_json(event);
-    log::info!(target: "audit", "{}", payload);
+    let target = if event.reconciliation_status.is_some() {
+        "audit.provenance"
+    } else {
+        "audit"
+    };
+    log::info!(target: target, "{}", payload);
     Ok(())
 }

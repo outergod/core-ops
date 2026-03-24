@@ -6,6 +6,9 @@ use crate::core::errors::CoreError;
 use crate::core::types::{FailureClass, ReconcileRun, RunLock};
 use crate::io::audit as audit_io;
 use crate::io::lock::FileRunLock;
+use crate::io::state::{
+    persist_never_run_state, read_persisted_state, resolve_state_file, STATE_FILE_ENV,
+};
 
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -13,6 +16,7 @@ pub struct AgentConfig {
     pub rev: String,
     pub quadlet_dir: PathBuf,
     pub audit_dir: Option<PathBuf>,
+    pub state_file: Option<PathBuf>,
     pub reload_systemd: bool,
     pub lock_path: Option<PathBuf>,
 }
@@ -24,6 +28,12 @@ pub struct AgentOutput {
 }
 
 pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
+    let state_path = resolve_state_file(config.state_file.clone());
+    if !state_path.exists() {
+        persist_never_run_state(&state_path, &config.repo, &config.rev)
+            .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
+    }
+    std::env::set_var(STATE_FILE_ENV, &state_path);
     let lock_path = config
         .lock_path
         .clone()
@@ -38,6 +48,7 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         &config.rev,
         &config.quadlet_dir,
         config.reload_systemd,
+        Some(state_path.clone()),
     );
 
     let release_result = lock
@@ -50,7 +61,13 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         return Err(err);
     }
 
-    let event = build_audit_event(&run, Some(&plan), &result.verification_results);
+    let provenance = read_persisted_state(&state_path).ok().flatten();
+    let event = build_audit_event(
+        &run,
+        Some(&plan),
+        &result.verification_results,
+        provenance.as_ref(),
+    );
     audit_io::emit_journal_event(&event)
         .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
 

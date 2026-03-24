@@ -25,3 +25,6 @@ mod test_systemd_units;
 mod test_verification;
 mod test_journald_audit;
 mod test_socket_dropins;
+mod test_reconcile_provenance;
+mod test_status_contract;
+mod test_status_state;

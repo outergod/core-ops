@@ -17,7 +17,7 @@ pub fn plan(deps: &ReconcileDependencies<'_>) -> Result<PlanOutput, CoreError> {
     audit
         .operator_messages
         .push(summarize_evaluation(&result.desired));
-    let event = build_audit_event(&result.run, Some(&result.plan), &[]);
+    let event = build_audit_event(&result.run, Some(&result.plan), &[], None);
 
     Ok(PlanOutput {
         summary: format_plan_report(&result.plan, &diffs),

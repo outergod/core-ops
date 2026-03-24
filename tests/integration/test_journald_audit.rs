@@ -26,7 +26,7 @@ fn journald_audit_event_contains_summary_and_ids() {
         safety_checks: Vec::new(),
         expected_outcomes: Vec::new(),
     };
-    let event = build_audit_event(&run, Some(&plan), &[]);
+    let event = build_audit_event(&run, Some(&plan), &[], None);
     let payload = format_audit_event_json(&event);
 
     assert!(payload.contains("\"run_id\":\"run:test\""));
@@ -57,7 +57,7 @@ fn journald_audit_event_contains_failure_details() {
         },
     ];
 
-    let event = build_audit_event(&run, None, &verification_results);
+    let event = build_audit_event(&run, None, &verification_results, None);
     let payload = format_audit_event_json(&event);
 
     assert!(payload.contains("\"status\":\"failure\""));

@@ -13,3 +13,5 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+/.direnv/
+/core-ops

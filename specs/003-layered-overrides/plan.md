@@ -13,8 +13,9 @@ producing a concrete desired state before diff/plan/apply. Reuse is achieved
 via native Quadlet and systemd drop-in semantics plus whole-file config layering,
 without any templating language, and with explicit failures for invalid overlays
 or undefined services. Managed config roots are authoritative for selected
-services, and reconciliation removes stale config files that are no longer in
-desired state by scanning those roots (no external index state).
+services, are derived from declared config payload target paths rather than
+service names, and reconciliation removes stale config files that are no longer
+in desired state by scanning those roots (no external index state).
 
 ## Technical Context
 
@@ -25,7 +26,7 @@ desired state by scanning those roots (no external index state).
 **Target Platform**: Fedora CoreOS (single host)
 **Project Type**: CLI + systemd service/timer agent
 **Performance Goals**: Evaluation overhead <= 1s per 50 artifacts (per SC-004)
-**Constraints**: No templating language; no semantic config merging; deterministic evaluation; explicit failure diagnostics; native Quadlet/systemd drop-ins only; managed config roots are closed-world for selected services and observed by scanning the host filesystem (no sidecar state)
+**Constraints**: No templating language; no semantic config merging; deterministic evaluation; explicit failure diagnostics; native Quadlet/systemd drop-ins only; managed config roots are closed-world directories derived from evaluated config payload target paths, may be shared by multiple service definitions, and are observed by scanning the host filesystem (no sidecar state)
 **Scale/Scope**: Single host, shared base definitions reused across multiple hosts
 
 ## Constitution Check

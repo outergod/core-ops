@@ -113,9 +113,10 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
         return Err(RepoError::MissingQuadletDir(quadlet_dir));
     }
     let workloads = read_quadlet_dir(&quadlet_dir)?;
+    let resolved_revision = resolved_head_revision(&repo_path)?;
     Ok(desired_state_from_workloads(
         &repo_path,
-        revision_id,
+        &resolved_revision,
         workloads,
         Vec::new(),
         Vec::new(),
@@ -154,7 +155,7 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let mut overlays = load_host_overrides(&host_dir)?;
-    let allowed_prefixes = config_prefixes_for_services(&host_decl.services);
+    let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
     }
@@ -178,7 +179,7 @@ pub fn load_host_declaration(host_dir: &Path) -> Result<HostDeclaration, RepoErr
 
 fn load_layered_desired_state(
     repo_path: &Path,
-    revision_id: &str,
+    _revision_id: &str,
 ) -> Result<DesiredState, RepoError> {
     let services_dir = repo_path.join("services");
     let hosts_dir = repo_path.join("hosts");
@@ -192,7 +193,7 @@ fn load_layered_desired_state(
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let mut overlays = load_host_overrides(&host_dir)?;
-    let allowed_prefixes = config_prefixes_for_services(&host_decl.services);
+    let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
     }
@@ -202,7 +203,7 @@ fn load_layered_desired_state(
     let mut config_paths = collect_config_paths(&host_decl.services, &catalog, &overlays);
     config_paths.sort();
     config_paths.dedup();
-    let mut config_roots = config_roots_for_services(&host_decl.services);
+    let mut config_roots = config_roots_for_paths(&config_paths);
     config_roots.sort();
     config_roots.dedup();
     validate_config_paths(&config_paths)
@@ -216,9 +217,10 @@ fn load_layered_desired_state(
     let output = evaluate_desired_state(&input)
         .map_err(|err| RepoError::EvaluationFailed(err.to_string()))?;
     let workloads = workloads_from_evaluation(&output);
+    let resolved_revision = resolved_head_revision(repo_path)?;
     Ok(desired_state_from_workloads(
         repo_path,
-        revision_id,
+        &resolved_revision,
         workloads,
         config_paths,
         config_roots,
@@ -631,18 +633,34 @@ fn collect_config_paths(
     paths
 }
 
-fn config_prefixes_for_services(services: &[String]) -> Vec<String> {
-    services
+fn config_prefixes_for_services(
+    selected_services: &[String],
+    catalog: &ServiceCatalog,
+) -> Vec<String> {
+    let paths: Vec<String> = selected_services
         .iter()
-        .map(|service| format!("/etc/{service}/"))
+        .filter_map(|service_name| catalog.services.get(service_name))
+        .flat_map(|service| service.config_files.iter().map(|f| f.target_path.clone()))
+        .collect();
+    config_roots_for_paths(&paths)
+        .into_iter()
+        .map(|root| format!("{root}/"))
         .collect()
 }
 
-fn config_roots_for_services(services: &[String]) -> Vec<String> {
-    services
-        .iter()
-        .map(|service| format!("/etc/{service}"))
+fn config_roots_for_paths(paths: &[String]) -> Vec<String> {
+    paths.iter()
+        .filter_map(|path| managed_config_root(path))
         .collect()
+}
+
+fn managed_config_root(path: &str) -> Option<String> {
+    let trimmed = path.strip_prefix("/etc/")?;
+    let first_component = trimmed.split('/').next()?;
+    if first_component.is_empty() {
+        return None;
+    }
+    Some(format!("/etc/{first_component}"))
 }
 
 fn validate_config_overrides(
@@ -765,4 +783,22 @@ fn git_checkout_revision(repo_path: &Path) -> Result<(), RepoError> {
     }
 
     Ok(())
+}
+
+fn resolved_head_revision(repo_path: &Path) -> Result<String, RepoError> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output()
+        .map_err(|err| RepoError::GitCheckoutFailed(err.to_string()))?;
+
+    if !output.status.success() {
+        return Err(RepoError::GitCheckoutFailed(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }

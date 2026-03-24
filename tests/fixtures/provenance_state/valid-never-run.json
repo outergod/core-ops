@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "controller": {
+    "version": "0.3.0",
+    "revision": "8f3c2ab",
+    "build_time": "2026-03-23T10:00:00Z",
+    "tree_state": "clean"
+  },
+  "desired_state": {
+    "repository": "file:///var/lib/core-ops/repo",
+    "requested_ref": "main",
+    "last_observed_revision": null,
+    "last_observed_at": null
+  },
+  "reconciliation": {
+    "generation": 0,
+    "status": "never_run",
+    "running": false,
+    "last_attempted_revision": null,
+    "last_applied_revision": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "attempted_observed_divergence": null
+  }
+}

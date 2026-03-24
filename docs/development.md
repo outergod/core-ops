@@ -66,3 +66,25 @@ CORE_OPS_HOST=<host> core-ops plan --repo <repo> --rev <rev>
 When adding or changing behavior, ensure tests and diagnostics preserve
 machine-readable provenance for both the `core-ops` binary revision and the
 desired-state revision being reconciled.
+
+Any change that affects externally observable behavior, persisted state schema,
+CLI output, reconciliation semantics, or compatibility must evaluate and
+update the release version policy. The canonical controller version is the
+package version in `Cargo.toml`.
+
+## Provenance Status Snapshot Workflow
+
+- Canonical persisted provenance defaults to
+  `/var/lib/core-ops/status.json`.
+- `--state-file <path>` or `CORE_OPS_STATE_FILE` override that default when a
+  different path is required.
+- `core-ops status` reads the canonical snapshot directly and treats missing,
+  partial, invalid, or unsupported snapshots as absent.
+- Apply and agent flows update the canonical snapshot by default rather than
+  maintaining a parallel persisted view.
+- `core-ops apply --force-no-state` is an explicit escape hatch for running an
+  apply without updating the canonical snapshot. It is intended for exceptional
+  cases, not normal operation.
+- Backward-incompatible persisted-schema changes require a recorded version
+  review and a controller version update in `Cargo.toml` according to the
+  project versioning policy.

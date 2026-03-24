@@ -1,5 +1,6 @@
 mod test_audit;
 mod test_invariants;
+mod test_state_snapshot;
 mod test_planner;
 mod test_repo_selection;
 mod test_dropin_order;

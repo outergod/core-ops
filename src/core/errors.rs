@@ -70,3 +70,11 @@ pub enum RunLockError {
     #[error("run lock io error: {0}")]
     Io(String),
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+pub enum StateError {
+    #[error("state io error: {0}")]
+    Io(String),
+    #[error("state serialization error: {0}")]
+    Serialization(String),
+}
