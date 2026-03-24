@@ -7,35 +7,35 @@
 
 ## Summary
 
-Add native mount management to CoreOps as a first-class reconciled artifact for host services. The design introduces named mount declarations, bounded target-path preparation, mount-aware service dependencies materialized directly into generated native units, verification and failure reporting for mount lifecycle, optional automount support only for explicitly declared network-backed mounts, and conservative removal semantics for previously managed mounts. Release-version-policy review is complete for this feature, and the controller package version is updated from `0.3.0` to `0.4.0`.
+Add native mount management to CoreOps as a first-class reconciled artifact for host services while keeping user-authored native `.mount` and optional `.automount` units primary. The design embeds a small `[X-CoreOps]` metadata section into those native units for managed identity, bounded path preparation, removal ownership, and related reconciliation-only metadata, while service definitions remain authoritative for consumer relationships. Service dependency semantics are materialized directly into generated dependent units, and automount remains optional and network-backed only. Release-version-policy review is reopened because this design change materially changes the operator contract from the earlier YAML-first approach.
 
 ## Technical Context
 
 **Language/Version**: Rust (stable toolchain, edition 2021)  
 **Primary Dependencies**: clap, thiserror, miette, log, systemd-journal-logger, tempfile, serde, serde_json, systemd native unit generation via existing CoreOps boundaries  
-**Storage**: Files on disk for desired-state repository content, generated native unit files, and existing canonical status state under `/var/lib/core-ops/status.json`  
+**Storage**: Files on disk for desired-state repository content, including user-authored native `.mount` and optional `.automount` units with embedded `[X-CoreOps]` metadata, generated dependent unit files, and existing canonical status state under `/var/lib/core-ops/status.json`  
 **Testing**: `cargo test` (unit + integration)  
 **Target Platform**: Linux host, primarily Fedora CoreOS / systemd-managed environments  
 **Project Type**: CLI + systemd service/timer agent  
-**Performance Goals**: Planning remains operator-interactive for typical single-host configs with up to 10 managed mounts; reconciliation adds only bounded mount verification and dependency generation overhead relative to existing single-host flows  
-**Constraints**: Remain systemd-native; no Kubernetes-style storage abstractions; no generic network share management beyond native unit semantics; bounded directory preparation only; idempotent reapply; explicit failure diagnostics; path-based plus explicit unit dependency materialization; conservative removal that fails explicitly if the mount remains busy  
+**Performance Goals**: Planning should remain operator-interactive for typical single-host configs with up to 10 managed mounts; this is a planning guideline rather than a release-blocking latency SLO. Reconciliation should add only bounded mount verification and dependency generation overhead relative to existing single-host flows.  
+**Constraints**: Remain systemd-native; keep native mount and automount artifacts operator-authored and primary; use `[X-CoreOps]` as the extension section mechanism for embedded metadata; no Kubernetes-style storage abstractions; no generic network share management beyond native unit semantics; bounded directory preparation only; idempotent reapply; explicit failure diagnostics; path-based plus explicit unit dependency materialization; conservative removal that fails explicitly if the mount remains busy; keep embedded metadata narrow and reconciliation-specific  
 **Scale/Scope**: Single-host reconciliation for mount-backed services with dozens of native artifacts and a small number of managed mounts per host
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- Functional core and imperative shell boundaries are explicit; side effects remain isolated to filesystem preparation, generated unit writes, systemd reloads, and native mount activation/deactivation.
-- Desired state, observed state, reconciliation plans, and outcomes remain explicit data structures, extended with named mount declarations and service-to-mount dependencies.
-- Abstractions stay minimal by extending existing reconciliation and native-unit generation flows rather than introducing a parallel storage subsystem.
+- Functional core and imperative shell boundaries are explicit; side effects remain isolated to filesystem preparation, native artifact reads, generated dependent unit writes, systemd reloads, and native mount activation/deactivation.
+- Desired state, observed state, reconciliation plans, and outcomes remain explicit data structures, extended with managed native mount artifacts, embedded `[X-CoreOps]` metadata, and service-to-mount dependencies.
+- Abstractions stay minimal by extending existing reconciliation and native-unit generation flows rather than introducing a parallel storage subsystem or YAML-first mount DSL.
 - Effects, assumptions, and failure modes remain explicit, including blocked services, degraded mount dependencies, and busy mount removals.
 - Idempotence and convergence are preserved: unchanged desired state produces no unintended remounts or service churn; retries converge after transient mount recovery.
-- Open standards and native interfaces are preferred through systemd `.mount` and `.automount` units plus native dependency directives.
+- Open standards and native interfaces are preferred through user-authored systemd `.mount` and `.automount` units plus native dependency directives.
 - Observability covers diffs, generated native dependency semantics, activation and removal actions, failures, and audit/status output.
 - Provenance and status surfaces continue to identify controller version, desired-state revision, and applied outcome in machine-readable form.
 - Safe defaults are documented: ordinary mount units remain default, automount is opt-in and network-backed only, and mount removal does not force unmount destructive behavior silently.
-- Compatibility impact is assessed: this feature changes externally observable reconciliation behavior and generated native units but stays within current desired-state model boundaries.
-- Release version policy impact is assessed: the feature is a minor-version-review candidate and canonical controller version remains sourced from `Cargo.toml`.
+- Compatibility impact is assessed: this feature changes externally observable reconciliation behavior and the operator-facing source model for managed mounts, so version-review outcome must be re-evaluated.
+- Release version policy impact is reopened: the feature remains at least a minor-version-review candidate and canonical controller version remains sourced from `Cargo.toml`.
 - Test strategy covers invariants, external behavior, convergence, dependency generation, removal semantics, and failures.
 - Modules remain regenerable from spec, research, and tests.
 
@@ -106,7 +106,7 @@ tests/
     └── test_evaluation_determinism.rs
 ```
 
-**Structure Decision**: Keep the existing single-project Rust layout. Extend `core` with named mount declarations, dependency materialization, removal planning, and lifecycle verification; extend `io` with mount-aware repo loading, observation, and native systemd application boundaries; extend CLI/reporting surfaces to expose mount diffs and failure/removal results without creating a new subsystem.
+**Structure Decision**: Keep the existing single-project Rust layout. Extend `core` with managed mount identity parsing, dependency materialization, removal planning, and lifecycle verification; extend `io` with mount-aware repo loading from native units carrying `[X-CoreOps]` metadata, observation, and native systemd application boundaries; extend CLI/reporting surfaces to expose mount diffs and failure/removal results without creating a new subsystem.
 
 ## Complexity Tracking
 
@@ -118,7 +118,7 @@ tests/
 
 ## Version Review Record
 
-- Trigger: this feature introduces new managed mount artifacts, new generated native dependency semantics, and new externally observable removal behavior.
-- Compatibility policy review: completed as a minor version change.
-- Controller package version update applied: `0.3.0 -> 0.4.0`.
-- Rationale: the change materially affects observable reconciliation behavior and managed artifacts, but it does not require a major compatibility break under the current pre-1.0 controller policy.
+- Trigger: this feature introduces new managed mount artifacts, new generated native dependency semantics, and new externally observable removal behavior, and the design has now shifted from YAML-first mount declarations to embedded `[X-CoreOps]` metadata inside native systemd units.
+- Compatibility policy review: reopened and pending confirmation after redesign implementation and validation.
+- Current controller package version remains `0.4.0`; final outcome must be re-evaluated after the redesign lands.
+- Rationale: the redesign improves native transparency and operator legibility, but it also changes the operator-facing source model enough that version policy must be reviewed again rather than assumed from the earlier design.

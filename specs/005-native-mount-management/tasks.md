@@ -147,6 +147,28 @@ description: "Task list for native mount management"
 
 ---
 
+## Phase 7: Native-Artifact-Primary Redesign
+
+**Purpose**: Replace the YAML-first mount source model with native `.mount` and optional `.automount` artifacts annotated by a bounded `[X-CoreOps]` section, and align implementation around that native-unit-primary design
+
+Note: Phases 2-6 reflect the superseded YAML-first mount design and are retained only as historical context. Phase 7 defines the active implementation path for this feature.
+
+- [ ] T058 [P] Update feature documentation and contracts for native-artifact-primary mount metadata in `specs/005-native-mount-management/spec.md`
+- [ ] T059 [P] Update implementation plan to describe embedded `[X-CoreOps]` metadata, native-artifact-primary behavior, and reopened version review in `specs/005-native-mount-management/plan.md`
+- [ ] T060 [P] Add integration test fixtures for user-authored native `.mount` and optional `.automount` artifacts with embedded `[X-CoreOps]` metadata in `tests/fixtures/mount_management/`
+- [ ] T061 [P] Add integration tests for native `.mount`/`.automount` artifacts carrying `[X-CoreOps]` metadata in `tests/integration/test_mount_contracts.rs`
+- [ ] T062 [P] Add integration tests for native-artifact-primary mount parsing, systemd-like override layering, and service-defined consumer relationships in `tests/integration/test_mount_reuse.rs`
+- [ ] T063 Replace YAML-first mount declaration loading with parsing of embedded `[X-CoreOps]` metadata from user-authored native `.mount` and `.automount` artifacts while keeping service definitions authoritative for consumer relationships in `src/io/repo.rs`
+- [ ] T064 Implement validation rules for embedded `[X-CoreOps]` metadata, including mount identity, bounded metadata scope, and consistency with native unit contents in `src/core/validation.rs`
+- [ ] T065 Refactor evaluation and planner flows to operate on managed native mount artifacts and embedded metadata rather than YAML-first declarations in `src/core/evaluate.rs`
+- [ ] T066 Implement parsing and normalization helpers for `[X-CoreOps]` metadata carried by native mount artifacts using native unit layering semantics and effective-value overrides in `src/io/repo.rs`
+- [ ] T067 Update apply and observed-state flows to preserve native-unit-primary behavior for managed mount artifacts with `[X-CoreOps]` metadata, including runtime handling of deployed units that retain the section unchanged, in `src/io/apply.rs`
+- [ ] T068 Update operator-facing reporting and help text to describe embedded `[X-CoreOps]` metadata and native-artifact-primary behavior in `src/cli/plan.rs`
+- [ ] T069 Record the redesigned release-version-policy review outcome for embedded `[X-CoreOps]` metadata in `specs/005-native-mount-management/plan.md`
+- [ ] T070 Evaluate and apply any required controller package-version update after the redesign in `Cargo.toml`
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -155,6 +177,7 @@ description: "Task list for native mount management"
 - **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
 - **User Stories (Phase 3+)**: All depend on Foundational phase completion
 - **Polish (Phase 6)**: Depends on all desired user stories being complete
+- **Native-Artifact-Primary Redesign (Phase 7)**: Uses Phase 1 setup as needed, supersedes Phases 2-6, and defines the authoritative implementation path that must complete before the feature is considered final
 
 ### User Story Dependencies
 
@@ -177,6 +200,7 @@ description: "Task list for native mount management"
 - T028, T029, T030, and T031 can run in parallel for US2
 - T038, T039, T040, and T041 can run in parallel for US3
 - T048, T049, T050, T051, T052, T053, T054, T055, and T056 can run in parallel in Polish
+- T058, T059, T060, T061, and T062 can run in parallel at the start of the redesign phase
 
 ---
 
@@ -248,4 +272,5 @@ With multiple developers:
 - Tests are mandatory for this feature
 - Include provenance/status assertions where mount behavior, dependency semantics, or removal results change
 - Include release-version-policy updates because this feature changes externally observable reconciliation behavior and generated native units
+- Phase 7 supersedes the earlier YAML-first source-model assumption and must complete before this feature is considered settled
 - Verify tests fail before implementing
