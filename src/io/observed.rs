@@ -86,12 +86,7 @@ pub fn read_observed_state(
 }
 
 fn read_native_mount_units(dir: &Path, desired: &DesiredState) -> Result<Vec<Workload>, ObservedError> {
-    let desired_units: HashSet<String> = desired
-        .workloads
-        .iter()
-        .filter(|workload| matches!(workload.quadlet_type, QuadletType::Mount | QuadletType::Automount))
-        .map(|workload| workload.systemd_unit_name.clone())
-        .collect();
+    let desired_units = desired_native_mount_unit_names(desired);
     if desired_units.is_empty() {
         return Ok(Vec::new());
     }
@@ -122,6 +117,25 @@ fn read_native_mount_units(dir: &Path, desired: &DesiredState) -> Result<Vec<Wor
         });
     }
     Ok(workloads)
+}
+
+fn desired_native_mount_unit_names(desired: &DesiredState) -> std::collections::BTreeSet<String> {
+    let mut units = std::collections::BTreeSet::new();
+    for workload in &desired.workloads {
+        if matches!(workload.quadlet_type, QuadletType::Mount | QuadletType::Automount) {
+            units.insert(workload.systemd_unit_name.clone());
+            if workload.quadlet_type == QuadletType::Automount {
+                let mount_peer = workload
+                    .systemd_unit_name
+                    .strip_suffix(".automount")
+                    .map(|stem| format!("{stem}.mount"));
+                if let Some(mount_peer) = mount_peer {
+                    units.insert(mount_peer);
+                }
+            }
+        }
+    }
+    units
 }
 
 fn read_socket_units(dir: &Path) -> Result<Vec<Workload>, ObservedError> {

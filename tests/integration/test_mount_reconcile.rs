@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use core_ops::core::types::{
     Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, MountDeclaration,
@@ -7,6 +8,11 @@ use core_ops::core::types::{
     QuadletType, ReconciliationPlan, RestartPolicy, UnitDependencyMode, Workload,
 };
 use core_ops::io::apply::apply_plan_with_desired;
+
+fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mount_management")
@@ -31,6 +37,7 @@ fn reconcile_fixture_covers_invalid_and_busy_removal_paths() {
 
 #[test]
 fn apply_prepares_target_path_and_starts_mount_before_service() {
+    let _env_lock = env_lock().lock().expect("lock env");
     let temp = std::env::temp_dir().join(format!(
         "core_ops_mount_apply_{}",
         std::time::SystemTime::now()
@@ -47,6 +54,7 @@ fn apply_prepares_target_path_and_starts_mount_before_service() {
     let _guard = EnvGuard;
 
     let log_path = temp.join("systemctl.log");
+    fs::write(&log_path, "").expect("init log");
     write_systemctl_stub(&temp, &log_path);
     let old_path = std::env::var("PATH").unwrap_or_default();
     std::env::set_var("PATH", format!("{}:{}", temp.display(), old_path));
@@ -133,6 +141,110 @@ fn apply_prepares_target_path_and_starts_mount_before_service() {
         .expect("mount start");
     let service_start = log_contents.find("start immich.service").expect("service start");
     assert!(mount_start < service_start);
+}
+
+#[test]
+fn apply_starts_automount_before_service_without_starting_mount_unit() {
+    let _env_lock = env_lock().lock().expect("lock env");
+    let temp = std::env::temp_dir().join(format!(
+        "core_ops_automount_apply_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&temp).expect("temp dir");
+    let quadlet_dir = temp.join("quadlets");
+    let systemd_dir = temp.join("systemd");
+    fs::create_dir_all(&quadlet_dir).expect("quadlet dir");
+    fs::create_dir_all(&systemd_dir).expect("systemd dir");
+    std::env::set_var("CORE_OPS_SYSTEMD_UNIT_DIR", &systemd_dir);
+    let _guard = EnvGuard;
+
+    let log_path = temp.join("systemctl.log");
+    fs::write(&log_path, "").expect("init log");
+    write_systemctl_stub(&temp, &log_path);
+    let old_path = std::env::var("PATH").unwrap_or_default();
+    std::env::set_var("PATH", format!("{}:{}", temp.display(), old_path));
+    let _path_guard = PathGuard(old_path);
+
+    let desired = DesiredState {
+        repository_ref: "repo".to_string(),
+        revision_id: "rev".to_string(),
+        workloads: vec![
+            Workload {
+                name: "srv-immich-media".to_string(),
+                quadlet_type: QuadletType::Mount,
+                quadlet_contents: "[Mount]\nWhere=/srv/immich/media\n".to_string(),
+                systemd_unit_name: "srv-immich-media.mount".to_string(),
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            },
+            Workload {
+                name: "srv-immich-media".to_string(),
+                quadlet_type: QuadletType::Automount,
+                quadlet_contents: "[Automount]\nWhere=/srv/immich/media\n".to_string(),
+                systemd_unit_name: "srv-immich-media.automount".to_string(),
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            },
+            Workload {
+                name: "immich".to_string(),
+                quadlet_type: QuadletType::Container,
+                quadlet_contents: "[Container]\nImage=immich\n".to_string(),
+                systemd_unit_name: "immich.container".to_string(),
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            },
+        ],
+        mount_declarations: vec![MountDeclaration {
+            id: "immich-media".to_string(),
+            target_path: "/srv/immich/media".to_string(),
+            source: "nas:/media".to_string(),
+            fstype: "nfs".to_string(),
+            mount_options: vec!["rw".to_string()],
+            network_backed: true,
+            automount: true,
+            verification_mode: MountVerificationMode::UnitAndPath,
+            ownership_scope: vec!["immich".to_string()],
+            prepared_path: None,
+        }],
+        mount_dependencies: vec![MountDependency {
+            service_name: "immich".to_string(),
+            mount_ids: vec!["immich-media".to_string()],
+            consumed_paths: vec!["/srv/immich/media".to_string()],
+            path_dependency_mode: PathDependencyMode::RequiresMountsFor,
+            unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
+        }],
+        managed_config_paths: Vec::new(),
+        managed_config_roots: Vec::new(),
+        invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
+        boundaries: Boundaries {
+            scopes: vec![BoundaryScope::QuadletSystemd],
+        },
+    };
+    let plan = ReconciliationPlan {
+        plan_id: "plan:automount".to_string(),
+        desired_revision_id: "rev".to_string(),
+        observed_revision_id: None,
+        actions: vec![
+            action(PlanActionType::WriteQuadlet, "srv-immich-media.mount"),
+            action(PlanActionType::WriteQuadlet, "srv-immich-media.automount"),
+            action(PlanActionType::WriteQuadlet, "immich.container"),
+            action(PlanActionType::ReloadSystemd, "srv-immich-media.mount"),
+            action(PlanActionType::StartUnit, "srv-immich-media.automount"),
+            action(PlanActionType::StartUnit, "immich.container"),
+        ],
+        safety_checks: Vec::new(),
+        expected_outcomes: Vec::new(),
+    };
+
+    apply_plan_with_desired(&plan, &desired, &quadlet_dir, true).expect("apply");
+
+    let log_contents = fs::read_to_string(&log_path).expect("read log");
+    assert!(log_contents.contains("start srv-immich-media.automount"));
+    assert!(log_contents.contains("start immich.service"));
+    assert!(!log_contents.contains("start srv-immich-media.mount"));
 }
 
 fn action(action_type: PlanActionType, target: &str) -> PlanAction {

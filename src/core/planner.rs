@@ -28,6 +28,7 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
 
     let socket_stems = desired_socket_stems(&desired.workloads);
     let container_stems = desired_container_stems(&desired.workloads);
+    let automount_stems = desired_automount_stems(&desired.workloads);
     for diff in &diffs {
         let quadlet_type = diff
             .desired
@@ -42,6 +43,7 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
                 prepared_paths.get(&diff.name).map(String::as_str),
                 &socket_stems,
                 &container_stems,
+                &automount_stems,
             );
         actions.append(&mut diff_actions);
     }
@@ -117,6 +119,7 @@ fn actions_for_diff(
     prepared_path: Option<&str>,
     socket_stems: &HashSet<String>,
     container_stems: &HashSet<String>,
+    automount_stems: &HashSet<String>,
 ) -> Vec<PlanAction> {
     let manage_unit = match quadlet_type {
         Some(QuadletType::SocketDropIn) => false,
@@ -133,6 +136,10 @@ fn actions_for_diff(
         _ => true,
     };
     let reload_systemd = !matches!(quadlet_type, Some(QuadletType::ConfigFile));
+    let skip_mount_activation = matches!(quadlet_type, Some(QuadletType::Mount))
+        && stem_for_unit_name(name)
+            .map(|stem| automount_stems.contains(stem))
+            .unwrap_or(false);
     match kind {
         DiffKind::Add => {
             let mut actions = Vec::new();
@@ -145,7 +152,7 @@ fn actions_for_diff(
             if reload_systemd {
                 actions.push(action(PlanActionType::ReloadSystemd, name));
             }
-            if manage_unit {
+            if manage_unit && !skip_mount_activation {
                 actions.push(action(PlanActionType::StartUnit, name));
             }
             if should_restart_socket_for_dropin(quadlet_type.as_ref(), name) {
@@ -188,7 +195,7 @@ fn actions_for_diff(
             if reload_systemd {
                 actions.push(action(PlanActionType::ReloadSystemd, name));
             }
-            if manage_unit {
+            if manage_unit && !skip_mount_activation {
                 actions.push(action(PlanActionType::RestartUnit, name));
             }
             if should_restart_socket_for_dropin(quadlet_type.as_ref(), name) {
@@ -225,6 +232,14 @@ fn desired_container_stems(workloads: &[crate::core::types::Workload]) -> HashSe
     workloads
         .iter()
         .filter(|workload| workload.quadlet_type == QuadletType::Container)
+        .filter_map(|workload| stem_for_unit_name(&workload.systemd_unit_name).map(|s| s.to_string()))
+        .collect()
+}
+
+fn desired_automount_stems(workloads: &[crate::core::types::Workload]) -> HashSet<String> {
+    workloads
+        .iter()
+        .filter(|workload| workload.quadlet_type == QuadletType::Automount)
         .filter_map(|workload| stem_for_unit_name(&workload.systemd_unit_name).map(|s| s.to_string()))
         .collect()
 }

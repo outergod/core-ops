@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::integration::env_lock::path_lock;
 use core_ops::io::repo::load_desired_state;
 
 fn temp_repo() -> PathBuf {
@@ -71,9 +72,12 @@ fn init_layered_repo(repo: &PathBuf) -> String {
 
 #[test]
 fn applies_host_overrides_after_base_dropins() {
+    let _lock = path_lock().lock().expect("path lock");
     let repo = temp_repo();
     let rev = init_layered_repo(&repo);
 
+    let previous = std::env::var_os("CORE_OPS_HOST");
+    let _guard = HostGuard(previous);
     std::env::set_var("CORE_OPS_HOST", "kadath");
     let desired = load_desired_state(repo.to_str().unwrap(), &rev).expect("load desired");
 
@@ -118,6 +122,16 @@ fn applies_host_overrides_after_base_dropins() {
         .find(|w| w.systemd_unit_name == "traefik.socket.d/20-host.conf")
         .expect("socket host drop-in");
     assert!(socket_host_dropin.quadlet_contents.contains("ListenStream=127.0.0.1:8081"));
+}
 
-    std::env::remove_var("CORE_OPS_HOST");
+struct HostGuard(Option<std::ffi::OsString>);
+
+impl Drop for HostGuard {
+    fn drop(&mut self) {
+        if let Some(value) = &self.0 {
+            std::env::set_var("CORE_OPS_HOST", value);
+        } else {
+            std::env::remove_var("CORE_OPS_HOST");
+        }
+    }
 }

@@ -70,6 +70,14 @@ pub fn apply_with_report(
         None => None,
     };
     let result = reconcile_apply(&deps)?;
+    if result
+        .desired
+        .mount_declarations
+        .iter()
+        .any(|mount| mount.automount)
+    {
+        report.push_str("\nautomount apply behavior active");
+    }
     if let (Some(path), Some(attempt)) = (state_path.as_ref(), attempt.as_ref()) {
         let status = match result.run.status {
             RunStatus::Success => ReconciliationStatus::Success,

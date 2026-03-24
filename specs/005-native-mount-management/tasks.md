@@ -112,19 +112,19 @@ description: "Task list for native mount management"
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T038 [P] [US3] Add integration test for reusable mount declarations with host-specific overrides in `tests/integration/test_mount_reuse.rs`
-- [ ] T039 [P] [US3] Add integration test for network-backed automount planning and generated native dependency semantics in `tests/integration/test_mount_contracts.rs`
-- [ ] T040 [P] [US3] Add integration test for automount apply and ordering behavior with dependent services in `tests/integration/test_mount_reconcile.rs`
-- [ ] T041 [P] [US3] Add unit tests for automount eligibility and explicit unit dependency generation in `tests/unit/test_verification.rs`
+- [X] T038 [P] [US3] Add integration test for reusable mount declarations with host-specific overrides in `tests/integration/test_mount_reuse.rs`
+- [X] T039 [P] [US3] Add integration test for network-backed automount planning and generated native dependency semantics in `tests/integration/test_mount_contracts.rs`
+- [X] T040 [P] [US3] Add integration test for automount apply and ordering behavior with dependent services in `tests/integration/test_mount_reconcile.rs`
+- [X] T041 [P] [US3] Add unit tests for automount eligibility and explicit unit dependency generation in `tests/unit/test_verification.rs`
 
 ### Implementation for User Story 3
 
-- [ ] T042 [US3] Implement host-override merge rules for mount declarations and service mount references in `src/io/repo.rs`
-- [ ] T043 [US3] Implement planner support for automount artifacts and reuse-safe dependency generation in `src/core/planner.rs`
-- [ ] T044 [US3] Implement automount rendering and explicit unit dependency wiring for dependent services in `src/core/unit.rs`
-- [ ] T045 [US3] Extend observed-state collection to recognize automount lifecycle state and relationships to underlying mounts in `src/io/observed.rs`
-- [ ] T046 [US3] Extend reconcile/apply flow to activate network-backed automount declarations with correct native ordering semantics in `src/cli/apply.rs`
-- [ ] T047 [US3] Extend plan/status reporting to show reusable mount identities, override effects, and automount-specific dependency behavior in `src/cli/plan.rs`
+- [X] T042 [US3] Implement host-override merge rules for mount declarations and service mount references in `src/io/repo.rs`
+- [X] T043 [US3] Implement planner support for automount artifacts and reuse-safe dependency generation in `src/core/planner.rs`
+- [X] T044 [US3] Implement automount rendering and explicit unit dependency wiring for dependent services in `src/core/unit.rs`
+- [X] T045 [US3] Extend observed-state collection to recognize automount lifecycle state and relationships to underlying mounts in `src/io/observed.rs`
+- [X] T046 [US3] Extend reconcile/apply flow to activate network-backed automount declarations with correct native ordering semantics in `src/cli/apply.rs`
+- [X] T047 [US3] Extend plan/status reporting to show reusable mount identities, override effects, and automount-specific dependency behavior in `src/cli/plan.rs`
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -134,16 +134,16 @@ description: "Task list for native mount management"
 
 **Purpose**: Documentation, provenance/versioning review, and end-to-end validation across all stories
 
-- [ ] T048 [P] Update operator and developer guidance for native mount declarations, automount limits, and removal behavior in `docs/development.md`
-- [ ] T049 [P] Update CLI help text for mount-aware plan/apply/status behavior in `src/cli/args.rs`
-- [ ] T050 [P] Validate mount quickstart scenarios in `tests/integration/test_quickstart_validation.rs`
-- [ ] T051 [P] Add regression coverage for mount-related config cleanup and idempotent reapply in `tests/integration/test_config_cleanup.rs`
-- [ ] T052 [P] Validate mount declaration and removal contract examples against implemented behavior in `tests/integration/test_mount_contracts.rs`
-- [ ] T053 [P] Record release-version-policy review outcome for mount behavior changes in `specs/005-native-mount-management/plan.md`
-- [ ] T054 [P] Evaluate and apply the required controller package-version update in `Cargo.toml`
-- [ ] T055 [P] [US2] Add integration test for mount-specific status output in `tests/integration/test_status_state.rs`
-- [ ] T056 [P] [US2] Add integration test for journald/audit payloads covering mount success, degradation, and busy removal in `tests/integration/test_journald_audit.rs`
-- [ ] T057 Run the full test suite for mount planning, apply, verification, ordering, cleanup, status, and audit behavior with `cargo test`
+- [X] T048 [P] Update operator and developer guidance for native mount declarations, automount limits, and removal behavior in `docs/development.md`
+- [X] T049 [P] Update CLI help text for mount-aware plan/apply/status behavior in `src/cli/args.rs`
+- [X] T050 [P] Validate mount quickstart scenarios in `tests/integration/test_quickstart_validation.rs`
+- [X] T051 [P] Add regression coverage for mount-related config cleanup and idempotent reapply in `tests/integration/test_config_cleanup.rs`
+- [X] T052 [P] Validate mount declaration and removal contract examples against implemented behavior in `tests/integration/test_mount_contracts.rs`
+- [X] T053 [P] Record release-version-policy review outcome for mount behavior changes in `specs/005-native-mount-management/plan.md`
+- [X] T054 [P] Evaluate and apply the required controller package-version update in `Cargo.toml`
+- [X] T055 [P] [US2] Add integration test for mount-specific status output in `tests/integration/test_status_state.rs`
+- [X] T056 [P] [US2] Add integration test for journald/audit payloads covering mount success, degradation, and busy removal in `tests/integration/test_journald_audit.rs`
+- [X] T057 Run the full test suite for mount planning, apply, verification, ordering, cleanup, status, and audit behavior with `cargo test`
 
 ---
 

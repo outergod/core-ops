@@ -3,7 +3,11 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(name = "core-ops", version, about = "GitOps Quadlet controller")]
+#[command(
+    name = "core-ops",
+    version,
+    about = "GitOps controller for Quadlet, native systemd units, and mount-aware reconciliation"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -11,13 +15,13 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Compute a reconciliation plan without applying changes.
+    /// Compute a reconciliation plan, including mount and automount artifacts plus generated native dependency semantics.
     Plan(PlanArgs),
-    /// Apply a reconciliation plan to the host.
+    /// Apply a reconciliation plan, including bounded mount path preparation and mount-aware unit activation.
     Apply(ApplyArgs),
     /// Run the agent once (intended for systemd service execution).
     Agent(AgentArgs),
-    /// Display canonical persisted provenance from a status snapshot.
+    /// Display canonical persisted provenance from a status snapshot, treating invalid or missing snapshots as absent.
     Status(StatusArgs),
 }
 
@@ -29,7 +33,7 @@ pub struct PlanArgs {
     /// Git revision (branch, tag, or commit).
     #[arg(long)]
     pub rev: String,
-    /// Host identity override for selecting hosts/<host>.
+    /// Host identity override for selecting hosts/<host>, including host-specific mount overrides.
     #[arg(long)]
     pub host: Option<String>,
     /// System-level Quadlet directory.
@@ -51,7 +55,7 @@ pub struct ApplyArgs {
     /// Git revision (branch, tag, or commit).
     #[arg(long)]
     pub rev: String,
-    /// Host identity override for selecting hosts/<host>.
+    /// Host identity override for selecting hosts/<host>, including host-specific mount overrides.
     #[arg(long)]
     pub host: Option<String>,
     /// System-level Quadlet directory.
@@ -68,7 +72,7 @@ pub struct ApplyArgs {
     /// `/var/lib/core-ops/status.json`.
     #[arg(long)]
     pub state_file: Option<PathBuf>,
-    /// Force apply without updating the canonical persisted provenance state.
+    /// Force apply without updating the canonical persisted provenance state, even for mount-aware reconciliation.
     #[arg(long, conflicts_with = "state_file")]
     pub force_no_state: bool,
     /// Skip systemd daemon-reload after applying changes.
@@ -84,7 +88,7 @@ pub struct AgentArgs {
     /// Git revision (branch, tag, or commit).
     #[arg(long)]
     pub rev: Option<String>,
-    /// Host identity override for selecting hosts/<host>.
+    /// Host identity override for selecting hosts/<host>, including host-specific mount overrides.
     #[arg(long)]
     pub host: Option<String>,
     /// System-level Quadlet directory.

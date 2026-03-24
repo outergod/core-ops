@@ -41,6 +41,8 @@ pub struct HostOverlaySet {
     pub host: String,
     pub overrides: Vec<DropInSource>,
     pub config_overrides: Vec<ConfigFileSource>,
+    pub mount_overrides: Vec<MountDeclaration>,
+    pub service_mount_overrides: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

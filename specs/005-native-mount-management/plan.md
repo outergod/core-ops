@@ -7,7 +7,7 @@
 
 ## Summary
 
-Add native mount management to CoreOps as a first-class reconciled artifact for host services. The design introduces named mount declarations, bounded target-path preparation, mount-aware service dependencies materialized directly into generated native units, verification and failure reporting for mount lifecycle, optional automount support only for explicitly declared network-backed mounts, and conservative removal semantics for previously managed mounts. Merged changes under this feature require release-version-policy review, with an expected controller package-version update from `0.3.0` to `0.4.0`.
+Add native mount management to CoreOps as a first-class reconciled artifact for host services. The design introduces named mount declarations, bounded target-path preparation, mount-aware service dependencies materialized directly into generated native units, verification and failure reporting for mount lifecycle, optional automount support only for explicitly declared network-backed mounts, and conservative removal semantics for previously managed mounts. Release-version-policy review is complete for this feature, and the controller package version is updated from `0.3.0` to `0.4.0`.
 
 ## Technical Context
 
@@ -119,6 +119,6 @@ tests/
 ## Version Review Record
 
 - Trigger: this feature introduces new managed mount artifacts, new generated native dependency semantics, and new externally observable removal behavior.
-- Compatibility policy review: minor version review required.
-- Expected controller package version update: `0.3.0 -> 0.4.0`.
-- Rationale: the change materially affects observable reconciliation behavior and managed artifacts, but it does not currently require a major compatibility break under the pre-1.0 controller policy.
+- Compatibility policy review: completed as a minor version change.
+- Controller package version update applied: `0.3.0 -> 0.4.0`.
+- Rationale: the change materially affects observable reconciliation behavior and managed artifacts, but it does not require a major compatibility break under the current pre-1.0 controller policy.

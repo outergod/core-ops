@@ -45,7 +45,7 @@ fn snapshot_comparison_identifies_controller_desired_state_and_outcome_changes()
     let base: Value =
         serde_json::from_str(&read_fixture("valid-success.json")).expect("parse base fixture");
     let mut controller_changed = base.clone();
-    controller_changed["controller"]["version"] = Value::String("0.4.0".to_string());
+    controller_changed["controller"]["version"] = Value::String("0.5.0".to_string());
     let mut desired_changed = base.clone();
     desired_changed["desired_state"]["last_observed_revision"] =
         Value::String("feedface".to_string());

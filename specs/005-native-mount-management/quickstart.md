@@ -21,7 +21,7 @@ Declare a native managed mount, attach a service dependency to it, and verify re
 ## Expected Native Dependency Semantics
 
 For a service consuming a mounted host path:
-- the generated service unit includes path-based dependency materialization for the consumed path
+- the generated service unit includes path-based dependency materialization for the consumed path via `RequiresMountsFor=`
 - the generated service unit includes explicit unit dependencies where the mount or automount units must be referenced directly
 - when automount is enabled, the service remains correctly ordered with both the automount and underlying mount behavior
 
@@ -42,7 +42,7 @@ For a service consuming a mounted host path:
 - Confirm generated mount or automount units are removed only after the mount is no longer active.
 - Confirm reconciliation fails explicitly if the mount remains busy or cannot be cleanly removed.
 
-## Version Review Expectation
+## Version Review Outcome
 
 - This feature requires release-version-policy review because it introduces new managed mount artifacts, new generated unit dependency semantics, and new externally visible removal behavior.
-- Current expected package version outcome: `0.3.0 -> 0.4.0`, subject to confirmation after implementation and validation.
+- Confirmed package version outcome: `0.3.0 -> 0.4.0`.

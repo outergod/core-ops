@@ -88,3 +88,22 @@ package version in `Cargo.toml`.
 - Backward-incompatible persisted-schema changes require a recorded version
   review and a controller version update in `Cargo.toml` according to the
   project versioning policy.
+
+## Native Mount Management Workflow
+
+- Declare managed mounts in `services/<service>/service.yaml` using stable mount
+  identities rather than raw paths as the only key.
+- Use `requires_mounts` on the consuming service so CoreOps can materialize
+  native dependency semantics directly into the generated unit configuration.
+- Keep ordinary `.mount` behavior as the default. Set `automount: true` only
+  for explicitly network-backed mounts such as NFS.
+- Limit prepared-path metadata to the service-consumed mount target. Creating
+  missing directories plus optional owner, group, and mode is supported for
+  bounded mount targets; generic directory management is not.
+- `core-ops plan` should show generated mount identities, dependency counts,
+  and automount identities when present.
+- `core-ops apply` prepares bounded target paths, writes `.mount` and optional
+  `.automount` units, and activates automount-backed mounts through the
+  `.automount` unit instead of starting the `.mount` unit directly.
+- Removing a managed mount stops dependent managed services first and fails
+  explicitly if the mount is still busy or cannot be removed cleanly.

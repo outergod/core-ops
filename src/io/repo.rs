@@ -159,6 +159,8 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let mut overlays = load_host_overrides(&host_dir)?;
+    validate_mount_overrides(&host_decl.services, &catalog, &overlays)
+        .map_err(RepoError::ValidationFailed)?;
     let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
@@ -197,6 +199,8 @@ fn load_layered_desired_state(
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let mut overlays = load_host_overrides(&host_dir)?;
+    validate_mount_overrides(&host_decl.services, &catalog, &overlays)
+        .map_err(RepoError::ValidationFailed)?;
     let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
@@ -413,21 +417,30 @@ fn load_host_overrides(host_dir: &Path) -> Result<HostOverlaySet, RepoError> {
             host: host_name.to_string(),
             overrides: Vec::new(),
             config_overrides: Vec::new(),
+            mount_overrides: Vec::new(),
+            service_mount_overrides: std::collections::BTreeMap::new(),
         });
     }
 
     let mut overrides = Vec::new();
     let mut config_overrides = Vec::new();
+    let mut mount_overrides = Vec::new();
+    let mut service_mount_overrides = std::collections::BTreeMap::new();
     for entry in fs::read_dir(&overrides_dir).map_err(|err| RepoError::Io(err.to_string()))? {
         let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
         let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
         let file_name = match path.file_name().and_then(|name| name.to_str()) {
             Some(name) if !name.starts_with('.') => name.to_string(),
             _ => continue,
         };
+        if path.is_file() {
+            if file_name == "mounts.yaml" {
+                let mount_yaml = load_host_mount_overrides(&path)?;
+                mount_overrides = mount_yaml.mounts;
+                service_mount_overrides = mount_yaml.service_mounts;
+            }
+            continue;
+        }
         if file_name == "quadlet" {
             overrides.extend(read_dropins_from_root(&path)?);
             continue;
@@ -438,6 +451,7 @@ fn load_host_overrides(host_dir: &Path) -> Result<HostOverlaySet, RepoError> {
         }
         if file_name == "config" {
             config_overrides.extend(read_config_files(&path)?);
+            continue;
         }
     }
 
@@ -445,6 +459,8 @@ fn load_host_overrides(host_dir: &Path) -> Result<HostOverlaySet, RepoError> {
         host: host_name.to_string(),
         overrides,
         config_overrides,
+        mount_overrides,
+        service_mount_overrides,
     })
 }
 
@@ -642,6 +658,48 @@ fn validate_dropin_targets(
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))
 }
 
+fn validate_mount_overrides(
+    selected_services: &[String],
+    catalog: &ServiceCatalog,
+    overlays: &HostOverlaySet,
+) -> Result<(), String> {
+    let base_mount_ids: std::collections::BTreeSet<String> = selected_services
+        .iter()
+        .filter_map(|service_name| catalog.services.get(service_name))
+        .flat_map(|service| service.mount_declarations.iter().map(|mount| mount.id.clone()))
+        .collect();
+
+    for mount in &overlays.mount_overrides {
+        if !base_mount_ids.contains(&mount.id) {
+            return Err(format!(
+                "host mount override outside selected services: {}",
+                mount.id
+            ));
+        }
+    }
+
+    for (service_name, mount_ids) in &overlays.service_mount_overrides {
+        if !selected_services.iter().any(|selected| selected == service_name) {
+            return Err(format!(
+                "host mount dependency override outside selected services: {}",
+                service_name
+            ));
+        }
+        for mount_id in mount_ids {
+            if !base_mount_ids.contains(mount_id)
+                && !overlays.mount_overrides.iter().any(|mount| &mount.id == mount_id)
+            {
+                return Err(format!(
+                    "host mount dependency override references unknown mount: {}",
+                    mount_id
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn read_config_files(config_root: &Path) -> Result<Vec<ConfigFileSource>, RepoError> {
     let mut files = Vec::new();
     for entry in walk_config_dir(config_root)? {
@@ -815,12 +873,26 @@ struct ServiceMountConfig {
     requires_mounts: Vec<String>,
 }
 
+#[derive(Debug, Default)]
+struct HostMountOverrideConfig {
+    mounts: Vec<MountDeclaration>,
+    service_mounts: std::collections::BTreeMap<String, Vec<String>>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct ServiceYaml {
     #[serde(default)]
     mounts: Vec<ServiceMountYaml>,
     #[serde(default)]
     requires_mounts: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct HostMountOverridesYaml {
+    #[serde(default)]
+    mounts: Vec<ServiceMountYaml>,
+    #[serde(default)]
+    service_mounts: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -879,6 +951,20 @@ impl ServiceMountYaml {
             }),
         }
     }
+}
+
+fn load_host_mount_overrides(path: &Path) -> Result<HostMountOverrideConfig, RepoError> {
+    let contents = fs::read_to_string(path).map_err(|err| RepoError::Io(err.to_string()))?;
+    let parsed: HostMountOverridesYaml =
+        serde_yaml::from_str(&contents).map_err(|err| RepoError::InvalidHostDeclaration(err.to_string()))?;
+    Ok(HostMountOverrideConfig {
+        mounts: parsed
+            .mounts
+            .into_iter()
+            .map(|mount| mount.into_mount_declaration())
+            .collect(),
+        service_mounts: parsed.service_mounts,
+    })
 }
 
 fn git_fetch_revision(repo_path: &Path, revision: &str) -> Result<(), RepoError> {

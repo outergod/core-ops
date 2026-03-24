@@ -27,8 +27,39 @@ pub fn plan(deps: &ReconcileDependencies<'_>) -> Result<PlanOutput, CoreError> {
     let event = build_audit_event(&result.run, Some(&result.plan), &[], None);
 
     Ok(PlanOutput {
-        summary: format_plan_report(&result.plan, &diffs),
+        summary: append_mount_plan_summary(
+            &format_plan_report(&result.plan, &diffs),
+            &result.desired,
+        ),
         audit_record: audit,
         audit_event: event,
     })
+}
+
+fn append_mount_plan_summary(base: &str, desired: &crate::core::types::DesiredState) -> String {
+    if desired.mount_declarations.is_empty() {
+        return base.to_string();
+    }
+    let mount_ids = desired
+        .mount_declarations
+        .iter()
+        .map(|mount| mount.id.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let automount_ids = desired
+        .mount_declarations
+        .iter()
+        .filter(|mount| mount.automount)
+        .map(|mount| mount.id.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut summary = format!(
+        "{base}\nmount ids: {}\nmount dependencies: {}",
+        mount_ids,
+        desired.mount_dependencies.len()
+    );
+    if !automount_ids.is_empty() {
+        summary.push_str(&format!("\nautomount ids: {}", automount_ids));
+    }
+    summary
 }

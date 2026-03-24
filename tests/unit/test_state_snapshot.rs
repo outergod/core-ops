@@ -200,7 +200,7 @@ fn fixture_state() -> PersistedProvenanceState {
     PersistedProvenanceState {
         schema_version: PERSISTED_PROVENANCE_SCHEMA_VERSION,
         controller: ControllerProvenance {
-            version: Some("0.3.0".to_string()),
+            version: Some("0.4.0".to_string()),
             revision: Some("abc1234".to_string()),
             build_time: Some("2026-03-23T10:00:00Z".to_string()),
             tree_state: TreeState::Clean,

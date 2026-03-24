@@ -29,14 +29,9 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
                     .iter()
                     .find(|decl| decl.id == *mount_id)
                     .expect("mount dependency was expanded from known declaration");
-                if let Some(automount) = declaration.automount_unit_name() {
-                    after_units.push(automount);
-                    requires_units.push(declaration.mount_unit_name());
-                } else {
-                    let mount_unit = declaration.mount_unit_name();
-                    after_units.push(mount_unit.clone());
-                    requires_units.push(mount_unit);
-                }
+                let explicit_units = explicit_dependency_units(declaration);
+                after_units.extend(explicit_units.clone());
+                requires_units.extend(explicit_units);
             }
             (
                 dependency.service_name.as_str(),
@@ -114,6 +109,13 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
     })
 }
 
+fn explicit_dependency_units(declaration: &MountDeclaration) -> Vec<String> {
+    match declaration.automount_unit_name() {
+        Some(automount_unit) => vec![automount_unit, declaration.mount_unit_name()],
+        None => vec![declaration.mount_unit_name()],
+    }
+}
+
 fn collect_mount_declarations(input: &EvaluationInput) -> Vec<MountDeclaration> {
     let mut mounts = Vec::new();
     for service_name in &input.host.services {
@@ -121,6 +123,12 @@ fn collect_mount_declarations(input: &EvaluationInput) -> Vec<MountDeclaration> 
             mounts.extend(service.mount_declarations.iter().cloned());
         }
     }
+    let mut by_id: std::collections::BTreeMap<String, MountDeclaration> =
+        mounts.into_iter().map(|mount| (mount.id.clone(), mount)).collect();
+    for override_mount in &input.overlays.mount_overrides {
+        by_id.insert(override_mount.id.clone(), override_mount.clone());
+    }
+    let mut mounts: Vec<MountDeclaration> = by_id.into_values().collect();
     mounts.sort_by(|a, b| a.id.cmp(&b.id));
     mounts
 }
@@ -138,11 +146,17 @@ fn expand_mount_dependencies(
         let Some(service) = input.catalog.services.get(service_name) else {
             continue;
         };
-        if service.service_mounts.is_empty() {
+        let mount_ids = input
+            .overlays
+            .service_mount_overrides
+            .get(service_name)
+            .cloned()
+            .unwrap_or_else(|| service.service_mounts.clone());
+        if mount_ids.is_empty() {
             continue;
         }
         let mut consumed_paths = Vec::new();
-        for mount_id in &service.service_mounts {
+        for mount_id in &mount_ids {
             let declaration = declaration_map.get(mount_id.as_str()).ok_or_else(|| {
                 EvaluationError::new(format!(
                     "service {} references missing mount declaration {}",
@@ -155,7 +169,7 @@ fn expand_mount_dependencies(
         consumed_paths.dedup();
         dependencies.push(MountDependency {
             service_name: service_name.clone(),
-            mount_ids: service.service_mounts.clone(),
+            mount_ids,
             consumed_paths,
             path_dependency_mode: PathDependencyMode::RequiresMountsFor,
             unit_dependency_mode: UnitDependencyMode::AfterAndRequires,

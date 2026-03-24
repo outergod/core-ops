@@ -55,6 +55,8 @@ fn evaluation_is_deterministic_for_same_input() {
                 source_path: "/hosts/ulthar/overrides/alpha.container.d/20-y.conf".to_string(),
             }],
             config_overrides: Vec::new(),
+            mount_overrides: Vec::new(),
+            service_mount_overrides: BTreeMap::new(),
         },
     };
 
