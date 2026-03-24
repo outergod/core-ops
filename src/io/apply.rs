@@ -1,7 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::core::types::{PlanAction, PlanActionType, QuadletType, ReconciliationPlan, Workload};
+use crate::core::types::{
+    DesiredState, MountDeclaration, PlanAction, PlanActionType, QuadletType, ReconciliationPlan,
+    Workload,
+};
 use crate::core::unit::systemd_unit_for_quadlet_file;
 use crate::io::systemd::systemd_unit_dir;
 
@@ -46,6 +49,26 @@ pub fn apply_plan(
     quadlet_dir: &Path,
     reload_systemd: bool,
 ) -> Result<ApplyOutcome, ApplyError> {
+    let desired = DesiredState {
+        repository_ref: String::new(),
+        revision_id: String::new(),
+        workloads: desired_workloads.to_vec(),
+        mount_declarations: Vec::new(),
+        mount_dependencies: Vec::new(),
+        managed_config_paths: Vec::new(),
+        managed_config_roots: Vec::new(),
+        invariants: Vec::new(),
+        boundaries: crate::core::types::Boundaries { scopes: Vec::new() },
+    };
+    apply_plan_with_desired(plan, &desired, quadlet_dir, reload_systemd)
+}
+
+pub fn apply_plan_with_desired(
+    plan: &ReconciliationPlan,
+    desired: &DesiredState,
+    quadlet_dir: &Path,
+    reload_systemd: bool,
+) -> Result<ApplyOutcome, ApplyError> {
     if !quadlet_dir.exists() {
         return Err(ApplyError::MissingQuadletDir(quadlet_dir.to_path_buf()));
     }
@@ -53,12 +76,18 @@ pub fn apply_plan(
     let mut files_written = Vec::new();
     let mut files_removed = Vec::new();
 
+    prepare_target_paths(&desired.mount_declarations)?;
+
     let mut deferred_units: Vec<(PlanActionType, String)> = Vec::new();
 
     for action in &plan.actions {
         match &action.action_type {
+            PlanActionType::PreparePath => {
+                fs::create_dir_all(&action.target)?;
+                files_written.push(action.target.clone());
+            }
             PlanActionType::WriteQuadlet => {
-                let workload = find_workload(desired_workloads, &action.target)?;
+                let workload = find_workload(&desired.workloads, &action.target)?;
                 let path = if workload.quadlet_type == QuadletType::ConfigFile {
                     PathBuf::from(&workload.systemd_unit_name)
                 } else {
@@ -126,7 +155,8 @@ pub fn apply_plan(
                 deferred_units.push((PlanActionType::RestartUnit, action.target.clone()));
             }
             PlanActionType::StopUnit => {
-                let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &action.target)?;
+                let unit =
+                    unit_name_for_start_stop(&desired.workloads, quadlet_dir, &action.target)?;
                 run_systemctl_allow_not_loaded(&["stop", &unit])?;
             }
             PlanActionType::ReloadSystemd => {
@@ -148,7 +178,7 @@ pub fn apply_plan(
     for (action_type, target) in deferred_units {
         match action_type {
             PlanActionType::RestartUnit => {
-                let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &target)?;
+                let unit = unit_name_for_start_stop(&desired.workloads, quadlet_dir, &target)?;
                 run_systemctl(&["restart", &unit])?;
                 restarted.insert(target.clone());
                 started.insert(target);
@@ -160,7 +190,7 @@ pub fn apply_plan(
                 if started.contains(&target) {
                     continue;
                 }
-                let unit = unit_name_for_start_stop(desired_workloads, quadlet_dir, &target)?;
+                let unit = unit_name_for_start_stop(&desired.workloads, quadlet_dir, &target)?;
                 run_systemctl(&["start", &unit])?;
                 started.insert(target);
             }
@@ -177,7 +207,7 @@ pub fn apply_plan(
 
 fn target_dir_for_workload(quadlet_dir: &Path, workload: &Workload) -> PathBuf {
     match workload.quadlet_type {
-        QuadletType::Socket | QuadletType::SocketDropIn => systemd_unit_dir(),
+        QuadletType::Socket | QuadletType::SocketDropIn | QuadletType::Mount | QuadletType::Automount => systemd_unit_dir(),
         QuadletType::ConfigFile => PathBuf::from("/"),
         _ => quadlet_dir.to_path_buf(),
     }
@@ -188,7 +218,8 @@ fn target_dir_for_name(quadlet_dir: &Path, target: &str) -> PathBuf {
         || Path::new(target)
             .extension()
             .and_then(|ext| ext.to_str())
-            == Some("socket")
+            .map(|ext| matches!(ext, "socket" | "mount" | "automount"))
+            == Some(true)
     {
         systemd_unit_dir()
     } else if target.starts_with("/etc/") {
@@ -196,6 +227,52 @@ fn target_dir_for_name(quadlet_dir: &Path, target: &str) -> PathBuf {
     } else {
         quadlet_dir.to_path_buf()
     }
+}
+
+fn prepare_target_paths(mounts: &[MountDeclaration]) -> Result<(), ApplyError> {
+    for mount in mounts {
+        let Some(prepared) = &mount.prepared_path else {
+            continue;
+        };
+        if prepared.create_if_missing {
+            fs::create_dir_all(&prepared.path)?;
+        }
+        if let Some(mode) = &prepared.mode {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let parsed = u32::from_str_radix(mode, 8).map_err(|_| {
+                    ApplyError::SystemdCommandFailed(format!("invalid mode: {}", mode))
+                })?;
+                let perms = fs::Permissions::from_mode(parsed);
+                fs::set_permissions(&prepared.path, perms)?;
+            }
+        }
+        #[cfg(unix)]
+        if prepared.owner.is_some() || prepared.group.is_some() {
+            let uid = prepared
+                .owner
+                .as_deref()
+                .map(str::parse::<u32>)
+                .transpose()
+                .map_err(|_| ApplyError::SystemdCommandFailed("invalid owner uid".to_string()))?
+                .unwrap_or(u32::MAX);
+            let gid = prepared
+                .group
+                .as_deref()
+                .map(str::parse::<u32>)
+                .transpose()
+                .map_err(|_| ApplyError::SystemdCommandFailed("invalid group gid".to_string()))?
+                .unwrap_or(u32::MAX);
+            let path = std::ffi::CString::new(prepared.path.clone())
+                .map_err(|_| ApplyError::SystemdCommandFailed("invalid prepared path".to_string()))?;
+            let result = unsafe { libc::chown(path.as_ptr(), uid, gid) };
+            if result != 0 {
+                return Err(ApplyError::Io(std::io::Error::last_os_error()));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn find_workload<'a>(

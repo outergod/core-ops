@@ -1,4 +1,4 @@
-use crate::core::diff::diff_workloads;
+use crate::core::diff::{diff_contains_mount_workloads, diff_workloads};
 use crate::core::errors::CoreError;
 use crate::core::planner::plan;
 use crate::core::types::{
@@ -108,12 +108,17 @@ pub fn reconcile_plan(deps: &ReconcileDependencies<'_>) -> Result<PlanResult, Co
     let plan = plan(&desired, &observed)?;
     let diffs = diff_workloads(&desired.workloads, &observed.workloads);
 
+    let summary = if diff_contains_mount_workloads(&diffs) {
+        "planned mount-backed changes".to_string()
+    } else {
+        "planned".to_string()
+    };
     let run = ReconcileRun {
         run_id: format!("run:{}", plan.plan_id),
         mode: ReconcileMode::Plan,
         status: RunStatus::Success,
         failure_class: None,
-        summary: "planned".to_string(),
+        summary,
     };
 
     Ok(PlanResult {
@@ -142,12 +147,24 @@ pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, 
         .any(|result| result.status == VerificationStatus::Failure);
 
     let (status, failure_class, summary) = if diffs.is_empty() && !has_failures {
-        (RunStatus::Success, None, "converged".to_string())
+        (
+            RunStatus::Success,
+            None,
+            if !desired.mount_declarations.is_empty() {
+                "converged mount-backed services".to_string()
+            } else {
+                "converged".to_string()
+            },
+        )
     } else {
         (
             RunStatus::Failure,
             Some(FailureClass::Verify),
-            "verification failed".to_string(),
+            if !desired.mount_declarations.is_empty() {
+                "mount verification failed".to_string()
+            } else {
+                "verification failed".to_string()
+            },
         )
     };
 

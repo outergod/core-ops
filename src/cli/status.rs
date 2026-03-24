@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::core::types::{DesiredState, VerificationResult, VerificationStatus};
 use crate::io::state::{parse_persisted_state_text, read_persisted_state, resolve_state_file};
 
 pub fn render_status_from_path(path: &Path) -> String {
@@ -30,4 +31,23 @@ fn render_present_state(state: &crate::core::types::PersistedProvenanceState) ->
 
 fn absent_status() -> String {
     "provenance\n{\n  \"status\": \"absent\"\n}".to_string()
+}
+
+pub fn render_mount_dependency_summary(
+    desired: &DesiredState,
+    verification_results: &[VerificationResult],
+) -> Option<String> {
+    if desired.mount_declarations.is_empty() {
+        return None;
+    }
+    let failures = verification_results
+        .iter()
+        .filter(|result| result.status == VerificationStatus::Failure)
+        .count();
+    Some(format!(
+        "mounts declarations={} dependencies={} verification_failures={}",
+        desired.mount_declarations.len(),
+        desired.mount_dependencies.len(),
+        failures
+    ))
 }

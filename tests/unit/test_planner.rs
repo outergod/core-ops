@@ -17,6 +17,8 @@ fn workload_with_type(name: &str, quadlet_type: QuadletType) -> Workload {
         QuadletType::Socket => "socket",
         QuadletType::SocketDropIn => "socket-dropin",
         QuadletType::ConfigFile => "config",
+        QuadletType::Mount => "mount",
+        QuadletType::Automount => "automount",
         QuadletType::Volume => "volume",
         QuadletType::Pod => "pod",
         QuadletType::Network => "network",

@@ -59,20 +59,20 @@ description: "Task list for native mount management"
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T017 [P] [US1] Add integration test for planning mount units and generated service dependency semantics in `tests/integration/test_mount_contracts.rs`
-- [ ] T018 [P] [US1] Add integration test for apply creating prepared target paths and activating a required mount before service start in `tests/integration/test_mount_reconcile.rs`
-- [ ] T019 [P] [US1] Add unit tests for native mount and service dependency rendering in `tests/unit/test_verification.rs`
+- [X] T017 [P] [US1] Add integration test for planning mount units and generated service dependency semantics in `tests/integration/test_mount_contracts.rs`
+- [X] T018 [P] [US1] Add integration test for apply creating prepared target paths and activating a required mount before service start in `tests/integration/test_mount_reconcile.rs`
+- [X] T019 [P] [US1] Add unit tests for native mount and service dependency rendering in `tests/unit/test_verification.rs`
 
 ### Implementation for User Story 1
 
-- [ ] T020 [US1] Implement diff support for managed mount and automount artifacts in `src/core/diff.rs`
-- [ ] T021 [US1] Implement target-path preparation and bounded owner/group/mode handling in `src/io/apply.rs`
-- [ ] T022 [US1] Implement observed-state collection for native mount and automount units plus mounted target-path verification in `src/io/observed.rs`
-- [ ] T023 [US1] Implement mount verification rules combining native unit state and mounted path checks in `src/core/verify.rs`
-- [ ] T024 [US1] Implement reconciliation flow for normal mount activation and service unblocking in `src/core/reconcile.rs`
-- [ ] T025 [US1] Wire plan output to include mount actions, dependency edits, and prepared path actions in `src/cli/plan.rs`
-- [ ] T026 [US1] Wire apply flow to execute mount actions and prepared path actions through native systemd boundaries in `src/cli/apply.rs`
-- [ ] T027 [US1] Surface mount-backed service dependency results in status/report output in `src/cli/status.rs`
+- [X] T020 [US1] Implement diff support for managed mount and automount artifacts in `src/core/diff.rs`
+- [X] T021 [US1] Implement target-path preparation and bounded owner/group/mode handling in `src/io/apply.rs`
+- [X] T022 [US1] Implement observed-state collection for native mount and automount units plus mounted target-path verification in `src/io/observed.rs`
+- [X] T023 [US1] Implement mount verification rules combining native unit state and mounted path checks in `src/core/verify.rs`
+- [X] T024 [US1] Implement reconciliation flow for normal mount activation and service unblocking in `src/core/reconcile.rs`
+- [X] T025 [US1] Wire plan output to include mount actions, dependency edits, and prepared path actions in `src/cli/plan.rs`
+- [X] T026 [US1] Wire apply flow to execute mount actions and prepared path actions through native systemd boundaries in `src/cli/apply.rs`
+- [X] T027 [US1] Surface mount-backed service dependency results in status/report output in `src/cli/status.rs`
 
 **Checkpoint**: User Story 1 should be fully functional and testable independently
 

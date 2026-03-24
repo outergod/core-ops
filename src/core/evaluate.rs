@@ -2,8 +2,9 @@ use crate::core::errors::EvaluationError;
 use crate::core::types::{
     ConfigFileSource, DropInSource, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn,
     EvaluationInput, MountDependency, MountDeclaration, PathDependencyMode, QuadletType,
-    UnitDependencyMode,
+    ServiceDependencyEdit, UnitDependencyMode,
 };
+use crate::core::unit::apply_service_mount_dependencies;
 use std::path::Path;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -16,6 +17,38 @@ pub struct EvaluationOutput {
 }
 
 pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutput, EvaluationError> {
+    let mount_declarations = collect_mount_declarations(input);
+    let mount_dependencies = expand_mount_dependencies(input, &mount_declarations)?;
+    let dependency_map: std::collections::BTreeMap<&str, ServiceDependencyEdit> = mount_dependencies
+        .iter()
+        .map(|dependency| {
+            let mut after_units = Vec::new();
+            let mut requires_units = Vec::new();
+            for mount_id in &dependency.mount_ids {
+                let declaration = mount_declarations
+                    .iter()
+                    .find(|decl| decl.id == *mount_id)
+                    .expect("mount dependency was expanded from known declaration");
+                if let Some(automount) = declaration.automount_unit_name() {
+                    after_units.push(automount);
+                    requires_units.push(declaration.mount_unit_name());
+                } else {
+                    let mount_unit = declaration.mount_unit_name();
+                    after_units.push(mount_unit.clone());
+                    requires_units.push(mount_unit);
+                }
+            }
+            (
+                dependency.service_name.as_str(),
+                ServiceDependencyEdit {
+                    service_name: dependency.service_name.clone(),
+                    requires_mounts_for: dependency.consumed_paths.clone(),
+                    after_units,
+                    requires_units,
+                },
+            )
+        })
+        .collect();
     let mut artifacts = Vec::new();
     let mut socket_dropins = Vec::new();
     for service_name in &input.host.services {
@@ -37,6 +70,11 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
             } else {
                 apply_dropins(&mut contents, &mut source_layers, &base_dropins);
                 apply_dropins(&mut contents, &mut source_layers, &host_dropins);
+                if matches!(artifact.quadlet_type, QuadletType::Container | QuadletType::Pod) {
+                    if let Some(edit) = dependency_map.get(service_name.as_str()) {
+                        contents = apply_service_mount_dependencies(&contents, edit);
+                    }
+                }
             }
 
             artifacts.push(EvaluatedArtifact {
@@ -63,8 +101,6 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
         .cloned()
         .collect::<Vec<_>>();
     let config_files = overlay_config_files(&base_configs, &host_configs);
-    let mount_declarations = collect_mount_declarations(input);
-    let mount_dependencies = expand_mount_dependencies(input, &mount_declarations)?;
     artifacts.sort_by(|a, b| a.name.cmp(&b.name));
     socket_dropins.sort_by(|a, b| {
         (a.target.clone(), a.file_name.clone()).cmp(&(b.target.clone(), b.file_name.clone()))

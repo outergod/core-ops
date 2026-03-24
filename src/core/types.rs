@@ -321,6 +321,8 @@ pub enum QuadletType {
     Socket,
     SocketDropIn,
     ConfigFile,
+    Mount,
+    Automount,
     Pod,
     Volume,
     Network,
@@ -348,6 +350,7 @@ pub enum UnitActiveState {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlanActionType {
+    PreparePath,
     WriteQuadlet,
     RemoveQuadlet,
     EnableUnit,

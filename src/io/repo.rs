@@ -10,6 +10,7 @@ use crate::core::types::{
     HostDeclaration, HostOverlaySet, Invariant, MountDeclaration, MountVerificationMode,
     PreparedTargetPath, QuadletType, RestartPolicy, ServiceCatalog, ServiceDefinition, Workload,
 };
+use crate::io::quadlet::render_native_mount_units;
 use crate::io::quadlet::{parse_quadlet_name, read_quadlet_dir, QuadletError};
 use crate::core::validation::{
     validate_config_paths, validate_dropin_targets as validate_dropin_targets_fn,
@@ -518,6 +519,12 @@ fn workloads_from_evaluation(output: &EvaluationOutput) -> Vec<Workload> {
         .iter()
         .map(workload_from_artifact)
         .collect();
+    workloads.extend(output.mount_declarations.iter().flat_map(|mount| {
+        render_native_mount_units(mount)
+            .into_iter()
+            .map(|(name, contents)| workload_from_native_unit(&name, &contents))
+            .collect::<Vec<_>>()
+    }));
     workloads.extend(
         output
             .socket_dropins
@@ -571,6 +578,27 @@ fn workload_from_config_file(file: &EvaluatedConfigFile) -> Workload {
         quadlet_type: QuadletType::ConfigFile,
         quadlet_contents: file.contents.clone(),
         systemd_unit_name: file.target_path.clone(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    }
+}
+
+fn workload_from_native_unit(unit_name: &str, contents: &str) -> Workload {
+    let quadlet_type = if unit_name.ends_with(".automount") {
+        QuadletType::Automount
+    } else {
+        QuadletType::Mount
+    };
+    let name = Path::new(unit_name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(unit_name)
+        .to_string();
+    Workload {
+        name,
+        quadlet_type,
+        quadlet_contents: contents.to_string(),
+        systemd_unit_name: unit_name.to_string(),
         enabled_state: EnabledState::Enabled,
         restart_policy: RestartPolicy::Always,
     }

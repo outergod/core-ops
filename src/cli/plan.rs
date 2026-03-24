@@ -17,6 +17,13 @@ pub fn plan(deps: &ReconcileDependencies<'_>) -> Result<PlanOutput, CoreError> {
     audit
         .operator_messages
         .push(summarize_evaluation(&result.desired));
+    if !result.desired.mount_declarations.is_empty() {
+        audit.operator_messages.push(format!(
+            "mounts: declarations={}, dependencies={}",
+            result.desired.mount_declarations.len(),
+            result.desired.mount_dependencies.len()
+        ));
+    }
     let event = build_audit_event(&result.run, Some(&result.plan), &[], None);
 
     Ok(PlanOutput {
