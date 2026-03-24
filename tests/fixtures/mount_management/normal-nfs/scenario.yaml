@@ -1,0 +1,8 @@
+scenario: normal-nfs
+summary: Successful mount-backed service using a network-backed mount.
+mount_id: immich-media
+service: immich
+features:
+  - named-mount-declaration
+  - requires-mounts-for
+  - bounded-target-path-preparation

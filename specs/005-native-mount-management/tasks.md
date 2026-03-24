@@ -21,11 +21,11 @@ description: "Task list for native mount management"
 
 **Purpose**: Add mount-management fixtures, contracts scaffolding, and test entry points
 
-- [ ] T001 Create mount-management fixture directories and README in `tests/fixtures/mount_management/`
-- [ ] T002 [P] Add fixture scenarios for normal mounts, network-backed automounts, invalid definitions, and busy-removal cases in `tests/fixtures/mount_management/`
-- [ ] T003 [P] Add mount contract test scaffolding in `tests/integration/test_mount_contracts.rs`
-- [ ] T004 [P] Add mount reconciliation integration test scaffolding in `tests/integration/test_mount_reconcile.rs`
-- [ ] T005 Register new mount-management integration test modules in `tests/integration/mod.rs`
+- [X] T001 Create mount-management fixture directories and README in `tests/fixtures/mount_management/`
+- [X] T002 [P] Add fixture scenarios for normal mounts, network-backed automounts, invalid definitions, and busy-removal cases in `tests/fixtures/mount_management/`
+- [X] T003 [P] Add mount contract test scaffolding in `tests/integration/test_mount_contracts.rs`
+- [X] T004 [P] Add mount reconciliation integration test scaffolding in `tests/integration/test_mount_reconcile.rs`
+- [X] T005 Register new mount-management integration test modules in `tests/integration/mod.rs`
 
 ---
 

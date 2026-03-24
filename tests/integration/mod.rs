@@ -28,3 +28,5 @@ mod test_socket_dropins;
 mod test_reconcile_provenance;
 mod test_status_contract;
 mod test_status_state;
+mod test_mount_contracts;
+mod test_mount_reconcile;
