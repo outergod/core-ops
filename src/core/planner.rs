@@ -20,7 +20,7 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
         .mount_declarations
         .iter()
         .filter_map(|mount| {
-            mount.prepared_path.as_ref().map(|prepared| {
+            mount.prepared_path.as_ref().filter(|prepared| prepared.create_if_missing).map(|prepared| {
                 (mount.mount_unit_name(), prepared.path.clone())
             })
         })

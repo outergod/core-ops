@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::integration::env_lock::path_lock;
 use core_ops::io::repo::load_desired_state;
 
 fn temp_repo() -> PathBuf {
@@ -80,6 +81,7 @@ fn init_layered_repo(repo: &PathBuf) -> String {
 
 #[test]
 fn fails_on_dropin_target_missing() {
+    let _lock = path_lock().lock().expect("path lock");
     let repo = temp_repo();
     let rev = init_layered_repo(&repo);
 

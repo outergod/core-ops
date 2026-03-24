@@ -6,6 +6,7 @@ use crate::core::types::{
     ConfigFileSource, DropInSource, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn,
     EvaluationInput, MountDependency, MountDeclaration, MountVerificationMode, PathDependencyMode,
     PreparedTargetPath, QuadletType, ServiceDependencyEdit, UnitDependencyMode,
+    automount_unit_name_for_path, mount_unit_name_for_path,
 };
 use crate::core::unit::apply_service_mount_dependencies;
 
@@ -182,7 +183,8 @@ fn collect_mount_declarations_from_artifacts(
 
     for (stem, artifact) in automounts_by_stem {
         let section = parse_sections(&artifact.contents);
-        if section_value(&section, "X-CoreOps", "Id").is_some() {
+        validate_x_coreops_keys(&section, &[], &artifact.name)?;
+        if section.contains_key("X-CoreOps") {
             return Err(EvaluationError::new(format!(
                 "managed automount artifact requires matching mount artifact: {}",
                 stem
@@ -352,10 +354,18 @@ struct ParsedManagedMount {
 impl ParsedManagedMount {
     fn from_mount_artifact(artifact: &EvaluatedArtifact) -> Result<Option<Self>, EvaluationError> {
         let sections = parse_sections(&artifact.contents);
-        let Some(id) = section_value(&sections, "X-CoreOps", "Id") else {
+        if !sections.contains_key("X-CoreOps") {
             return Ok(None);
-        };
+        }
+        validate_x_coreops_keys(&sections, &["CreateMountpoint"], &artifact.name)?;
         let target_path = required_section_value(&sections, "Mount", "Where", &artifact.name)?;
+        let expected_name = mount_unit_name_for_path(&target_path);
+        if artifact.name != expected_name {
+            return Err(EvaluationError::new(format!(
+                "mount unit name does not match Mount Where in {}: expected {}",
+                artifact.name, expected_name
+            )));
+        }
         let source = required_section_value(&sections, "Mount", "What", &artifact.name)?;
         let fstype = required_section_value(&sections, "Mount", "Type", &artifact.name)?;
         let mount_options = section_value(&sections, "Mount", "Options")
@@ -363,27 +373,14 @@ impl ParsedManagedMount {
             .unwrap_or_default();
         let network_backed = section_bool_value(&sections, "X-CoreOps", "NetworkBacked")
             .unwrap_or_else(|| is_network_fstype(&fstype));
-        let verification_mode = parse_verification_mode(
-            section_value(&sections, "X-CoreOps", "VerificationMode").as_deref(),
-            &artifact.name,
-        )?;
-        let ownership_scope = section_value(&sections, "X-CoreOps", "OwnershipScope")
-            .map(|value| split_csv(&value))
+        let verification_mode = MountVerificationMode::UnitAndPath;
+        let ownership_scope = service_name_from_layers(&artifact.source_layers)
+            .map(|service| vec![service])
             .unwrap_or_default();
-        let prepared_path = parse_prepared_path(&sections, &target_path, &artifact.name)?;
-
-        if let Some(policy) = section_value(&sections, "X-CoreOps", "RemovalPolicy") {
-            let normalized = policy.trim().to_ascii_lowercase();
-            if normalized != "managed" {
-                return Err(EvaluationError::new(format!(
-                    "unsupported X-CoreOps RemovalPolicy in {}: {}",
-                    artifact.name, policy
-                )));
-            }
-        }
+        let prepared_path = parse_prepared_path(&sections, &target_path);
 
         Ok(Some(Self {
-            id,
+            id: unit_stem(&artifact.name),
             target_path,
             source,
             fstype,
@@ -402,6 +399,7 @@ impl ParsedManagedMount {
         let automount = match automount_artifact {
             Some(artifact) => {
                 let sections = parse_sections(&artifact.contents);
+                validate_x_coreops_keys(&sections, &[], &artifact.name)?;
                 let where_path = required_section_value(&sections, "Automount", "Where", &artifact.name)?;
                 if where_path != self.target_path {
                     return Err(EvaluationError::new(format!(
@@ -409,13 +407,12 @@ impl ParsedManagedMount {
                         where_path, self.target_path
                     )));
                 }
-                if let Some(id) = section_value(&sections, "X-CoreOps", "Id") {
-                    if id != self.id {
-                        return Err(EvaluationError::new(format!(
-                            "automount X-CoreOps Id does not match mount artifact: {} != {}",
-                            id, self.id
-                        )));
-                    }
+                let expected_name = automount_unit_name_for_path(&where_path);
+                if artifact.name != expected_name {
+                    return Err(EvaluationError::new(format!(
+                        "automount unit name does not match Automount Where in {}: expected {}",
+                        artifact.name, expected_name
+                    )));
                 }
                 true
             }
@@ -499,57 +496,35 @@ fn section_bool_value(
 fn parse_prepared_path(
     sections: &BTreeMap<String, BTreeMap<String, String>>,
     target_path: &str,
-    unit_name: &str,
-) -> Result<Option<PreparedTargetPath>, EvaluationError> {
-    let prepared_path = section_value(sections, "X-CoreOps", "PreparedPath");
-    let create_if_missing = section_bool_value(sections, "X-CoreOps", "PreparedCreateIfMissing");
-    let owner = section_value(sections, "X-CoreOps", "PreparedOwner");
-    let group = section_value(sections, "X-CoreOps", "PreparedGroup");
-    let mode = section_value(sections, "X-CoreOps", "PreparedMode");
-    let service_consumed = section_bool_value(sections, "X-CoreOps", "PreparedServiceConsumed");
-
-    if prepared_path.is_none()
-        && create_if_missing.is_none()
-        && owner.is_none()
-        && group.is_none()
-        && mode.is_none()
-        && service_consumed.is_none()
-    {
-        return Ok(None);
-    }
-
-    let path = prepared_path.unwrap_or_else(|| target_path.to_string());
-    if path != target_path {
-        return Err(EvaluationError::new(format!(
-            "X-CoreOps PreparedPath must match Mount Where in {}",
-            unit_name
-        )));
-    }
-
-    Ok(Some(PreparedTargetPath {
-        path,
-        create_if_missing: create_if_missing.unwrap_or(true),
-        owner,
-        group,
-        mode,
-        service_consumed: service_consumed.unwrap_or(false),
-    }))
+ ) -> Option<PreparedTargetPath> {
+    Some(PreparedTargetPath {
+        path: target_path.to_string(),
+        create_if_missing: section_bool_value(sections, "X-CoreOps", "CreateMountpoint")
+            .unwrap_or(true),
+        owner: None,
+        group: None,
+        mode: None,
+        service_consumed: false,
+    })
 }
 
-fn parse_verification_mode(
-    value: Option<&str>,
+fn validate_x_coreops_keys(
+    sections: &BTreeMap<String, BTreeMap<String, String>>,
+    allowed: &[&str],
     unit_name: &str,
 ) -> Result<MountVerificationMode, EvaluationError> {
-    let Some(value) = value else {
+    let Some(values) = sections.get("X-CoreOps") else {
         return Ok(MountVerificationMode::UnitAndPath);
     };
-    match value.trim().to_ascii_lowercase().as_str() {
-        "unitandpath" | "unit_and_path" => Ok(MountVerificationMode::UnitAndPath),
-        other => Err(EvaluationError::new(format!(
-            "unsupported X-CoreOps VerificationMode in {}: {}",
-            unit_name, other
-        ))),
+    for key in values.keys() {
+        if !allowed.iter().any(|allowed_key| key == allowed_key) {
+            return Err(EvaluationError::new(format!(
+                "unsupported X-CoreOps field in {}: {}",
+                unit_name, key
+            )));
+        }
     }
+    Ok(MountVerificationMode::UnitAndPath)
 }
 
 fn split_csv(value: &str) -> Vec<String> {

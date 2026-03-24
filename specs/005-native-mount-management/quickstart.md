@@ -5,8 +5,8 @@ Declare a native managed mount, attach a service dependency to it, and verify re
 
 ## Example Workflow
 
-1. Add a native `.mount` artifact for a network-backed share used by a selected service and embed its managed identity in `[X-CoreOps]`.
-2. Reference that managed mount identity from the service definition.
+1. Add a native `.mount` artifact for a network-backed share used by a selected service and add a minimal `[X-CoreOps]` section.
+2. Reference that managed mount by its native `.mount` unit stem from the service definition.
 3. If the mount is network-backed and on-demand activation is desired, add the matching `.automount` artifact.
 4. Run `core-ops plan` and verify that the plan includes:
    - the generated `.mount` unit
@@ -28,7 +28,7 @@ For a service consuming a mounted host path:
 ## Failure and Recovery Checks
 
 ### Mount Activation Failure
-- Confirm reconciliation reports which managed mount identity failed.
+- Confirm reconciliation reports which managed `.mount` stem failed.
 - Confirm the dependent service is blocked rather than reported healthy.
 
 ### Mount Loss After Service Start

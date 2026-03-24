@@ -397,7 +397,7 @@ fn mount_status_summary_reports_dependency_counts_and_failures() {
     let summary =
         render_mount_dependency_summary(&desired, &verification_results).expect("mount summary");
 
-    assert_eq!(summary, "mounts declarations=1 dependencies=1 verification_failures=1");
+    assert_eq!(summary, "mounts refs=1 dependencies=1 verification_failures=1");
 }
 
 struct PathGuard {

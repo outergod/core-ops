@@ -2,7 +2,7 @@
 
 ## Decision: Represent mounts as named desired-state declarations
 
-- **Decision**: Model each managed mount as a named declaration with a stable identity, target path, source, options, optional automount intent, and ownership boundaries; dependent services reference mount declaration identities rather than raw paths alone.
+- **Decision**: Model each managed mount as a native `.mount` artifact whose unit stem is the managed reference, with a minimal `[X-CoreOps]` section for bounded mountpoint creation only; dependent services reference native `.mount` stems rather than raw paths alone.
 - **Rationale**: Stable identities produce clearer validation, better diagnostics, and cleaner host overrides than path-only matching. The target path remains part of the declaration, but it is no longer the only key.
 - **Alternatives considered**: Path-only dependencies (simpler but brittle when paths change or collide), dual path-and-name references (more ambiguous and increases validation complexity).
 

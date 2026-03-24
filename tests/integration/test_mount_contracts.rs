@@ -50,7 +50,8 @@ fn contract_fixture_covers_normal_and_automount_dependency_semantics() {
     assert!(automount.contains("explicit-unit-dependencies"));
     assert!(automount.contains("path-based-dependencies"));
     assert!(normal_mount.contains("[X-CoreOps]"));
-    assert!(automount_mount.contains("Id=immich-media"));
+    assert!(automount_mount.contains("CreateMountpoint=true"));
+    assert!(!automount_unit.contains("[X-CoreOps]"));
     assert!(automount_unit.contains("[Automount]"));
 }
 
@@ -78,7 +79,7 @@ fn plan_includes_mount_units_dependency_semantics_and_prepare_path_actions() {
             },
         ],
         mount_declarations: vec![MountDeclaration {
-            id: "immich-media".to_string(),
+            id: "var-lib-immich-media".to_string(),
             target_path: "/var/lib/immich/media".to_string(),
             source: "nas:/media".to_string(),
             fstype: "nfs".to_string(),
@@ -98,7 +99,7 @@ fn plan_includes_mount_units_dependency_semantics_and_prepare_path_actions() {
         }],
         mount_dependencies: vec![MountDependency {
             service_name: "immich".to_string(),
-            mount_ids: vec!["immich-media".to_string()],
+            mount_ids: vec!["var-lib-immich-media".to_string()],
             consumed_paths: vec!["/var/lib/immich/media".to_string()],
             path_dependency_mode: PathDependencyMode::RequiresMountsFor,
             unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
@@ -159,7 +160,7 @@ fn plan_includes_automount_units_and_explicit_dependency_semantics() {
             },
         ],
         mount_declarations: vec![MountDeclaration {
-            id: "immich-media".to_string(),
+            id: "srv-immich-media".to_string(),
             target_path: "/srv/immich/media".to_string(),
             source: "nas:/media".to_string(),
             fstype: "nfs".to_string(),
@@ -172,7 +173,7 @@ fn plan_includes_automount_units_and_explicit_dependency_semantics() {
         }],
         mount_dependencies: vec![MountDependency {
             service_name: "immich".to_string(),
-            mount_ids: vec!["immich-media".to_string()],
+            mount_ids: vec!["srv-immich-media".to_string()],
             consumed_paths: vec!["/srv/immich/media".to_string()],
             path_dependency_mode: PathDependencyMode::RequiresMountsFor,
             unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
@@ -209,7 +210,7 @@ fn mount_contract_examples_match_generated_dependency_and_removal_behavior() {
         .join("specs/005-native-mount-management/contracts/mount-declaration.md");
     let contents = fs::read_to_string(contract).expect("read contract");
     let declaration = MountDeclaration {
-        id: "immich-media".to_string(),
+        id: "srv-immich-media".to_string(),
         target_path: "/srv/immich/media".to_string(),
         source: "nas:/media".to_string(),
         fstype: "nfs".to_string(),
@@ -222,7 +223,7 @@ fn mount_contract_examples_match_generated_dependency_and_removal_behavior() {
     };
     let dependency = MountDependency {
         service_name: "immich".to_string(),
-        mount_ids: vec!["immich-media".to_string()],
+        mount_ids: vec!["srv-immich-media".to_string()],
         consumed_paths: vec!["/srv/immich/media".to_string()],
         path_dependency_mode: PathDependencyMode::RequiresMountsFor,
         unit_dependency_mode: UnitDependencyMode::AfterAndRequires,

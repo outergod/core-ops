@@ -1,6 +1,6 @@
 scenario: network-automount
 summary: Explicit automount for a network-backed mount.
-mount_id: immich-media-automount
+mount_id: srv-immich-media
 service: immich
 features:
   - automount-enabled

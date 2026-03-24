@@ -45,7 +45,7 @@ pub fn render_mount_dependency_summary(
         .filter(|result| result.status == VerificationStatus::Failure)
         .count();
     Some(format!(
-        "mounts declarations={} dependencies={} verification_failures={}",
+        "mounts refs={} dependencies={} verification_failures={}",
         desired.mount_declarations.len(),
         desired.mount_dependencies.len(),
         failures

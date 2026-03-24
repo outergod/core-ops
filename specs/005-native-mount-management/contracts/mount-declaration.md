@@ -7,19 +7,19 @@ artifacts and service-to-mount dependency references.
 ## Managed Mount Artifact Rules
 
 A valid managed native mount artifact MUST provide:
-- a stable identity through embedded `[X-CoreOps]` metadata
+- a native `.mount` unit name whose stem is the managed mount reference
 - exactly one target path
 - a native source and filesystem type
 - native mount options when required
-- selected-service ownership boundaries
-- optional bounded target-path preparation metadata
+- selected-service ownership boundaries derived from the owning service definition
+- optional bounded mountpoint-creation metadata through `[X-CoreOps]`
 - optional `.automount` companion only for declared network-backed mounts
 
 ## Service Dependency Rules
 
 A valid service dependency MUST:
-- reference mount declaration identities, not raw paths alone
-- resolve each referenced identity within the selected services for the host
+- reference native `.mount` stems, not raw paths alone
+- resolve each referenced stem within the selected services for the host
 - derive consumed mounted paths from the referenced managed artifacts
 - materialize dependency semantics in the generated native unit configuration
 
@@ -33,7 +33,8 @@ For each dependent service unit:
 ## Validation Expectations
 
 Reject desired state when:
-- a referenced mount declaration identity is missing
+- a referenced managed mount stem is missing
 - two mount declarations conflict on target path or incompatible semantics
 - automount is requested for a mount that is not explicitly network-backed
-- bounded directory preparation exceeds the declared service-consumed target scope
+- the native unit stem does not match the declared `Mount` `Where=` path
+- unsupported `[X-CoreOps]` fields are present

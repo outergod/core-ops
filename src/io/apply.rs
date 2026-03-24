@@ -247,40 +247,11 @@ fn prepare_target_paths(mounts: &[MountDeclaration]) -> Result<(), ApplyError> {
         };
         if prepared.create_if_missing {
             fs::create_dir_all(&prepared.path)?;
-        }
-        if let Some(mode) = &prepared.mode {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let parsed = u32::from_str_radix(mode, 8).map_err(|_| {
-                    ApplyError::SystemdCommandFailed(format!("invalid mode: {}", mode))
-                })?;
-                let perms = fs::Permissions::from_mode(parsed);
-                fs::set_permissions(&prepared.path, perms)?;
-            }
-        }
-        #[cfg(unix)]
-        if prepared.owner.is_some() || prepared.group.is_some() {
-            let uid = prepared
-                .owner
-                .as_deref()
-                .map(str::parse::<u32>)
-                .transpose()
-                .map_err(|_| ApplyError::SystemdCommandFailed("invalid owner uid".to_string()))?
-                .unwrap_or(u32::MAX);
-            let gid = prepared
-                .group
-                .as_deref()
-                .map(str::parse::<u32>)
-                .transpose()
-                .map_err(|_| ApplyError::SystemdCommandFailed("invalid group gid".to_string()))?
-                .unwrap_or(u32::MAX);
-            let path = std::ffi::CString::new(prepared.path.clone())
-                .map_err(|_| ApplyError::SystemdCommandFailed("invalid prepared path".to_string()))?;
-            let result = unsafe { libc::chown(path.as_ptr(), uid, gid) };
-            if result != 0 {
-                return Err(ApplyError::Io(std::io::Error::last_os_error()));
-            }
+        } else if !Path::new(&prepared.path).exists() {
+            return Err(ApplyError::SystemdCommandFailed(format!(
+                "mountpoint missing and CreateMountpoint=false: {}",
+                prepared.path
+            )));
         }
     }
     Ok(())

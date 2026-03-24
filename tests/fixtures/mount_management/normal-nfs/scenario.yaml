@@ -1,6 +1,6 @@
 scenario: normal-nfs
 summary: Successful mount-backed service using a network-backed mount.
-mount_id: immich-media
+mount_id: var-lib-immich-media
 service: immich
 features:
   - named-mount-declaration

@@ -40,13 +40,13 @@ fn append_mount_plan_summary(base: &str, desired: &crate::core::types::DesiredSt
     if desired.mount_declarations.is_empty() {
         return base.to_string();
     }
-    let mount_ids = desired
+    let mount_refs = desired
         .mount_declarations
         .iter()
         .map(|mount| mount.id.as_str())
         .collect::<Vec<_>>()
         .join(", ");
-    let automount_ids = desired
+    let automount_refs = desired
         .mount_declarations
         .iter()
         .filter(|mount| mount.automount)
@@ -54,12 +54,12 @@ fn append_mount_plan_summary(base: &str, desired: &crate::core::types::DesiredSt
         .collect::<Vec<_>>()
         .join(", ");
     let mut summary = format!(
-        "{base}\nmount ids: {}\nmount dependencies: {}\nmount metadata: [X-CoreOps]",
-        mount_ids,
+        "{base}\nmount refs: {}\nmount dependencies: {}\nmount metadata: [X-CoreOps]",
+        mount_refs,
         desired.mount_dependencies.len()
     );
-    if !automount_ids.is_empty() {
-        summary.push_str(&format!("\nautomount ids: {}", automount_ids));
+    if !automount_refs.is_empty() {
+        summary.push_str(&format!("\nautomount refs: {}", automount_refs));
     }
     summary
 }

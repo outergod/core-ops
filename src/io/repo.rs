@@ -696,7 +696,15 @@ fn validate_mount_overrides(
                     .artifacts
                     .iter()
                     .filter(|artifact| matches!(artifact.quadlet_type, QuadletType::Mount | QuadletType::Automount))
-                    .filter_map(|artifact| managed_mount_id_from_contents(&artifact.contents)),
+                    .map(|artifact| artifact.name.clone())
+                    .filter(|name| name.ends_with(".mount"))
+                    .map(|name| {
+                        Path::new(&name)
+                            .file_stem()
+                            .and_then(|stem| stem.to_str())
+                            .unwrap_or(&name)
+                            .to_string()
+                    }),
             );
             ids
         })
@@ -731,28 +739,6 @@ fn validate_mount_overrides(
     }
 
     Ok(())
-}
-
-fn managed_mount_id_from_contents(contents: &str) -> Option<String> {
-    let mut in_section = false;
-    for raw_line in contents.lines() {
-        let line = raw_line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
-            continue;
-        }
-        if line.starts_with('[') && line.ends_with(']') {
-            in_section = line[1..line.len() - 1].trim() == "X-CoreOps";
-            continue;
-        }
-        if !in_section {
-            continue;
-        }
-        let (key, value) = line.split_once('=')?;
-        if key.trim() == "Id" {
-            return Some(value.trim().to_string());
-        }
-    }
-    None
 }
 
 fn read_config_files(config_root: &Path) -> Result<Vec<ConfigFileSource>, RepoError> {

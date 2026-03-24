@@ -9,4 +9,4 @@ Scenarios:
 - `busy-removal/`: previously managed mount that cannot be cleanly removed
 
 The `normal-nfs/` and `network-automount/` scenarios include example native
-`.mount` / `.automount` artifacts carrying bounded `[X-CoreOps]` metadata.
+`.mount` / `.automount` artifacts carrying minimal `[X-CoreOps]` metadata.
