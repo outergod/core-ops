@@ -277,13 +277,36 @@ fn prepare_target_paths(mounts: &[MountDeclaration]) -> Result<(), ApplyError> {
 
 fn ensure_mountpoint_path(path: &str) -> Result<(), ApplyError> {
     let path = Path::new(path);
-    if path.is_dir() {
-        return Ok(());
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_dir() {
+                return Ok(());
+            }
+            if metadata.file_type().is_symlink() && path.is_dir() {
+                return Ok(());
+            }
+            return Err(ApplyError::SystemdCommandFailed(format!(
+                "mountpoint exists and is not a directory: {}",
+                path.display()
+            )));
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(ApplyError::Io(err)),
     }
 
     match fs::create_dir_all(path) {
         Ok(()) => Ok(()),
-        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists && path.is_dir() => Ok(()),
+        Err(err)
+            if err.kind() == std::io::ErrorKind::AlreadyExists
+                && fs::symlink_metadata(path)
+                    .map(|metadata| {
+                        metadata.file_type().is_dir()
+                            || (metadata.file_type().is_symlink() && path.is_dir())
+                    })
+                    .unwrap_or(false) =>
+        {
+            Ok(())
+        }
         Err(err) => Err(ApplyError::Io(err)),
     }
 }
