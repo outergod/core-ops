@@ -85,7 +85,7 @@ pub fn apply_plan_with_desired(
     for action in &plan.actions {
         match &action.action_type {
             PlanActionType::PreparePath => {
-                fs::create_dir_all(&action.target)?;
+                ensure_mountpoint_path(&action.target)?;
                 files_written.push(action.target.clone());
             }
             PlanActionType::WriteQuadlet => {
@@ -264,7 +264,7 @@ fn prepare_target_paths(mounts: &[MountDeclaration]) -> Result<(), ApplyError> {
             continue;
         };
         if prepared.create_if_missing {
-            fs::create_dir_all(&prepared.path)?;
+            ensure_mountpoint_path(&prepared.path)?;
         } else if !Path::new(&prepared.path).exists() {
             return Err(ApplyError::SystemdCommandFailed(format!(
                 "mountpoint missing and CreateMountpoint=false: {}",
@@ -273,6 +273,19 @@ fn prepare_target_paths(mounts: &[MountDeclaration]) -> Result<(), ApplyError> {
         }
     }
     Ok(())
+}
+
+fn ensure_mountpoint_path(path: &str) -> Result<(), ApplyError> {
+    let path = Path::new(path);
+    if path.is_dir() {
+        return Ok(());
+    }
+
+    match fs::create_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists && path.is_dir() => Ok(()),
+        Err(err) => Err(ApplyError::Io(err)),
+    }
 }
 
 fn is_mount_unit_target(target: &str) -> bool {
