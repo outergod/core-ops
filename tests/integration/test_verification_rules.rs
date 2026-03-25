@@ -76,7 +76,7 @@ case "$1" in
     ;;
   show)
     unit="$2"
-    if echo "$unit" | grep -q "gamma.service"; then
+    if echo "$unit" | grep -q "gamma-volume.service"; then
       echo "ActiveState=inactive"
       echo "UnitFileState=disabled"
     else
@@ -138,7 +138,7 @@ fn verification_rules_accept_volume_inactive() {
     let volume_ok = result
         .verification_results
         .iter()
-        .any(|res| res.target == "gamma.service" && res.status == core_ops::core::types::VerificationStatus::Success);
+        .any(|res| res.target == "gamma-volume.service" && res.status == core_ops::core::types::VerificationStatus::Success);
     assert!(volume_ok);
 }
 

@@ -62,7 +62,7 @@ fn verify_container_requires_active_unit() {
 fn verify_volume_accepts_loaded_unit() {
     let desired = desired_state(vec![workload("gamma", QuadletType::Volume, "gamma.volume")]);
     let observed = observed_state(vec![ObservedUnit {
-        unit_name: "gamma.service".to_string(),
+        unit_name: "gamma-volume.service".to_string(),
         active_state: UnitActiveState::Inactive,
         enabled_state: EnabledState::Disabled,
     }]);

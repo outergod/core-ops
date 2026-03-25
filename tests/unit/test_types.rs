@@ -5,6 +5,7 @@ use core_ops::core::types::{
     MountVerificationMode, PathDependencyMode, PreparedTargetPath, QuadletType, RestartPolicy,
     UnitDependencyMode, Workload,
 };
+use core_ops::core::unit::systemd_unit_for_quadlet_file;
 use core_ops::io::quadlet::read_quadlet_dir;
 
 #[test]
@@ -97,6 +98,24 @@ fn prepared_target_metadata_and_dependency_identity_are_explicit() {
 
     assert_eq!(prepared.owner.as_deref(), Some("1000"));
     assert_eq!(dependency.mount_ids, vec!["immich-media"]);
+}
+
+#[test]
+fn quadlet_runtime_unit_names_follow_quadlet_rules() {
+    assert_eq!(
+        systemd_unit_for_quadlet_file("alpha.container"),
+        "alpha.service"
+    );
+    assert_eq!(systemd_unit_for_quadlet_file("beta.socket"), "beta.socket");
+    assert_eq!(
+        systemd_unit_for_quadlet_file("gamma.volume"),
+        "gamma-volume.service"
+    );
+    assert_eq!(
+        systemd_unit_for_quadlet_file("immich.network"),
+        "immich-network.service"
+    );
+    assert_eq!(systemd_unit_for_quadlet_file("pod.pod"), "pod-pod.service");
 }
 
 fn temp_dir(prefix: &str) -> PathBuf {

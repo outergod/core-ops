@@ -12,9 +12,13 @@ pub fn systemd_unit_for_quadlet_file(unit_file: &str) -> String {
     let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
 
     match ext {
+        "service" => unit_file.to_string(),
         "socket" => format!("{stem}.socket"),
         "mount" => format!("{stem}.mount"),
         "automount" => format!("{stem}.automount"),
+        "volume" => format!("{stem}-volume.service"),
+        "network" => format!("{stem}-network.service"),
+        "pod" => format!("{stem}-pod.service"),
         _ => format!("{stem}.service"),
     }
 }

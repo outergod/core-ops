@@ -73,6 +73,8 @@ pub fn apply_plan_with_desired(
         return Err(ApplyError::MissingQuadletDir(quadlet_dir.to_path_buf()));
     }
 
+    validate_runtime_unit_targets(plan, &desired.workloads, quadlet_dir)?;
+
     let mut files_written = Vec::new();
     let mut files_removed = Vec::new();
 
@@ -216,6 +218,22 @@ pub fn apply_plan_with_desired(
     })
 }
 
+fn validate_runtime_unit_targets(
+    plan: &ReconciliationPlan,
+    workloads: &[Workload],
+    quadlet_dir: &Path,
+) -> Result<(), ApplyError> {
+    for action in &plan.actions {
+        if matches!(
+            action.action_type,
+            PlanActionType::StartUnit | PlanActionType::RestartUnit | PlanActionType::StopUnit
+        ) {
+            let _ = unit_name_for_start_stop(workloads, quadlet_dir, &action.target)?;
+        }
+    }
+    Ok(())
+}
+
 fn target_dir_for_workload(quadlet_dir: &Path, workload: &Workload) -> PathBuf {
     match workload.quadlet_type {
         QuadletType::Socket | QuadletType::SocketDropIn | QuadletType::Mount | QuadletType::Automount => systemd_unit_dir(),
@@ -345,6 +363,15 @@ fn unit_name_for_start_stop(
         return Ok(systemd_unit_for_quadlet_file(&workload.systemd_unit_name));
     }
 
+    if Path::new(target)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| matches!(ext, "service" | "socket" | "mount" | "automount"))
+        == Some(true)
+    {
+        return Ok(target.to_string());
+    }
+
     for entry in fs::read_dir(quadlet_dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -355,5 +382,5 @@ fn unit_name_for_start_stop(
         }
     }
 
-    Ok(systemd_unit_for_quadlet_file(target))
+    Err(ApplyError::MissingWorkload(target.to_string()))
 }

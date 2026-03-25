@@ -144,6 +144,51 @@ fn apply_preserves_start_restart_order() {
     assert!(start_idx < restart_idx);
 }
 
+#[test]
+fn apply_fails_before_writing_when_runtime_unit_target_is_invalid() {
+    let _lock = path_lock().lock().expect("path lock");
+    let temp = temp_dir("core_ops_invalid_runtime_target");
+    fs::create_dir_all(&temp).expect("temp dir");
+
+    let log_path = temp.join("systemctl.log");
+    write_systemctl_stub(&temp, &log_path);
+
+    let old_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{}", temp.display(), old_path);
+    std::env::set_var("PATH", new_path);
+    let _guard = PathGuard { previous: old_path };
+
+    let quadlet_dir = temp.join("quadlets");
+    fs::create_dir_all(&quadlet_dir).expect("quadlet dir");
+
+    let workload = Workload {
+        name: "alpha".to_string(),
+        quadlet_type: core_ops::core::types::QuadletType::Container,
+        quadlet_contents: "[Container]\nImage=alpine".to_string(),
+        systemd_unit_name: "alpha.container".to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    };
+
+    let plan = ReconciliationPlan {
+        plan_id: "plan:test".to_string(),
+        desired_revision_id: "rev".to_string(),
+        observed_revision_id: None,
+        actions: vec![
+            action(PlanActionType::WriteQuadlet, "alpha.container"),
+            action(PlanActionType::StartUnit, "missing.network"),
+        ],
+        safety_checks: Vec::new(),
+        expected_outcomes: Vec::new(),
+    };
+
+    let err = apply_plan(&plan, &[workload], &quadlet_dir, true)
+        .err()
+        .expect("should fail");
+    assert!(err.to_string().contains("missing workload"));
+    assert!(!quadlet_dir.join("alpha.container").exists());
+}
+
 fn action(action_type: PlanActionType, target: &str) -> PlanAction {
     PlanAction {
         action_type,
