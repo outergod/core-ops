@@ -4,7 +4,7 @@ use crate::core::types::{
 
 pub fn format_plan_report(plan: &ReconciliationPlan, diffs: &[DiffItem]) -> String {
     let mut output = String::new();
-    output.push_str(&format!("plan {} with {} actions\n", plan.plan_id, plan.actions.len()));
+    output.push_str(&format!("plan with {} actions\n", plan.actions.len()));
     output.push_str(&format!("diffs {}\n", diffs.len()));
     let mut type_by_name = std::collections::HashMap::new();
     for diff in diffs {
