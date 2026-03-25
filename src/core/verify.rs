@@ -96,6 +96,36 @@ fn verify_workload(
                 failure(unit_name, "degraded: mount target not mounted")
             }
         }
+        (QuadletType::Mount, None) => {
+            let Some(mount) = mount else {
+                return failure(unit_name, "mount declaration missing");
+            };
+            if mount.automount {
+                let Some(automount_unit_name) = mount.automount_unit_name() else {
+                    return failure(unit_name, "automount declaration missing");
+                };
+                let automount_unit = observed
+                    .units
+                    .iter()
+                    .find(|unit| unit.unit_name == automount_unit_name);
+                return match automount_unit {
+                    Some(automount_unit)
+                        if automount_unit.active_state == UnitActiveState::Active =>
+                    {
+                        success(unit_name)
+                    }
+                    Some(automount_unit) => failure(
+                        unit_name,
+                        &format!(
+                            "blocked: automount unit not active: {:?}",
+                            automount_unit.active_state
+                        ),
+                    ),
+                    None => failure(unit_name, "blocked: automount unit not found"),
+                };
+            }
+            failure(unit_name, "unit not found")
+        }
         (QuadletType::Automount, Some(unit)) => {
             let _ = automount;
             if unit.active_state == UnitActiveState::Active {
