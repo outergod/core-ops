@@ -2,8 +2,10 @@ use core_ops::cli::args::{Cli, Commands};
 use core_ops::cli::common as cli_common;
 use core_ops::cli::{apply as apply_cmd, plan as plan_cmd};
 use core_ops::cli::agent as agent_cmd;
+use core_ops::build_info::{BUILD_REVISION, BUILD_TIME, BUILD_TREE_STATE};
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
+use core_ops::core::types::RunStatus;
 use core_ops::io::{audit as audit_io, observed, repo};
 use core_ops::io::state::{
     read_persisted_state, resolve_state_file, CONTROLLER_BUILD_TIME_ENV, CONTROLLER_REVISION_ENV,
@@ -103,6 +105,9 @@ fn run(cli: Cli) -> Result<(), CoreError> {
 
             println!("{}", report);
             println!("{}", run.summary);
+            if run.status == RunStatus::Failure {
+                std::process::exit(1);
+            }
             Ok(())
         }
         Commands::Agent(args) => {
@@ -145,6 +150,9 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let output = agent_cmd::run_agent(&config)?;
             println!("{}", output.report);
             println!("{}", output.run.summary);
+            if output.run.status == RunStatus::Failure {
+                std::process::exit(1);
+            }
             Ok(())
         }
         Commands::Status(args) => {
@@ -203,20 +211,17 @@ fn set_controller_provenance_defaults() {
         std::env::set_var(CONTROLLER_VERSION_ENV, canonical_controller_version());
     }
     if std::env::var_os(CONTROLLER_REVISION_ENV).is_none() {
-        if let Some(revision) = option_env!("CORE_OPS_BUILD_REVISION") {
+        if let Some(revision) = BUILD_REVISION {
             std::env::set_var(CONTROLLER_REVISION_ENV, revision);
         }
     }
     if std::env::var_os(CONTROLLER_BUILD_TIME_ENV).is_none() {
-        if let Some(build_time) = option_env!("CORE_OPS_BUILD_TIME") {
+        if let Some(build_time) = BUILD_TIME {
             std::env::set_var(CONTROLLER_BUILD_TIME_ENV, build_time);
         }
     }
     if std::env::var_os(CONTROLLER_TREE_STATE_ENV).is_none() {
-        std::env::set_var(
-            CONTROLLER_TREE_STATE_ENV,
-            option_env!("CORE_OPS_TREE_STATE").unwrap_or("unknown"),
-        );
+        std::env::set_var(CONTROLLER_TREE_STATE_ENV, BUILD_TREE_STATE);
     }
 }
 
