@@ -1,4 +1,6 @@
-use crate::core::types::{DiffItem, QuadletType, ReconciliationPlan};
+use crate::core::types::{
+    DiffItem, QuadletType, ReconcileRun, ReconciliationPlan, VerificationResult,
+};
 
 pub fn format_plan_report(plan: &ReconciliationPlan, diffs: &[DiffItem]) -> String {
     let mut output = String::new();
@@ -34,12 +36,31 @@ pub fn append_provenance_report(base: &str, contents: Option<&str>) -> String {
     }
 }
 
+pub fn format_apply_report_json(
+    run: &ReconcileRun,
+    verification_results: &[VerificationResult],
+) -> String {
+    serde_json::json!({
+        "run_id": run.run_id,
+        "status": format!("{:?}", run.status).to_lowercase(),
+        "summary": run.summary,
+        "verification_results": verification_results.iter().map(|result| serde_json::json!({
+            "target": result.target,
+            "status": format!("{:?}", result.status).to_lowercase(),
+            "details": result.details,
+        })).collect::<Vec<_>>(),
+    })
+    .to_string()
+}
+
 fn quadlet_type_label(quadlet_type: Option<QuadletType>) -> &'static str {
     match quadlet_type {
         Some(QuadletType::Container) => "container",
         Some(QuadletType::Socket) => "socket",
         Some(QuadletType::SocketDropIn) => "socket-dropin",
         Some(QuadletType::ConfigFile) => "config",
+        Some(QuadletType::Mount) => "mount",
+        Some(QuadletType::Automount) => "automount",
         Some(QuadletType::Volume) => "volume",
         Some(QuadletType::Pod) => "pod",
         Some(QuadletType::Network) => "network",
@@ -52,10 +73,14 @@ fn action_label(
     quadlet_type: Option<&QuadletType>,
 ) -> String {
     match action {
+        crate::core::types::PlanActionType::PreparePath => "PreparePath".to_string(),
         crate::core::types::PlanActionType::WriteQuadlet => {
             if matches!(
                 quadlet_type,
-                Some(QuadletType::Socket) | Some(QuadletType::SocketDropIn)
+                Some(QuadletType::Socket)
+                    | Some(QuadletType::SocketDropIn)
+                    | Some(QuadletType::Mount)
+                    | Some(QuadletType::Automount)
             ) {
                 "WriteUnit".to_string()
             } else {
@@ -65,7 +90,10 @@ fn action_label(
         crate::core::types::PlanActionType::RemoveQuadlet => {
             if matches!(
                 quadlet_type,
-                Some(QuadletType::Socket) | Some(QuadletType::SocketDropIn)
+                Some(QuadletType::Socket)
+                    | Some(QuadletType::SocketDropIn)
+                    | Some(QuadletType::Mount)
+                    | Some(QuadletType::Automount)
             ) {
                 "RemoveUnit".to_string()
             } else {

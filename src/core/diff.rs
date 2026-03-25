@@ -41,6 +41,22 @@ pub fn diff_workloads(desired: &[Workload], observed: &[Workload]) -> Vec<DiffIt
     diffs
 }
 
+pub fn diff_contains_mount_workloads(diffs: &[DiffItem]) -> bool {
+    diffs.iter().any(|diff| {
+        diff.desired
+            .as_ref()
+            .or(diff.observed.as_ref())
+            .map(|workload| {
+                matches!(
+                    workload.quadlet_type,
+                    crate::core::types::QuadletType::Mount
+                        | crate::core::types::QuadletType::Automount
+                )
+            })
+            .unwrap_or(false)
+    })
+}
+
 fn index_by_unit_name(workloads: &[Workload]) -> std::collections::BTreeMap<String, Workload> {
     let mut map = std::collections::BTreeMap::new();
     for workload in workloads {

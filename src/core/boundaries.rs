@@ -22,7 +22,8 @@ fn validate_action(action: &PlanAction) -> Result<(), CoreError> {
 fn is_supported_action(action_type: &PlanActionType) -> bool {
     matches!(
         action_type,
-        PlanActionType::WriteQuadlet
+        PlanActionType::PreparePath
+            | PlanActionType::WriteQuadlet
             | PlanActionType::RemoveQuadlet
             | PlanActionType::ReloadSystemd
             | PlanActionType::StartUnit

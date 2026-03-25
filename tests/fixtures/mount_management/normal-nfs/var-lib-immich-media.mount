@@ -1,0 +1,12 @@
+[Unit]
+After=network-online.target
+Wants=network-online.target
+
+[Mount]
+What=nas:/volume1/media
+Where=/var/lib/immich/media
+Type=nfs
+Options=rw,hard,noatime
+
+[X-CoreOps]
+CreateMountpoint=true

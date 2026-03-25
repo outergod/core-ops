@@ -1,15 +1,22 @@
+use std::collections::BTreeMap;
+use std::path::Path;
+
 use crate::core::errors::EvaluationError;
 use crate::core::types::{
     ConfigFileSource, DropInSource, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn,
-    EvaluationInput, QuadletType,
+    EvaluationInput, MountDependency, MountDeclaration, MountVerificationMode, PathDependencyMode,
+    PreparedTargetPath, QuadletType, ServiceDependencyEdit, UnitDependencyMode,
+    automount_unit_name_for_path, mount_unit_name_for_path,
 };
-use std::path::Path;
+use crate::core::unit::apply_service_mount_dependencies;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EvaluationOutput {
     pub artifacts: Vec<EvaluatedArtifact>,
     pub socket_dropins: Vec<EvaluatedDropIn>,
     pub config_files: Vec<EvaluatedConfigFile>,
+    pub mount_declarations: Vec<MountDeclaration>,
+    pub mount_dependencies: Vec<MountDependency>,
 }
 
 pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutput, EvaluationError> {
@@ -43,8 +50,47 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
                 source_layers,
             });
         }
-
     }
+
+    let mount_declarations = collect_mount_declarations(input, &artifacts)?;
+    let mount_dependencies = expand_mount_dependencies(input, &mount_declarations)?;
+    let dependency_map: BTreeMap<&str, ServiceDependencyEdit> = mount_dependencies
+        .iter()
+        .map(|dependency| {
+            let mut after_units = Vec::new();
+            let mut requires_units = Vec::new();
+            for mount_id in &dependency.mount_ids {
+                let declaration = mount_declarations
+                    .iter()
+                    .find(|decl| decl.id == *mount_id)
+                    .expect("mount dependency was expanded from known declaration");
+                let explicit_units = explicit_dependency_units(declaration);
+                after_units.extend(explicit_units.clone());
+                requires_units.extend(explicit_units);
+            }
+            (
+                dependency.service_name.as_str(),
+                ServiceDependencyEdit {
+                    service_name: dependency.service_name.clone(),
+                    requires_mounts_for: dependency.consumed_paths.clone(),
+                    after_units,
+                    requires_units,
+                },
+            )
+        })
+        .collect();
+
+    for artifact in &mut artifacts {
+        if !matches!(artifact.quadlet_type, QuadletType::Container | QuadletType::Pod) {
+            continue;
+        }
+        if let Some(service_name) = service_name_from_layers(&artifact.source_layers) {
+            if let Some(edit) = dependency_map.get(service_name.as_str()) {
+                artifact.contents = apply_service_mount_dependencies(&artifact.contents, edit);
+            }
+        }
+    }
+
     let base_configs: Vec<ConfigFileSource> = input
         .host
         .services
@@ -68,7 +114,132 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
         artifacts,
         socket_dropins,
         config_files,
+        mount_declarations,
+        mount_dependencies,
     })
+}
+
+fn explicit_dependency_units(declaration: &MountDeclaration) -> Vec<String> {
+    match declaration.automount_unit_name() {
+        Some(automount_unit) => vec![automount_unit, declaration.mount_unit_name()],
+        None => vec![declaration.mount_unit_name()],
+    }
+}
+
+fn collect_mount_declarations(
+    input: &EvaluationInput,
+    artifacts: &[EvaluatedArtifact],
+) -> Result<Vec<MountDeclaration>, EvaluationError> {
+    let mut by_id: BTreeMap<String, MountDeclaration> = input
+        .host
+        .services
+        .iter()
+        .filter_map(|service_name| input.catalog.services.get(service_name))
+        .flat_map(|service| service.mount_declarations.iter().cloned())
+        .map(|mount| (mount.id.clone(), mount))
+        .collect();
+
+    for declaration in collect_mount_declarations_from_artifacts(artifacts)? {
+        by_id.insert(declaration.id.clone(), declaration);
+    }
+
+    for override_mount in &input.overlays.mount_overrides {
+        by_id.insert(override_mount.id.clone(), override_mount.clone());
+    }
+
+    let mut mounts: Vec<MountDeclaration> = by_id.into_values().collect();
+    mounts.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(mounts)
+}
+
+fn collect_mount_declarations_from_artifacts(
+    artifacts: &[EvaluatedArtifact],
+) -> Result<Vec<MountDeclaration>, EvaluationError> {
+    let mut mounts_by_stem = BTreeMap::new();
+    let mut automounts_by_stem = BTreeMap::new();
+
+    for artifact in artifacts {
+        match artifact.quadlet_type {
+            QuadletType::Mount => {
+                mounts_by_stem.insert(unit_stem(&artifact.name), artifact);
+            }
+            QuadletType::Automount => {
+                automounts_by_stem.insert(unit_stem(&artifact.name), artifact);
+            }
+            _ => {}
+        }
+    }
+
+    let mut declarations = Vec::new();
+    for (stem, mount_artifact) in mounts_by_stem {
+        let parsed_mount = ParsedManagedMount::from_mount_artifact(mount_artifact)?;
+        let Some(parsed_mount) = parsed_mount else {
+            continue;
+        };
+        let automount = automounts_by_stem.remove(&stem);
+        let declaration = parsed_mount.into_declaration(automount)?;
+        declarations.push(declaration);
+    }
+
+    for (stem, artifact) in automounts_by_stem {
+        let section = parse_sections(&artifact.contents);
+        validate_x_coreops_keys(&section, &[], &artifact.name)?;
+        if section.contains_key("X-CoreOps") {
+            return Err(EvaluationError::new(format!(
+                "managed automount artifact requires matching mount artifact: {}",
+                stem
+            )));
+        }
+    }
+
+    declarations.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(declarations)
+}
+
+fn expand_mount_dependencies(
+    input: &EvaluationInput,
+    declarations: &[MountDeclaration],
+) -> Result<Vec<MountDependency>, EvaluationError> {
+    let declaration_map: BTreeMap<&str, &MountDeclaration> = declarations
+        .iter()
+        .map(|decl| (decl.id.as_str(), decl))
+        .collect();
+    let mut dependencies = Vec::new();
+    for service_name in &input.host.services {
+        let Some(service) = input.catalog.services.get(service_name) else {
+            continue;
+        };
+        let mount_ids = input
+            .overlays
+            .service_mount_overrides
+            .get(service_name)
+            .cloned()
+            .unwrap_or_else(|| service.service_mounts.clone());
+        if mount_ids.is_empty() {
+            continue;
+        }
+        let mut consumed_paths = Vec::new();
+        for mount_id in &mount_ids {
+            let declaration = declaration_map.get(mount_id.as_str()).ok_or_else(|| {
+                EvaluationError::new(format!(
+                    "service {} references missing mount declaration {}",
+                    service_name, mount_id
+                ))
+            })?;
+            consumed_paths.push(declaration.target_path.clone());
+        }
+        consumed_paths.sort();
+        consumed_paths.dedup();
+        dependencies.push(MountDependency {
+            service_name: service_name.clone(),
+            mount_ids,
+            consumed_paths,
+            path_dependency_mode: PathDependencyMode::RequiresMountsFor,
+            unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
+        });
+    }
+    dependencies.sort_by(|a, b| a.service_name.cmp(&b.service_name));
+    Ok(dependencies)
 }
 
 fn collect_dropins(dropins: &[DropInSource], target: &str) -> Vec<DropInSource> {
@@ -123,7 +294,7 @@ fn overlay_config_files(
     base_files: &[ConfigFileSource],
     host_files: &[ConfigFileSource],
 ) -> Vec<EvaluatedConfigFile> {
-    let mut map: std::collections::BTreeMap<String, EvaluatedConfigFile> = std::collections::BTreeMap::new();
+    let mut map: BTreeMap<String, EvaluatedConfigFile> = BTreeMap::new();
     for cfg in base_files {
         map.insert(
             cfg.target_path.clone(),
@@ -145,4 +316,229 @@ fn overlay_config_files(
         );
     }
     map.into_values().collect()
+}
+
+fn service_name_from_layers(layers: &[String]) -> Option<String> {
+    for layer in layers {
+        let marker = "/services/";
+        let start = layer.find(marker)? + marker.len();
+        let tail = &layer[start..];
+        let service = tail.split('/').next()?;
+        if !service.is_empty() {
+            return Some(service.to_string());
+        }
+    }
+    None
+}
+
+fn unit_stem(unit_name: &str) -> String {
+    Path::new(unit_name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(unit_name)
+        .to_string()
+}
+
+struct ParsedManagedMount {
+    id: String,
+    target_path: String,
+    source: String,
+    fstype: String,
+    mount_options: Vec<String>,
+    network_backed: bool,
+    verification_mode: MountVerificationMode,
+    ownership_scope: Vec<String>,
+    prepared_path: Option<PreparedTargetPath>,
+}
+
+impl ParsedManagedMount {
+    fn from_mount_artifact(artifact: &EvaluatedArtifact) -> Result<Option<Self>, EvaluationError> {
+        let sections = parse_sections(&artifact.contents);
+        if !sections.contains_key("X-CoreOps") {
+            return Ok(None);
+        }
+        validate_x_coreops_keys(&sections, &["CreateMountpoint"], &artifact.name)?;
+        let target_path = required_section_value(&sections, "Mount", "Where", &artifact.name)?;
+        let expected_name = mount_unit_name_for_path(&target_path);
+        if artifact.name != expected_name {
+            return Err(EvaluationError::new(format!(
+                "mount unit name does not match Mount Where in {}: expected {}",
+                artifact.name, expected_name
+            )));
+        }
+        let source = required_section_value(&sections, "Mount", "What", &artifact.name)?;
+        let fstype = required_section_value(&sections, "Mount", "Type", &artifact.name)?;
+        let mount_options = section_value(&sections, "Mount", "Options")
+            .map(|value| split_csv(&value))
+            .unwrap_or_default();
+        let network_backed = section_bool_value(&sections, "X-CoreOps", "NetworkBacked")
+            .unwrap_or_else(|| is_network_fstype(&fstype));
+        let verification_mode = MountVerificationMode::UnitAndPath;
+        let ownership_scope = service_name_from_layers(&artifact.source_layers)
+            .map(|service| vec![service])
+            .unwrap_or_default();
+        let prepared_path = parse_prepared_path(&sections, &target_path);
+
+        Ok(Some(Self {
+            id: unit_stem(&artifact.name),
+            target_path,
+            source,
+            fstype,
+            mount_options,
+            network_backed,
+            verification_mode,
+            ownership_scope,
+            prepared_path,
+        }))
+    }
+
+    fn into_declaration(
+        self,
+        automount_artifact: Option<&EvaluatedArtifact>,
+    ) -> Result<MountDeclaration, EvaluationError> {
+        let automount = match automount_artifact {
+            Some(artifact) => {
+                let sections = parse_sections(&artifact.contents);
+                validate_x_coreops_keys(&sections, &[], &artifact.name)?;
+                let where_path = required_section_value(&sections, "Automount", "Where", &artifact.name)?;
+                if where_path != self.target_path {
+                    return Err(EvaluationError::new(format!(
+                        "automount Where does not match mount target: {} != {}",
+                        where_path, self.target_path
+                    )));
+                }
+                let expected_name = automount_unit_name_for_path(&where_path);
+                if artifact.name != expected_name {
+                    return Err(EvaluationError::new(format!(
+                        "automount unit name does not match Automount Where in {}: expected {}",
+                        artifact.name, expected_name
+                    )));
+                }
+                true
+            }
+            None => false,
+        };
+
+        Ok(MountDeclaration {
+            id: self.id,
+            target_path: self.target_path,
+            source: self.source,
+            fstype: self.fstype,
+            mount_options: self.mount_options,
+            network_backed: self.network_backed,
+            automount,
+            verification_mode: self.verification_mode,
+            ownership_scope: self.ownership_scope,
+            prepared_path: self.prepared_path,
+        })
+    }
+}
+
+fn parse_sections(contents: &str) -> BTreeMap<String, BTreeMap<String, String>> {
+    let mut sections: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    let mut current = String::new();
+    for raw_line in contents.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            current = line[1..line.len() - 1].trim().to_string();
+            sections.entry(current.clone()).or_default();
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if current.is_empty() {
+            continue;
+        }
+        sections
+            .entry(current.clone())
+            .or_default()
+            .insert(key.trim().to_string(), value.trim().to_string());
+    }
+    sections
+}
+
+fn required_section_value(
+    sections: &BTreeMap<String, BTreeMap<String, String>>,
+    section: &str,
+    key: &str,
+    unit_name: &str,
+) -> Result<String, EvaluationError> {
+    section_value(sections, section, key).ok_or_else(|| {
+        EvaluationError::new(format!(
+            "missing {} {}= in managed mount artifact {}",
+            section, key, unit_name
+        ))
+    })
+}
+
+fn section_value(
+    sections: &BTreeMap<String, BTreeMap<String, String>>,
+    section: &str,
+    key: &str,
+) -> Option<String> {
+    sections.get(section).and_then(|values| values.get(key)).cloned()
+}
+
+fn section_bool_value(
+    sections: &BTreeMap<String, BTreeMap<String, String>>,
+    section: &str,
+    key: &str,
+) -> Option<bool> {
+    let value = section_value(sections, section, key)?;
+    let normalized = value.trim().to_ascii_lowercase();
+    Some(matches!(normalized.as_str(), "1" | "yes" | "true" | "on"))
+}
+
+fn parse_prepared_path(
+    sections: &BTreeMap<String, BTreeMap<String, String>>,
+    target_path: &str,
+ ) -> Option<PreparedTargetPath> {
+    Some(PreparedTargetPath {
+        path: target_path.to_string(),
+        create_if_missing: section_bool_value(sections, "X-CoreOps", "CreateMountpoint")
+            .unwrap_or(true),
+        owner: None,
+        group: None,
+        mode: None,
+        service_consumed: false,
+    })
+}
+
+fn validate_x_coreops_keys(
+    sections: &BTreeMap<String, BTreeMap<String, String>>,
+    allowed: &[&str],
+    unit_name: &str,
+) -> Result<MountVerificationMode, EvaluationError> {
+    let Some(values) = sections.get("X-CoreOps") else {
+        return Ok(MountVerificationMode::UnitAndPath);
+    };
+    for key in values.keys() {
+        if !allowed.iter().any(|allowed_key| key == allowed_key) {
+            return Err(EvaluationError::new(format!(
+                "unsupported X-CoreOps field in {}: {}",
+                unit_name, key
+            )));
+        }
+    }
+    Ok(MountVerificationMode::UnitAndPath)
+}
+
+fn split_csv(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn is_network_fstype(fstype: &str) -> bool {
+    matches!(
+        fstype.trim().to_ascii_lowercase().as_str(),
+        "nfs" | "nfs4" | "cifs" | "smbfs" | "sshfs" | "glusterfs" | "ceph" | "cephfs"
+    )
 }

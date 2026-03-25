@@ -60,11 +60,16 @@ pub fn read_observed_state(
     let mut workloads: Vec<Workload> = read_quadlet_dir(quadlet_dir)?;
     let socket_dir = systemd_unit_dir();
     let socket_units = read_socket_units(&socket_dir)?;
+    let native_mount_units = desired
+        .map(|desired| read_native_mount_units(&socket_dir, desired))
+        .transpose()?
+        .unwrap_or_default();
     let allowed_socket_dropins = desired
         .map(desired_socket_dropins)
         .unwrap_or_default();
     let socket_dropins = read_socket_dropins(&socket_dir, &socket_units, &allowed_socket_dropins)?;
     workloads.extend(socket_units);
+    workloads.extend(native_mount_units);
     workloads.extend(socket_dropins);
     if let Some(desired) = desired {
         workloads.extend(read_config_files(&desired.managed_config_roots)?);
@@ -78,6 +83,59 @@ pub fn read_observed_state(
         last_reconcile_id: None,
         host_info: None,
     })
+}
+
+fn read_native_mount_units(dir: &Path, desired: &DesiredState) -> Result<Vec<Workload>, ObservedError> {
+    let desired_units = desired_native_mount_unit_names(desired);
+    if desired_units.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut workloads = Vec::new();
+    for unit_name in desired_units {
+        let path = dir.join(&unit_name);
+        if !path.exists() {
+            continue;
+        }
+        let contents = std::fs::read_to_string(&path)?;
+        let quadlet_type = if unit_name.ends_with(".automount") {
+            QuadletType::Automount
+        } else {
+            QuadletType::Mount
+        };
+        workloads.push(Workload {
+            name: Path::new(&unit_name)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or(&unit_name)
+                .to_string(),
+            quadlet_type,
+            quadlet_contents: contents,
+            systemd_unit_name: unit_name,
+            enabled_state: EnabledState::Enabled,
+            restart_policy: RestartPolicy::Always,
+        });
+    }
+    Ok(workloads)
+}
+
+fn desired_native_mount_unit_names(desired: &DesiredState) -> std::collections::BTreeSet<String> {
+    let mut units = std::collections::BTreeSet::new();
+    for workload in &desired.workloads {
+        if matches!(workload.quadlet_type, QuadletType::Mount | QuadletType::Automount) {
+            units.insert(workload.systemd_unit_name.clone());
+            if workload.quadlet_type == QuadletType::Automount {
+                let mount_peer = workload
+                    .systemd_unit_name
+                    .strip_suffix(".automount")
+                    .map(|stem| format!("{stem}.mount"));
+                if let Some(mount_peer) = mount_peer {
+                    units.insert(mount_peer);
+                }
+            }
+        }
+    }
+    units
 }
 
 fn read_socket_units(dir: &Path) -> Result<Vec<Workload>, ObservedError> {
@@ -186,7 +244,10 @@ fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, Obser
 
     let mut units = Vec::new();
     for workload in workloads {
-        if matches!(workload.quadlet_type, QuadletType::SocketDropIn | QuadletType::ConfigFile) {
+        if matches!(
+            workload.quadlet_type,
+            QuadletType::SocketDropIn | QuadletType::ConfigFile
+        ) {
             continue;
         }
         let unit_name = systemd_unit_for_quadlet_file(&workload.systemd_unit_name);

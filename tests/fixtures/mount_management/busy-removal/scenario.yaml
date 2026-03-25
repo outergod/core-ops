@@ -1,0 +1,8 @@
+scenario: busy-removal
+summary: Managed mount removal that remains busy and must fail explicitly.
+mount_id: srv-busy-media
+service: immich
+features:
+  - managed-removal
+  - busy-unmount-failure
+  - dependent-service-stop-first

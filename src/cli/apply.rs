@@ -4,7 +4,7 @@ use crate::core::errors::CoreError;
 use crate::core::reconcile::{reconcile_apply, reconcile_plan, ReconcileDependencies};
 use crate::core::types::{FailureClass, ReconcileRun, ReconciliationStatus, RunStatus};
 use crate::cli::report::{append_provenance_report, format_plan_report};
-use crate::io::apply::apply_plan;
+use crate::io::apply::apply_plan_with_desired;
 use crate::io::observed::read_observed_state;
 use crate::io::repo::load_desired_state;
 use crate::io::state::{persist_finished_state, persist_in_progress_state};
@@ -22,7 +22,7 @@ pub fn apply(
             read_observed_state(quadlet_dir, Some(desired), None).map_err(map_plan_error)
         },
         apply_plan: &|plan, desired| {
-            apply_plan(plan, &desired.workloads, quadlet_dir, reload_systemd)
+            apply_plan_with_desired(plan, desired, quadlet_dir, reload_systemd)
                 .map(|_| ())
                 .map_err(map_apply_error)
         },
@@ -48,7 +48,7 @@ pub fn apply_with_report(
             read_observed_state(quadlet_dir, Some(desired), None).map_err(map_plan_error)
         },
         apply_plan: &|plan, desired| {
-            apply_plan(plan, &desired.workloads, quadlet_dir, reload_systemd)
+            apply_plan_with_desired(plan, desired, quadlet_dir, reload_systemd)
                 .map(|_| ())
                 .map_err(map_apply_error)
         },
@@ -70,6 +70,14 @@ pub fn apply_with_report(
         None => None,
     };
     let result = reconcile_apply(&deps)?;
+    if result
+        .desired
+        .mount_declarations
+        .iter()
+        .any(|mount| mount.automount)
+    {
+        report.push_str("\nautomount apply behavior active");
+    }
     if let (Some(path), Some(attempt)) = (state_path.as_ref(), attempt.as_ref()) {
         let status = match result.run.status {
             RunStatus::Success => ReconciliationStatus::Success,

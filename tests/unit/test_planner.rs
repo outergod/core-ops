@@ -1,7 +1,10 @@
 use core_ops::core::planner::plan;
+use core_ops::core::planner::plan_mount_units;
+use core_ops::core::unit::{apply_service_mount_dependencies, render_mount_unit};
 use core_ops::core::types::{
-    Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, ObservedState,
-    QuadletType, RestartPolicy, Workload,
+    Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, MountDeclaration,
+    MountDependency, MountVerificationMode, ObservedState, PathDependencyMode, QuadletType,
+    RestartPolicy, UnitDependencyMode, Workload,
 };
 
 fn workload(name: &str) -> Workload {
@@ -14,6 +17,8 @@ fn workload_with_type(name: &str, quadlet_type: QuadletType) -> Workload {
         QuadletType::Socket => "socket",
         QuadletType::SocketDropIn => "socket-dropin",
         QuadletType::ConfigFile => "config",
+        QuadletType::Mount => "mount",
+        QuadletType::Automount => "automount",
         QuadletType::Volume => "volume",
         QuadletType::Pod => "pod",
         QuadletType::Network => "network",
@@ -33,6 +38,8 @@ fn desired_state(workloads: Vec<Workload>) -> DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
         workloads,
+        mount_declarations: Vec::new(),
+        mount_dependencies: Vec::new(),
         managed_config_paths: Vec::new(),
         managed_config_roots: Vec::new(),
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
@@ -156,4 +163,62 @@ fn plan_restarts_socket_when_socket_dropin_removed() {
         *action == core_ops::core::types::PlanActionType::RestartUnit
             && *target == "alpha.socket"
     }));
+}
+
+#[test]
+fn mount_planning_expands_path_and_explicit_unit_dependencies() {
+    let declaration = MountDeclaration {
+        id: "immich-media".to_string(),
+        target_path: "/var/lib/immich/media".to_string(),
+        source: "nas:/volume1/media".to_string(),
+        fstype: "nfs".to_string(),
+        mount_options: vec!["rw".to_string()],
+        network_backed: true,
+        automount: true,
+        verification_mode: MountVerificationMode::UnitAndPath,
+        ownership_scope: vec!["immich".to_string()],
+        prepared_path: None,
+    };
+    let dependencies = vec![MountDependency {
+        service_name: "immich".to_string(),
+        mount_ids: vec!["immich-media".to_string()],
+        consumed_paths: vec!["/var/lib/immich/media".to_string()],
+        path_dependency_mode: PathDependencyMode::RequiresMountsFor,
+        unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
+    }];
+
+    let planned = plan_mount_units(&declaration, &dependencies);
+
+    assert_eq!(planned.mount_unit_name, "var-lib-immich-media.mount");
+    assert_eq!(
+        planned.automount_unit_name.as_deref(),
+        Some("var-lib-immich-media.automount")
+    );
+    assert_eq!(
+        planned.service_dependency_edits[0].requires_mounts_for,
+        vec!["/var/lib/immich/media".to_string()]
+    );
+    assert_eq!(
+        planned.service_dependency_edits[0].after_units,
+        vec![
+            "var-lib-immich-media.automount".to_string(),
+            "var-lib-immich-media.mount".to_string()
+        ]
+    );
+    assert_eq!(
+        planned.removal_candidates,
+        vec![
+            "var-lib-immich-media.automount".to_string(),
+            "var-lib-immich-media.mount".to_string()
+        ]
+    );
+
+    let rendered = render_mount_unit(&declaration);
+    assert_eq!(rendered.0, "var-lib-immich-media.mount");
+    let service_contents = apply_service_mount_dependencies(
+        "[Unit]\nDescription=Immich\n",
+        &planned.service_dependency_edits[0],
+    );
+    assert!(service_contents.contains("RequiresMountsFor=/var/lib/immich/media"));
+    assert!(service_contents.contains("After=var-lib-immich-media.automount var-lib-immich-media.mount"));
 }

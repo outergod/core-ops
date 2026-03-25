@@ -5,9 +5,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::integration::env_lock::path_lock;
 use core_ops::cli::apply::apply_with_report;
 use core_ops::cli::plan as plan_cmd;
-use core_ops::cli::status::{format_status_text, render_status, render_status_from_path};
+use core_ops::cli::status::{
+    format_status_text, render_mount_dependency_summary, render_status, render_status_from_path,
+};
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
+use core_ops::core::types::{
+    Boundaries, BoundaryScope, DesiredState, Invariant, MountDeclaration, MountDependency,
+    MountVerificationMode, PathDependencyMode, VerificationResult, VerificationStatus,
+};
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::read_observed_state;
 use core_ops::io::repo::load_desired_state;
@@ -341,6 +347,57 @@ fn status_uses_implicit_state_path_when_no_explicit_path_is_given() {
     assert!(output.contains("\"status\": \"success\""));
 
     let _ = fs::remove_file(state_path);
+}
+
+#[test]
+fn mount_status_summary_reports_dependency_counts_and_failures() {
+    let desired = DesiredState {
+        repository_ref: "repo".to_string(),
+        revision_id: "rev".to_string(),
+        workloads: Vec::new(),
+        mount_declarations: vec![MountDeclaration {
+            id: "immich-media".to_string(),
+            target_path: "/srv/immich/media".to_string(),
+            source: "nas:/media".to_string(),
+            fstype: "nfs".to_string(),
+            mount_options: vec!["rw".to_string()],
+            network_backed: true,
+            automount: true,
+            verification_mode: MountVerificationMode::UnitAndPath,
+            ownership_scope: vec!["immich".to_string()],
+            prepared_path: None,
+        }],
+        mount_dependencies: vec![MountDependency {
+            service_name: "immich".to_string(),
+            mount_ids: vec!["immich-media".to_string()],
+            consumed_paths: vec!["/srv/immich/media".to_string()],
+            path_dependency_mode: PathDependencyMode::RequiresMountsFor,
+            unit_dependency_mode: core_ops::core::types::UnitDependencyMode::AfterAndRequires,
+        }],
+        managed_config_paths: Vec::new(),
+        managed_config_roots: Vec::new(),
+        invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
+        boundaries: Boundaries {
+            scopes: vec![BoundaryScope::QuadletSystemd],
+        },
+    };
+    let verification_results = vec![
+        VerificationResult {
+            target: "srv-immich-media.automount".to_string(),
+            status: VerificationStatus::Success,
+            details: None,
+        },
+        VerificationResult {
+            target: "srv-immich-media.mount".to_string(),
+            status: VerificationStatus::Failure,
+            details: Some("degraded: mount target not mounted".to_string()),
+        },
+    ];
+
+    let summary =
+        render_mount_dependency_summary(&desired, &verification_results).expect("mount summary");
+
+    assert_eq!(summary, "mounts refs=1 dependencies=1 verification_failures=1");
 }
 
 struct PathGuard {

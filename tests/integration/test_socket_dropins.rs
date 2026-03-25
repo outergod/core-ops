@@ -60,6 +60,8 @@ fn observed_state_ignores_unmanaged_socket_dropins() {
             "alpha.socket.d/10-known.conf",
             "Known=1",
         )],
+        mount_declarations: Vec::new(),
+        mount_dependencies: Vec::new(),
         managed_config_paths: Vec::new(),
         managed_config_roots: Vec::new(),
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],

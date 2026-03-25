@@ -88,3 +88,104 @@ package version in `Cargo.toml`.
 - Backward-incompatible persisted-schema changes require a recorded version
   review and a controller version update in `Cargo.toml` according to the
   project versioning policy.
+
+## Native Mount Management Workflow
+
+- Author managed mounts as native `.mount` and optional `.automount` artifacts
+  and embed only reconciliation-specific metadata in an `[X-CoreOps]` section.
+- Reference managed mounts from `services/<service>/service.yaml` by native
+  `.mount` unit stem.
+- Use `requires_mounts` on the consuming service so CoreOps can materialize
+  native dependency semantics directly into the generated unit configuration.
+- Keep ordinary `.mount` behavior as the default. Set `automount: true` only
+  for explicitly network-backed mounts such as NFS.
+- Keep `[X-CoreOps]` minimal in this iteration. `CreateMountpoint=true` is the
+  default, and unsupported fields are rejected.
+- `core-ops plan` should show native `.mount` stem references, dependency
+  counts, and automount relationships when present.
+- `core-ops apply` prepares bounded target paths, writes `.mount` and optional
+  `.automount` units, and activates automount-backed mounts through the
+  `.automount` unit instead of starting the `.mount` unit directly.
+- Removing a managed mount stops dependent managed services first and fails
+  explicitly if the mount is still busy or cannot be removed cleanly.
+
+### Example Layout
+
+```text
+services/immich/
+  immich.container
+  service.yaml
+  var-lib-immich-media.mount
+  var-lib-immich-media.automount
+```
+
+`services/immich/service.yaml`
+
+```yaml
+requires_mounts:
+  - var-lib-immich-media
+```
+
+`services/immich/var-lib-immich-media.mount`
+
+```ini
+[Unit]
+After=network-online.target
+Wants=network-online.target
+
+[Mount]
+What=nas:/volume1/media
+Where=/var/lib/immich/media
+Type=nfs
+Options=rw,hard,noatime
+
+[X-CoreOps]
+CreateMountpoint=true
+```
+
+Optional `services/immich/var-lib-immich-media.automount`
+
+```ini
+[Automount]
+Where=/var/lib/immich/media
+```
+
+### `[X-CoreOps]` Field Reference
+
+- `CreateMountpoint`
+  - Optional boolean.
+  - Default: `true`.
+  - Applies to the native `Where=` path from the `.mount` unit.
+  - `true`: CoreOps creates the mountpoint directory if it is missing.
+  - `false`: reconciliation fails if the mountpoint directory is missing.
+
+### Override Rules
+
+- Service-referenced managed mounts are keyed by native `.mount` stem.
+- For those mounts, host overrides must not change the effective `Where=`
+  value, because the stem is derived from that path.
+- Host overrides may still change other native unit details such as `What=` or
+  mount options, as long as the resulting layered unit remains valid.
+- `[X-CoreOps]` follows the same layering order as native unit content. Later
+  effective values override earlier ones before CoreOps validates the merged
+  result.
+
+### Troubleshooting
+
+- `unsupported X-CoreOps field`
+  - The `.mount` or `.automount` artifact still contains removed metadata.
+  - Remove everything except `CreateMountpoint` from `[X-CoreOps]`.
+
+- `mount unit name does not match Mount Where`
+  - The `.mount` filename does not match the escaped systemd name derived from
+    `Where=`.
+  - Rename the file or fix `Where=` so they match.
+
+- `automount unit name does not match Automount Where`
+  - The `.automount` filename does not match the escaped systemd name derived
+    from `Where=`.
+  - Rename the file or fix `Where=` so they match.
+
+- `mountpoint missing and CreateMountpoint=false`
+  - CoreOps is configured not to create the mountpoint.
+  - Provision the directory out of band, or set `CreateMountpoint=true`.

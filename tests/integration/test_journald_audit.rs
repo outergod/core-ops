@@ -3,6 +3,7 @@ use core_ops::core::types::{
     FailureClass, PlanAction, PlanActionType, ReconcileMode, ReconcileRun,
     ReconciliationPlan, RunStatus, VerificationResult, VerificationStatus,
 };
+use core_ops::io::audit::journal_target;
 
 #[test]
 fn journald_audit_event_contains_summary_and_ids() {
@@ -64,4 +65,63 @@ fn journald_audit_event_contains_failure_details() {
     assert!(payload.contains("\"failure_class\":\"verify\""));
     assert!(payload.contains("\"failed_artifacts\":[\"alpha.container\"]"));
     assert!(payload.contains("\"failure_reason\":\"verification failed\""));
+}
+
+#[test]
+fn journald_audit_mount_payloads_cover_success_degraded_and_busy_removal() {
+    let success_run = ReconcileRun {
+        run_id: "run:mount-success".to_string(),
+        mode: ReconcileMode::Apply,
+        status: RunStatus::Success,
+        failure_class: None,
+        summary: "mount converged".to_string(),
+    };
+    let degraded_run = ReconcileRun {
+        run_id: "run:mount-degraded".to_string(),
+        mode: ReconcileMode::Apply,
+        status: RunStatus::Failure,
+        failure_class: Some(FailureClass::Verify),
+        summary: "mount degraded".to_string(),
+    };
+    let busy_run = ReconcileRun {
+        run_id: "run:mount-busy".to_string(),
+        mode: ReconcileMode::Apply,
+        status: RunStatus::Failure,
+        failure_class: Some(FailureClass::Apply),
+        summary: "busy mount removal".to_string(),
+    };
+    let plan = ReconciliationPlan {
+        plan_id: "plan:mount".to_string(),
+        desired_revision_id: "rev".to_string(),
+        observed_revision_id: None,
+        actions: vec![PlanAction {
+            action_type: PlanActionType::RemoveQuadlet,
+            target: "srv-immich-media.mount".to_string(),
+            preconditions: Vec::new(),
+            postconditions: Vec::new(),
+        }],
+        safety_checks: Vec::new(),
+        expected_outcomes: Vec::new(),
+    };
+    let degraded_results = vec![VerificationResult {
+        target: "srv-immich-media.mount".to_string(),
+        status: VerificationStatus::Failure,
+        details: Some("degraded: mount target not mounted".to_string()),
+    }];
+    let success = build_audit_event(&success_run, Some(&plan), &[], None);
+    let degraded = build_audit_event(&degraded_run, Some(&plan), &degraded_results, None);
+    let busy = build_audit_event(&busy_run, Some(&plan), &[], None);
+
+    let success_payload = format_audit_event_json(&success);
+    let degraded_payload = format_audit_event_json(&degraded);
+    let busy_payload = format_audit_event_json(&busy);
+
+    assert_eq!(journal_target(&success), "audit.mount");
+    assert_eq!(journal_target(&degraded), "audit.mount");
+    assert_eq!(journal_target(&busy), "audit.mount");
+    assert!(success_payload.contains("\"summary\":\"mount converged\""));
+    assert!(degraded_payload.contains("\"failed_artifacts\":[\"srv-immich-media.mount\"]"));
+    assert!(degraded_payload.contains("\"failure_class\":\"verify\""));
+    assert!(busy_payload.contains("\"failure_reason\":\"busy mount removal\""));
+    assert!(busy_payload.contains("\"failure_class\":\"apply\""));
 }

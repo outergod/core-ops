@@ -38,3 +38,17 @@ fn quickstart_mentions_provenance_status_and_version_review_flow() {
     assert!(contents.contains("minor version review"));
     assert!(contents.contains("0.2.0 -> 0.3.0"));
 }
+
+#[test]
+fn quickstart_mentions_mount_management_workflow_and_version_outcome() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let quickstart = root.join("specs/005-native-mount-management/quickstart.md");
+    let contents = fs::read_to_string(&quickstart).expect("read quickstart");
+
+    assert!(contents.contains("native `.mount` artifact"));
+    assert!(contents.contains("[X-CoreOps]"));
+    assert!(contents.contains("RequiresMountsFor"));
+    assert!(contents.contains(".automount"));
+    assert!(contents.contains("busy"));
+    assert!(contents.contains("0.3.0 -> 0.4.0"));
+}

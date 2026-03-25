@@ -7,12 +7,13 @@ use crate::core::evaluate::{evaluate_desired_state, EvaluationOutput};
 use crate::core::types::{
     ArtifactSource, Boundaries, BoundaryScope, ConfigFileSource, DesiredState, DropInSource,
     EnabledState, EvaluationInput, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn,
-    HostDeclaration, HostOverlaySet, Invariant, QuadletType, RestartPolicy, ServiceCatalog,
-    ServiceDefinition, Workload,
+    HostDeclaration, HostOverlaySet, Invariant, MountDeclaration, MountVerificationMode,
+    PreparedTargetPath, QuadletType, RestartPolicy, ServiceCatalog, ServiceDefinition, Workload,
 };
 use crate::io::quadlet::{parse_quadlet_name, read_quadlet_dir, QuadletError};
 use crate::core::validation::{
     validate_config_paths, validate_dropin_targets as validate_dropin_targets_fn,
+    validate_mount_model,
     validate_service_selection,
 };
 use serde::Deserialize;
@@ -120,6 +121,8 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
         workloads,
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
     ))
 }
 
@@ -155,6 +158,8 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let mut overlays = load_host_overrides(&host_dir)?;
+    validate_mount_overrides(&host_decl.services, &catalog, &overlays)
+        .map_err(RepoError::ValidationFailed)?;
     let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
@@ -193,6 +198,8 @@ fn load_layered_desired_state(
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let mut overlays = load_host_overrides(&host_dir)?;
+    validate_mount_overrides(&host_decl.services, &catalog, &overlays)
+        .map_err(RepoError::ValidationFailed)?;
     let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
@@ -216,12 +223,20 @@ fn load_layered_desired_state(
     };
     let output = evaluate_desired_state(&input)
         .map_err(|err| RepoError::EvaluationFailed(err.to_string()))?;
+    validate_mount_model(
+        &output.mount_declarations,
+        &output.mount_dependencies,
+        Some(&input.host.services),
+    )
+    .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let workloads = workloads_from_evaluation(&output);
     let resolved_revision = resolved_head_revision(repo_path)?;
     Ok(desired_state_from_workloads(
         repo_path,
         &resolved_revision,
         workloads,
+        output.mount_declarations,
+        output.mount_dependencies,
         config_paths,
         config_roots,
     ))
@@ -231,6 +246,8 @@ pub fn desired_state_from_workloads(
     repo_path: &Path,
     revision_id: &str,
     workloads: Vec<Workload>,
+    mount_declarations: Vec<MountDeclaration>,
+    mount_dependencies: Vec<crate::core::types::MountDependency>,
     managed_config_paths: Vec<String>,
     managed_config_roots: Vec<String>,
 ) -> DesiredState {
@@ -238,6 +255,8 @@ pub fn desired_state_from_workloads(
         repository_ref: repo_path.display().to_string(),
         revision_id: revision_id.to_string(),
         workloads,
+        mount_declarations,
+        mount_dependencies,
         managed_config_paths,
         managed_config_roots,
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
@@ -316,6 +335,7 @@ fn load_service_definition(
     service_name: &str,
     service_dir: &Path,
 ) -> Result<ServiceDefinition, RepoError> {
+    let service_yaml = load_service_yaml(service_dir)?;
     let mut artifacts = Vec::new();
     let mut base_dropins = Vec::new();
     let mut config_files = Vec::new();
@@ -362,6 +382,26 @@ fn load_service_definition(
         artifacts,
         base_dropins,
         config_files,
+        mount_declarations: service_yaml.mounts,
+        service_mounts: service_yaml.requires_mounts,
+    })
+}
+
+fn load_service_yaml(service_dir: &Path) -> Result<ServiceMountConfig, RepoError> {
+    let path = service_dir.join("service.yaml");
+    if !path.exists() {
+        return Ok(ServiceMountConfig::default());
+    }
+    let contents = fs::read_to_string(&path).map_err(|err| RepoError::Io(err.to_string()))?;
+    let parsed: ServiceYaml =
+        serde_yaml::from_str(&contents).map_err(|err| RepoError::InvalidHostDeclaration(err.to_string()))?;
+    Ok(ServiceMountConfig {
+        mounts: parsed
+            .mounts
+            .into_iter()
+            .map(|mount| mount.into_mount_declaration())
+            .collect(),
+        requires_mounts: parsed.requires_mounts,
     })
 }
 
@@ -376,21 +416,30 @@ fn load_host_overrides(host_dir: &Path) -> Result<HostOverlaySet, RepoError> {
             host: host_name.to_string(),
             overrides: Vec::new(),
             config_overrides: Vec::new(),
+            mount_overrides: Vec::new(),
+            service_mount_overrides: std::collections::BTreeMap::new(),
         });
     }
 
     let mut overrides = Vec::new();
     let mut config_overrides = Vec::new();
+    let mut mount_overrides = Vec::new();
+    let mut service_mount_overrides = std::collections::BTreeMap::new();
     for entry in fs::read_dir(&overrides_dir).map_err(|err| RepoError::Io(err.to_string()))? {
         let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
         let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
         let file_name = match path.file_name().and_then(|name| name.to_str()) {
             Some(name) if !name.starts_with('.') => name.to_string(),
             _ => continue,
         };
+        if path.is_file() {
+            if file_name == "mounts.yaml" {
+                let mount_yaml = load_host_mount_overrides(&path)?;
+                mount_overrides = mount_yaml.mounts;
+                service_mount_overrides = mount_yaml.service_mounts;
+            }
+            continue;
+        }
         if file_name == "quadlet" {
             overrides.extend(read_dropins_from_root(&path)?);
             continue;
@@ -401,6 +450,7 @@ fn load_host_overrides(host_dir: &Path) -> Result<HostOverlaySet, RepoError> {
         }
         if file_name == "config" {
             config_overrides.extend(read_config_files(&path)?);
+            continue;
         }
     }
 
@@ -408,6 +458,8 @@ fn load_host_overrides(host_dir: &Path) -> Result<HostOverlaySet, RepoError> {
         host: host_name.to_string(),
         overrides,
         config_overrides,
+        mount_overrides,
+        service_mount_overrides,
     })
 }
 
@@ -482,6 +534,32 @@ fn workloads_from_evaluation(output: &EvaluationOutput) -> Vec<Workload> {
         .iter()
         .map(workload_from_artifact)
         .collect();
+    let existing_native_units: std::collections::BTreeSet<String> = workloads
+        .iter()
+        .filter(|workload| matches!(workload.quadlet_type, QuadletType::Mount | QuadletType::Automount))
+        .map(|workload| workload.systemd_unit_name.clone())
+        .collect();
+    workloads.extend(output.mount_declarations.iter().flat_map(|mount| {
+        let mut units = Vec::new();
+        if !existing_native_units.contains(&mount.mount_unit_name()) {
+            units.push(workload_from_native_unit(
+                &mount.mount_unit_name(),
+                &format!(
+                    "[Mount]\nWhat={}\nWhere={}\nType={}\n",
+                    mount.source, mount.target_path, mount.fstype
+                ),
+            ));
+        }
+        if let Some(automount_name) = mount.automount_unit_name() {
+            if !existing_native_units.contains(&automount_name) {
+                units.push(workload_from_native_unit(
+                    &automount_name,
+                    &format!("[Automount]\nWhere={}\n", mount.target_path),
+                ));
+            }
+        }
+        units
+    }));
     workloads.extend(
         output
             .socket_dropins
@@ -540,6 +618,27 @@ fn workload_from_config_file(file: &EvaluatedConfigFile) -> Workload {
     }
 }
 
+fn workload_from_native_unit(unit_name: &str, contents: &str) -> Workload {
+    let quadlet_type = if unit_name.ends_with(".automount") {
+        QuadletType::Automount
+    } else {
+        QuadletType::Mount
+    };
+    let name = Path::new(unit_name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(unit_name)
+        .to_string();
+    Workload {
+        name,
+        quadlet_type,
+        quadlet_contents: contents.to_string(),
+        systemd_unit_name: unit_name.to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    }
+}
+
 fn selected_service_artifacts(
     selected_services: &[String],
     catalog: &ServiceCatalog,
@@ -576,6 +675,70 @@ fn validate_dropin_targets(
             )
         })
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))
+}
+
+fn validate_mount_overrides(
+    selected_services: &[String],
+    catalog: &ServiceCatalog,
+    overlays: &HostOverlaySet,
+) -> Result<(), String> {
+    let base_mount_ids: std::collections::BTreeSet<String> = selected_services
+        .iter()
+        .filter_map(|service_name| catalog.services.get(service_name))
+        .flat_map(|service| {
+            let mut ids: Vec<String> = service
+                .mount_declarations
+                .iter()
+                .map(|mount| mount.id.clone())
+                .collect();
+            ids.extend(
+                service
+                    .artifacts
+                    .iter()
+                    .filter(|artifact| matches!(artifact.quadlet_type, QuadletType::Mount | QuadletType::Automount))
+                    .map(|artifact| artifact.name.clone())
+                    .filter(|name| name.ends_with(".mount"))
+                    .map(|name| {
+                        Path::new(&name)
+                            .file_stem()
+                            .and_then(|stem| stem.to_str())
+                            .unwrap_or(&name)
+                            .to_string()
+                    }),
+            );
+            ids
+        })
+        .collect();
+
+    for mount in &overlays.mount_overrides {
+        if !base_mount_ids.contains(&mount.id) {
+            return Err(format!(
+                "host mount override outside selected services: {}",
+                mount.id
+            ));
+        }
+    }
+
+    for (service_name, mount_ids) in &overlays.service_mount_overrides {
+        if !selected_services.iter().any(|selected| selected == service_name) {
+            return Err(format!(
+                "host mount dependency override outside selected services: {}",
+                service_name
+            ));
+        }
+        for mount_id in mount_ids {
+            if !base_mount_ids.contains(mount_id)
+                && !overlays.mount_overrides.iter().any(|mount| &mount.id == mount_id)
+            {
+                return Err(format!(
+                    "host mount dependency override references unknown mount: {}",
+                    mount_id
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn read_config_files(config_root: &Path) -> Result<Vec<ConfigFileSource>, RepoError> {
@@ -743,6 +906,106 @@ fn git_clone(repo: &str, dest: &Path) -> Result<(), RepoError> {
 struct HostYaml {
     host: String,
     services: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+struct ServiceMountConfig {
+    mounts: Vec<MountDeclaration>,
+    requires_mounts: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+struct HostMountOverrideConfig {
+    mounts: Vec<MountDeclaration>,
+    service_mounts: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ServiceYaml {
+    #[serde(default)]
+    mounts: Vec<ServiceMountYaml>,
+    #[serde(default)]
+    requires_mounts: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct HostMountOverridesYaml {
+    #[serde(default)]
+    mounts: Vec<ServiceMountYaml>,
+    #[serde(default)]
+    service_mounts: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ServiceMountYaml {
+    id: String,
+    target_path: String,
+    source: String,
+    fstype: String,
+    #[serde(default)]
+    mount_options: Vec<String>,
+    #[serde(default)]
+    network_backed: bool,
+    #[serde(default)]
+    automount: bool,
+    #[serde(default)]
+    ownership_scope: Vec<String>,
+    #[serde(default)]
+    prepared_directory: Option<PreparedDirectoryYaml>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PreparedDirectoryYaml {
+    path: String,
+    #[serde(default = "default_true")]
+    create_if_missing: bool,
+    owner: Option<String>,
+    group: Option<String>,
+    mode: Option<String>,
+    #[serde(default)]
+    service_consumed: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl ServiceMountYaml {
+    fn into_mount_declaration(self) -> MountDeclaration {
+        MountDeclaration {
+            id: self.id,
+            target_path: self.target_path,
+            source: self.source,
+            fstype: self.fstype,
+            mount_options: self.mount_options,
+            network_backed: self.network_backed,
+            automount: self.automount,
+            verification_mode: MountVerificationMode::UnitAndPath,
+            ownership_scope: self.ownership_scope,
+            prepared_path: self.prepared_directory.map(|prepared| PreparedTargetPath {
+                path: prepared.path,
+                create_if_missing: prepared.create_if_missing,
+                owner: prepared.owner,
+                group: prepared.group,
+                mode: prepared.mode,
+                service_consumed: prepared.service_consumed,
+            }),
+        }
+    }
+}
+
+fn load_host_mount_overrides(path: &Path) -> Result<HostMountOverrideConfig, RepoError> {
+    let contents = fs::read_to_string(path).map_err(|err| RepoError::Io(err.to_string()))?;
+    let parsed: HostMountOverridesYaml =
+        serde_yaml::from_str(&contents).map_err(|err| RepoError::InvalidHostDeclaration(err.to_string()))?;
+    Ok(HostMountOverrideConfig {
+        mounts: parsed
+            .mounts
+            .into_iter()
+            .map(|mount| mount.into_mount_declaration())
+            .collect(),
+        service_mounts: parsed.service_mounts,
+    })
 }
 
 fn git_fetch_revision(repo_path: &Path, revision: &str) -> Result<(), RepoError> {

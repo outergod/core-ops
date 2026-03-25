@@ -1,0 +1,7 @@
+scenario: invalid-definition
+summary: Invalid mount declaration used for validation and ownership failures.
+mount_id: conflicting-media.mount
+service: immich
+features:
+  - duplicate-target-path
+  - invalid-ownership-boundary

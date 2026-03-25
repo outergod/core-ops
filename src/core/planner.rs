@@ -2,8 +2,9 @@ use crate::core::boundaries::enforce_plan_boundaries;
 use crate::core::diff::diff_workloads;
 use crate::core::errors::{CoreError, ValidationError};
 use crate::core::types::{
-    DiffItem, DiffKind, FailureClass, PlanAction, PlanActionType, QuadletType,
-    ReconciliationPlan, SafetyCheck, DesiredState, ObservedState,
+    DesiredState, DiffItem, DiffKind, FailureClass, GeneratedUnitSet, MountDeclaration,
+    MountDependency, PlanAction, PlanActionType, QuadletType, ReconciliationPlan, SafetyCheck,
+    ServiceDependencyEdit, ObservedState,
 };
 use crate::core::validation::validate_desired_state;
 use std::collections::HashSet;
@@ -15,9 +16,19 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
     let mut diffs = diff_workloads(&desired.workloads, &observed.workloads);
     order_diffs(&mut diffs);
     let mut actions = Vec::new();
+    let prepared_paths = desired
+        .mount_declarations
+        .iter()
+        .filter_map(|mount| {
+            mount.prepared_path.as_ref().filter(|prepared| prepared.create_if_missing).map(|prepared| {
+                (mount.mount_unit_name(), prepared.path.clone())
+            })
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
 
     let socket_stems = desired_socket_stems(&desired.workloads);
     let container_stems = desired_container_stems(&desired.workloads);
+    let automount_stems = desired_automount_stems(&desired.workloads);
     for diff in &diffs {
         let quadlet_type = diff
             .desired
@@ -29,8 +40,10 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
                 diff.kind.clone(),
                 &diff.name,
                 quadlet_type,
+                prepared_paths.get(&diff.name).map(String::as_str),
                 &socket_stems,
                 &container_stems,
+                &automount_stems,
             );
         actions.append(&mut diff_actions);
     }
@@ -61,17 +74,58 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
     Ok(plan)
 }
 
+pub fn plan_mount_units(
+    declaration: &MountDeclaration,
+    dependencies: &[MountDependency],
+) -> GeneratedUnitSet {
+    let mount_unit_name = declaration.mount_unit_name();
+    let automount_unit_name = declaration.automount_unit_name();
+    let service_dependency_edits = dependencies
+        .iter()
+        .filter(|dependency| dependency.mount_ids.iter().any(|id| id == &declaration.id))
+        .map(|dependency| ServiceDependencyEdit {
+            service_name: dependency.service_name.clone(),
+            requires_mounts_for: dependency.consumed_paths.clone(),
+            after_units: explicit_dependency_units(declaration),
+            requires_units: explicit_dependency_units(declaration),
+        })
+        .collect();
+
+    let mut removal_candidates = vec![mount_unit_name.clone()];
+    if let Some(unit) = &automount_unit_name {
+        removal_candidates.insert(0, unit.clone());
+    }
+
+    GeneratedUnitSet {
+        declaration_id: declaration.id.clone(),
+        mount_unit_name,
+        automount_unit_name,
+        service_dependency_edits,
+        removal_candidates,
+    }
+}
+
+fn explicit_dependency_units(declaration: &MountDeclaration) -> Vec<String> {
+    match declaration.automount_unit_name() {
+        Some(automount_unit) => vec![automount_unit, declaration.mount_unit_name()],
+        None => vec![declaration.mount_unit_name()],
+    }
+}
+
 fn actions_for_diff(
     kind: DiffKind,
     name: &str,
     quadlet_type: Option<QuadletType>,
+    prepared_path: Option<&str>,
     socket_stems: &HashSet<String>,
     container_stems: &HashSet<String>,
+    automount_stems: &HashSet<String>,
 ) -> Vec<PlanAction> {
     let manage_unit = match quadlet_type {
         Some(QuadletType::SocketDropIn) => false,
         Some(QuadletType::ConfigFile) => false,
         Some(QuadletType::Volume) => false,
+        Some(QuadletType::Mount | QuadletType::Automount) => true,
         Some(QuadletType::Container) => {
             let stem = stem_for_unit_name(name);
             match stem {
@@ -82,15 +136,23 @@ fn actions_for_diff(
         _ => true,
     };
     let reload_systemd = !matches!(quadlet_type, Some(QuadletType::ConfigFile));
+    let skip_mount_activation = matches!(quadlet_type, Some(QuadletType::Mount))
+        && stem_for_unit_name(name)
+            .map(|stem| automount_stems.contains(stem))
+            .unwrap_or(false);
     match kind {
         DiffKind::Add => {
-            let mut actions = vec![
-                action(PlanActionType::WriteQuadlet, name),
-            ];
+            let mut actions = Vec::new();
+            if matches!(quadlet_type, Some(QuadletType::Mount)) {
+                if let Some(path) = prepared_path {
+                    actions.push(action(PlanActionType::PreparePath, path));
+                }
+            }
+            actions.push(action(PlanActionType::WriteQuadlet, name));
             if reload_systemd {
                 actions.push(action(PlanActionType::ReloadSystemd, name));
             }
-            if manage_unit {
+            if manage_unit && !skip_mount_activation {
                 actions.push(action(PlanActionType::StartUnit, name));
             }
             if should_restart_socket_for_dropin(quadlet_type.as_ref(), name) {
@@ -123,13 +185,17 @@ fn actions_for_diff(
             actions
         }
         DiffKind::Change => {
-            let mut actions = vec![
-                action(PlanActionType::WriteQuadlet, name),
-            ];
+            let mut actions = Vec::new();
+            if matches!(quadlet_type, Some(QuadletType::Mount)) {
+                if let Some(path) = prepared_path {
+                    actions.push(action(PlanActionType::PreparePath, path));
+                }
+            }
+            actions.push(action(PlanActionType::WriteQuadlet, name));
             if reload_systemd {
                 actions.push(action(PlanActionType::ReloadSystemd, name));
             }
-            if manage_unit {
+            if manage_unit && !skip_mount_activation {
                 actions.push(action(PlanActionType::RestartUnit, name));
             }
             if should_restart_socket_for_dropin(quadlet_type.as_ref(), name) {
@@ -166,6 +232,14 @@ fn desired_container_stems(workloads: &[crate::core::types::Workload]) -> HashSe
     workloads
         .iter()
         .filter(|workload| workload.quadlet_type == QuadletType::Container)
+        .filter_map(|workload| stem_for_unit_name(&workload.systemd_unit_name).map(|s| s.to_string()))
+        .collect()
+}
+
+fn desired_automount_stems(workloads: &[crate::core::types::Workload]) -> HashSet<String> {
+    workloads
+        .iter()
+        .filter(|workload| workload.quadlet_type == QuadletType::Automount)
         .filter_map(|workload| stem_for_unit_name(&workload.systemd_unit_name).map(|s| s.to_string()))
         .collect()
 }
@@ -241,13 +315,15 @@ fn ordering_key(diff: &DiffItem) -> (u8, String) {
 fn order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
     match quadlet_type {
         Some(QuadletType::ConfigFile) => 0,
-        Some(QuadletType::Volume) => 1,
-        Some(QuadletType::Network) => 2,
-        Some(QuadletType::Container) => 3,
-        Some(QuadletType::SocketDropIn) => 4,
-        Some(QuadletType::Socket) => 5,
-        Some(QuadletType::Pod) => 6,
-        None => 7,
+        Some(QuadletType::Mount) => 1,
+        Some(QuadletType::Automount) => 2,
+        Some(QuadletType::Volume) => 3,
+        Some(QuadletType::Network) => 4,
+        Some(QuadletType::Container) => 5,
+        Some(QuadletType::SocketDropIn) => 6,
+        Some(QuadletType::Socket) => 7,
+        Some(QuadletType::Pod) => 8,
+        None => 9,
     }
 }
 
@@ -256,11 +332,13 @@ fn reverse_order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
         Some(QuadletType::SocketDropIn) => 0,
         Some(QuadletType::Socket) => 1,
         Some(QuadletType::Container) => 2,
-        Some(QuadletType::Volume) => 3,
-        Some(QuadletType::Network) => 4,
-        Some(QuadletType::ConfigFile) => 5,
-        Some(QuadletType::Pod) => 6,
-        None => 7,
+        Some(QuadletType::Network) => 3,
+        Some(QuadletType::Volume) => 4,
+        Some(QuadletType::Automount) => 5,
+        Some(QuadletType::Mount) => 6,
+        Some(QuadletType::ConfigFile) => 7,
+        Some(QuadletType::Pod) => 8,
+        None => 9,
     }
 }
 

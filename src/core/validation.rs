@@ -4,13 +4,15 @@ use std::path::Path;
 use crate::core::errors::{ValidationError, ValidationErrorKind};
 use crate::core::types::{
     ArtifactSource, Boundaries, BoundaryScope, DesiredState, DropInSource, HostDeclaration,
-    Invariant, ServiceCatalog, Workload,
+    Invariant, MountDeclaration, MountDependency, PathDependencyMode, PreparedTargetPath,
+    ServiceCatalog, UnitDependencyMode, Workload,
 };
 
 pub fn validate_desired_state(desired: &DesiredState) -> Result<(), ValidationError> {
     validate_invariants(&desired.invariants)?;
     validate_boundaries(&desired.boundaries)?;
     validate_workloads(&desired.workloads)?;
+    validate_mount_model(&desired.mount_declarations, &desired.mount_dependencies, None)?;
     Ok(())
 }
 
@@ -99,6 +101,191 @@ pub fn validate_config_paths(paths: &[String]) -> Result<(), ValidationError> {
             return Err(ValidationError::new(
                 ValidationErrorKind::MissingArtifactTarget,
                 format!("config path traversal not allowed: {}", path),
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_mount_model(
+    declarations: &[MountDeclaration],
+    dependencies: &[MountDependency],
+    selected_services: Option<&[String]>,
+) -> Result<(), ValidationError> {
+    let mut ids = HashSet::new();
+    let mut targets = HashSet::new();
+    let selected: HashSet<&str> = selected_services
+        .map(|services| services.iter().map(String::as_str).collect())
+        .unwrap_or_default();
+
+    for declaration in declarations {
+        if !ids.insert(declaration.id.as_str()) {
+            return Err(ValidationError::new(
+                ValidationErrorKind::DuplicateMountId,
+                format!("duplicate mount declaration id: {}", declaration.id),
+            ));
+        }
+        if !targets.insert(declaration.target_path.as_str()) {
+            return Err(ValidationError::new(
+                ValidationErrorKind::DuplicateMountTarget,
+                format!("duplicate mount target path: {}", declaration.target_path),
+            ));
+        }
+        validate_mount_declaration(declaration, &selected)?;
+    }
+
+    let declaration_map: HashMap<&str, &MountDeclaration> =
+        declarations.iter().map(|decl| (decl.id.as_str(), decl)).collect();
+
+    for dependency in dependencies {
+        validate_mount_dependency(dependency, &declaration_map, &selected)?;
+    }
+
+    Ok(())
+}
+
+fn validate_mount_declaration(
+    declaration: &MountDeclaration,
+    selected_services: &HashSet<&str>,
+) -> Result<(), ValidationError> {
+    if !declaration.target_path.starts_with('/') || declaration.target_path.contains("..") {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidMountTarget,
+            format!("invalid mount target path: {}", declaration.target_path),
+        ));
+    }
+    if declaration.automount && !declaration.network_backed {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidAutomount,
+            format!(
+                "automount requires network-backed mount declaration: {}",
+                declaration.id
+            ),
+        ));
+    }
+    if declaration.ownership_scope.is_empty() {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidMountOwnershipScope,
+            format!("mount declaration has empty ownership scope: {}", declaration.id),
+        ));
+    }
+    if !selected_services.is_empty()
+        && declaration
+            .ownership_scope
+            .iter()
+            .any(|service| !selected_services.contains(service.as_str()))
+    {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidMountOwnershipScope,
+            format!("mount declaration scope outside selected services: {}", declaration.id),
+        ));
+    }
+    if let Some(prepared) = &declaration.prepared_path {
+        validate_prepared_target(prepared, declaration)?;
+    }
+    Ok(())
+}
+
+fn validate_prepared_target(
+    prepared: &PreparedTargetPath,
+    declaration: &MountDeclaration,
+) -> Result<(), ValidationError> {
+    if !prepared.path.starts_with('/') || prepared.path.contains("..") {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidPreparedPath,
+            format!("invalid prepared target path: {}", prepared.path),
+        ));
+    }
+    if prepared.path != declaration.target_path {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidPreparedPath,
+            format!(
+                "prepared target path must match mount target: {} != {}",
+                prepared.path, declaration.target_path
+            ),
+        ));
+    }
+    if (prepared.owner.is_some() || prepared.group.is_some() || prepared.mode.is_some())
+        && !prepared.service_consumed
+    {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidPreparedOwnership,
+            format!(
+                "prepared target ownership requires service-consumed path: {}",
+                prepared.path
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_mount_dependency(
+    dependency: &MountDependency,
+    declarations: &HashMap<&str, &MountDeclaration>,
+    selected_services: &HashSet<&str>,
+) -> Result<(), ValidationError> {
+    if !selected_services.is_empty() && !selected_services.contains(dependency.service_name.as_str()) {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidMountOwnershipScope,
+            format!(
+                "mount dependency service outside selected services: {}",
+                dependency.service_name
+            ),
+        ));
+    }
+    if dependency.path_dependency_mode != PathDependencyMode::RequiresMountsFor {
+        return Err(ValidationError::new(
+            ValidationErrorKind::ConflictingMountDefinition,
+            format!(
+                "unsupported path dependency mode for service {}",
+                dependency.service_name
+            ),
+        ));
+    }
+    if dependency.unit_dependency_mode != UnitDependencyMode::AfterAndRequires {
+        return Err(ValidationError::new(
+            ValidationErrorKind::ConflictingMountDefinition,
+            format!(
+                "unsupported unit dependency mode for service {}",
+                dependency.service_name
+            ),
+        ));
+    }
+    if dependency.mount_ids.is_empty() {
+        return Err(ValidationError::new(
+            ValidationErrorKind::MissingMountReference,
+            format!("service {} declares no mount ids", dependency.service_name),
+        ));
+    }
+    for mount_id in &dependency.mount_ids {
+        let declaration = declarations.get(mount_id.as_str()).ok_or_else(|| {
+            ValidationError::new(
+                ValidationErrorKind::MissingMountReference,
+                format!(
+                    "service {} references unknown mount declaration: {}",
+                    dependency.service_name, mount_id
+                ),
+            )
+        })?;
+        if !declaration
+            .ownership_scope
+            .iter()
+            .any(|service| service == &dependency.service_name)
+        {
+            return Err(ValidationError::new(
+                ValidationErrorKind::InvalidMountOwnershipScope,
+                format!(
+                    "service {} is outside ownership scope for mount {}",
+                    dependency.service_name, mount_id
+                ),
+            ));
+        }
+    }
+    for path in &dependency.consumed_paths {
+        if !path.starts_with('/') {
+            return Err(ValidationError::new(
+                ValidationErrorKind::InvalidMountTarget,
+                format!("invalid consumed path: {}", path),
             ));
         }
     }

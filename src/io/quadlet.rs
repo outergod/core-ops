@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::core::unit::{render_automount_unit, render_mount_unit};
+use crate::core::types::MountDeclaration;
 use crate::core::types::{EnabledState, QuadletType, RestartPolicy, Workload};
 
 pub(crate) const SOCKET_MANAGED_MARKER: &str = "# managed-by: core-ops";
@@ -108,6 +110,8 @@ pub(crate) fn parse_quadlet_name(file_name: &str) -> Result<(String, QuadletType
         "pod" => QuadletType::Pod,
         "volume" => QuadletType::Volume,
         "network" => QuadletType::Network,
+        "mount" => QuadletType::Mount,
+        "automount" => QuadletType::Automount,
         _ => return Err(QuadletError::UnsupportedExtension(ext.to_string())),
     };
 
@@ -119,4 +123,12 @@ pub(crate) fn normalize_socket_contents(contents: &str) -> String {
         return contents.to_string();
     }
     format!("{SOCKET_MANAGED_MARKER}\n{contents}")
+}
+
+pub fn render_native_mount_units(declaration: &MountDeclaration) -> Vec<(String, String)> {
+    let mut units = vec![render_mount_unit(declaration)];
+    if let Some(automount) = render_automount_unit(declaration) {
+        units.push(automount);
+    }
+    units
 }
