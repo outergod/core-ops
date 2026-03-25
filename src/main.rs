@@ -5,6 +5,7 @@ use core_ops::cli::agent as agent_cmd;
 use core_ops::build_info::{BUILD_REVISION, BUILD_TIME, BUILD_TREE_STATE};
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::ReconcileDependencies;
+use core_ops::core::types::RunStatus;
 use core_ops::io::{audit as audit_io, observed, repo};
 use core_ops::io::state::{
     read_persisted_state, resolve_state_file, CONTROLLER_BUILD_TIME_ENV, CONTROLLER_REVISION_ENV,
@@ -104,6 +105,9 @@ fn run(cli: Cli) -> Result<(), CoreError> {
 
             println!("{}", report);
             println!("{}", run.summary);
+            if run.status == RunStatus::Failure {
+                std::process::exit(1);
+            }
             Ok(())
         }
         Commands::Agent(args) => {
@@ -146,6 +150,9 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let output = agent_cmd::run_agent(&config)?;
             println!("{}", output.report);
             println!("{}", output.run.summary);
+            if output.run.status == RunStatus::Failure {
+                std::process::exit(1);
+            }
             Ok(())
         }
         Commands::Status(args) => {
