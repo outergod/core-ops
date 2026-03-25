@@ -402,6 +402,87 @@ fn apply_accepts_existing_directory_mountpoint_without_mutating_it() {
     assert!(systemd_dir.join("var-lib-immich.mount").exists());
 }
 
+#[test]
+fn apply_skips_prepare_for_existing_managed_mount_units() {
+    let _env_lock = path_lock().lock().expect("lock env");
+    let temp = std::env::temp_dir().join(format!(
+        "core_ops_mount_skip_prepare_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&temp).expect("temp dir");
+    let quadlet_dir = temp.join("quadlets");
+    let systemd_dir = temp.join("systemd");
+    fs::create_dir_all(&quadlet_dir).expect("quadlet dir");
+    fs::create_dir_all(&systemd_dir).expect("systemd dir");
+    std::env::set_var("CORE_OPS_SYSTEMD_UNIT_DIR", &systemd_dir);
+    let _guard = EnvGuard;
+
+    let mountpoint = temp.join("var/lib/immich");
+    let mount_unit = systemd_dir.join("var-lib-immich.mount");
+    fs::write(&mount_unit, "[Mount]\nWhere=/old/path\n").expect("seed old mount unit");
+    let old_contents = fs::read_to_string(&mount_unit).expect("read old mount unit");
+
+    let desired = DesiredState {
+        repository_ref: "repo".to_string(),
+        revision_id: "rev".to_string(),
+        workloads: vec![Workload {
+            name: "var-lib-immich".to_string(),
+            quadlet_type: QuadletType::Mount,
+            quadlet_contents: format!("[Mount]\nWhere={}\n", mountpoint.display()),
+            systemd_unit_name: "var-lib-immich.mount".to_string(),
+            enabled_state: EnabledState::Enabled,
+            restart_policy: RestartPolicy::Always,
+        }],
+        mount_declarations: vec![MountDeclaration {
+            id: "immich".to_string(),
+            target_path: mountpoint.to_string_lossy().to_string(),
+            source: "nas:/media".to_string(),
+            fstype: "nfs".to_string(),
+            mount_options: vec!["rw".to_string()],
+            network_backed: true,
+            automount: false,
+            verification_mode: MountVerificationMode::UnitAndPath,
+            ownership_scope: Vec::new(),
+            prepared_path: Some(core_ops::core::types::PreparedTargetPath {
+                path: mountpoint.to_string_lossy().to_string(),
+                create_if_missing: true,
+                owner: None,
+                group: None,
+                mode: None,
+                service_consumed: false,
+            }),
+        }],
+        mount_dependencies: Vec::new(),
+        managed_config_paths: Vec::new(),
+        managed_config_roots: Vec::new(),
+        invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
+        boundaries: Boundaries {
+            scopes: vec![BoundaryScope::QuadletSystemd],
+        },
+    };
+    let plan = ReconciliationPlan {
+        plan_id: "plan:test".to_string(),
+        desired_revision_id: "rev".to_string(),
+        observed_revision_id: None,
+        actions: vec![
+            action(PlanActionType::PreparePath, mountpoint.to_string_lossy().as_ref()),
+            action(PlanActionType::WriteQuadlet, "var-lib-immich.mount"),
+        ],
+        safety_checks: Vec::new(),
+        expected_outcomes: Vec::new(),
+    };
+
+    apply_plan_with_desired(&plan, &desired, &quadlet_dir, false).expect("apply");
+
+    assert_ne!(
+        fs::read_to_string(&mount_unit).expect("read rewritten mount unit"),
+        old_contents
+    );
+}
+
 fn action(action_type: PlanActionType, target: &str) -> PlanAction {
     PlanAction {
         action_type,

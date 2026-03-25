@@ -85,6 +85,10 @@ pub fn apply_plan_with_desired(
     for action in &plan.actions {
         match &action.action_type {
             PlanActionType::PreparePath => {
+                if should_skip_prepare_path(&desired.mount_declarations, &action.target) {
+                    files_written.push(action.target.clone());
+                    continue;
+                }
                 ensure_mountpoint_path(&action.target)?;
                 files_written.push(action.target.clone());
             }
@@ -264,6 +268,9 @@ fn prepare_target_paths(mounts: &[MountDeclaration]) -> Result<(), ApplyError> {
             continue;
         };
         if prepared.create_if_missing {
+            if should_skip_prepare_for_mount(mount) {
+                continue;
+            }
             ensure_mountpoint_path(&prepared.path)?;
         } else if !Path::new(&prepared.path).exists() {
             return Err(ApplyError::SystemdCommandFailed(format!(
@@ -273,6 +280,34 @@ fn prepare_target_paths(mounts: &[MountDeclaration]) -> Result<(), ApplyError> {
         }
     }
     Ok(())
+}
+
+fn should_skip_prepare_path(mounts: &[MountDeclaration], target_path: &str) -> bool {
+    mounts.iter().any(|mount| {
+        mount.target_path == target_path
+            || mount
+                .prepared_path
+                .as_ref()
+                .map(|prepared| prepared.path == target_path)
+                .unwrap_or(false)
+    }) && mounts.iter().any(|mount| {
+        (mount.target_path == target_path
+            || mount
+                .prepared_path
+                .as_ref()
+                .map(|prepared| prepared.path == target_path)
+                .unwrap_or(false))
+            && should_skip_prepare_for_mount(mount)
+    })
+}
+
+fn should_skip_prepare_for_mount(mount: &MountDeclaration) -> bool {
+    let unit_dir = systemd_unit_dir();
+    unit_dir.join(mount.mount_unit_name()).exists()
+        || mount
+            .automount_unit_name()
+            .map(|unit_name| unit_dir.join(unit_name).exists())
+            .unwrap_or(false)
 }
 
 fn ensure_mountpoint_path(path: &str) -> Result<(), ApplyError> {
