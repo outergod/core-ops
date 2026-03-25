@@ -12,6 +12,14 @@ pub fn verify_state(desired: &DesiredState, observed: &ObservedState) -> Vec<Ver
         .iter()
         .map(|mount| (mount.mount_unit_name(), mount.clone()))
         .collect();
+    let automount_map: BTreeMap<String, MountDeclaration> = desired
+        .mount_declarations
+        .iter()
+        .filter_map(|mount| {
+            mount.automount_unit_name()
+                .map(|automount_unit| (automount_unit, mount.clone()))
+        })
+        .collect();
     desired
         .workloads
         .iter()
@@ -26,6 +34,7 @@ pub fn verify_state(desired: &DesiredState, observed: &ObservedState) -> Vec<Ver
                 workload.quadlet_type.clone(),
                 &workload.systemd_unit_name,
                 mount_map.get(&workload.systemd_unit_name),
+                automount_map.get(&workload.systemd_unit_name),
                 observed,
             )
         })
@@ -36,6 +45,7 @@ fn verify_workload(
     quadlet_type: QuadletType,
     unit_file: &str,
     mount: Option<&MountDeclaration>,
+    automount: Option<&MountDeclaration>,
     observed: &ObservedState,
 ) -> VerificationResult {
     let unit_name = systemd_unit_for_quadlet_file(unit_file);
@@ -48,6 +58,32 @@ fn verify_workload(
         (QuadletType::Volume, Some(_)) => success(unit_name),
         (QuadletType::Volume, None) => failure(unit_name, "volume unit not found"),
         (QuadletType::Mount, Some(unit)) => {
+            if let Some(mount) = mount {
+                if mount.automount && unit.active_state != UnitActiveState::Active {
+                    let Some(automount_unit_name) = mount.automount_unit_name() else {
+                        return failure(unit_name, "automount declaration missing");
+                    };
+                    let automount_unit = observed
+                        .units
+                        .iter()
+                        .find(|unit| unit.unit_name == automount_unit_name);
+                    return match automount_unit {
+                        Some(automount_unit)
+                            if automount_unit.active_state == UnitActiveState::Active =>
+                        {
+                            success(unit_name)
+                        }
+                        Some(automount_unit) => failure(
+                            unit_name,
+                            &format!(
+                                "blocked: automount unit not active: {:?}",
+                                automount_unit.active_state
+                            ),
+                        ),
+                        None => failure(unit_name, "blocked: automount unit not found"),
+                    };
+                }
+            }
             if unit.active_state != UnitActiveState::Active {
                 return failure(unit_name, &format!("blocked: unit not active: {:?}", unit.active_state));
             }
@@ -61,6 +97,7 @@ fn verify_workload(
             }
         }
         (QuadletType::Automount, Some(unit)) => {
+            let _ = automount;
             if unit.active_state == UnitActiveState::Active {
                 success(unit_name)
             } else {

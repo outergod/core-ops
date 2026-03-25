@@ -221,6 +221,62 @@ fn render_automount_unit_and_verify_active_automount() {
     assert_eq!(results[0].status, VerificationStatus::Success);
 }
 
+#[test]
+fn verify_automount_backed_mount_accepts_inactive_mount_when_automount_is_active() {
+    let mount = MountDeclaration {
+        id: "immich-media".to_string(),
+        target_path: "/srv/immich/media".to_string(),
+        source: "nas:/media".to_string(),
+        fstype: "nfs".to_string(),
+        mount_options: vec!["rw".to_string()],
+        network_backed: true,
+        automount: true,
+        verification_mode: MountVerificationMode::UnitAndPath,
+        ownership_scope: vec!["immich".to_string()],
+        prepared_path: None,
+    };
+    let desired = DesiredState {
+        repository_ref: "repo".to_string(),
+        revision_id: "rev".to_string(),
+        workloads: vec![
+            workload(
+                "srv-immich-media",
+                QuadletType::Mount,
+                "srv-immich-media.mount",
+            ),
+            workload(
+                "srv-immich-media",
+                QuadletType::Automount,
+                "srv-immich-media.automount",
+            ),
+        ],
+        mount_declarations: vec![mount],
+        mount_dependencies: Vec::new(),
+        managed_config_paths: Vec::new(),
+        managed_config_roots: Vec::new(),
+        invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
+        boundaries: Boundaries {
+            scopes: vec![BoundaryScope::QuadletSystemd],
+        },
+    };
+    let observed = observed_state(vec![
+        ObservedUnit {
+            unit_name: "srv-immich-media.mount".to_string(),
+            active_state: UnitActiveState::Inactive,
+            enabled_state: EnabledState::Enabled,
+        },
+        ObservedUnit {
+            unit_name: "srv-immich-media.automount".to_string(),
+            active_state: UnitActiveState::Active,
+            enabled_state: EnabledState::Enabled,
+        },
+    ]);
+
+    let results = verify_state(&desired, &observed);
+    assert_eq!(results.len(), 2);
+    assert!(results.iter().all(|result| result.status == VerificationStatus::Success));
+}
+
 struct MountInfoGuard;
 
 impl Drop for MountInfoGuard {
