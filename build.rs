@@ -5,7 +5,6 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/index");
-    println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
     println!("cargo:rerun-if-env-changed=CORE_OPS_BUILD_REVISION");
     println!("cargo:rerun-if-env-changed=CORE_OPS_BUILD_TIME");
     println!("cargo:rerun-if-env-changed=CORE_OPS_TREE_STATE");
@@ -37,11 +36,6 @@ fn env_or_build_time() -> Option<String> {
     std::env::var("CORE_OPS_BUILD_TIME")
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .or_else(|| {
-            std::env::var("SOURCE_DATE_EPOCH")
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-        })
         .or_else(|| run_command(&["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]))
 }
 
