@@ -1,11 +1,12 @@
 use core_ops::core::types::{
-    Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, MountDeclaration,
-    MountVerificationMode, ObservedState, ObservedUnit, PathDependencyMode, QuadletType,
-    RestartPolicy, ServiceDependencyEdit, UnitActiveState, UnitDependencyMode,
-    VerificationStatus, Workload,
+    Boundaries, BoundaryScope, ConvergenceStatus, DesiredState, EnabledState, HostInfo, Invariant,
+    MountDeclaration, MountVerificationMode, ObservedState, ObservedUnit, PathDependencyMode,
+    QuadletType, RestartPolicy, ServiceDependencyEdit, UnitActiveState, UnitDependencyMode,
+    VerificationResult, VerificationStatus, Workload,
 };
 use core_ops::core::unit::{apply_service_mount_dependencies, render_automount_unit, render_mount_unit};
-use core_ops::core::verify::verify_state;
+use core_ops::core::retry::build_retry_observation;
+use core_ops::core::verify::{evaluate_convergence, verify_state};
 
 fn workload(name: &str, quadlet_type: QuadletType, unit: &str) -> Workload {
     Workload {
@@ -40,7 +41,10 @@ fn observed_state(units: Vec<ObservedUnit>) -> ObservedState {
         units,
         workloads: Vec::new(),
         last_reconcile_id: None,
-        host_info: None,
+        host_info: Some(HostInfo {
+            hostname: "alpha".to_string(),
+            os_id: "fedora".to_string(),
+        }),
     }
 }
 
@@ -332,4 +336,55 @@ impl Drop for MountInfoGuard {
     fn drop(&mut self) {
         std::env::remove_var("CORE_OPS_MOUNTINFO_PATH");
     }
+}
+
+#[test]
+fn convergence_status_classifies_repeated_failure_and_honors_retry_budget() {
+    let desired = desired_state(vec![workload("alpha", QuadletType::Container, "alpha.container")]);
+    let observed = observed_state(vec![ObservedUnit {
+        unit_name: "alpha.service".to_string(),
+        active_state: UnitActiveState::Inactive,
+        enabled_state: EnabledState::Enabled,
+    }]);
+    let verification_results = verify_state(&desired, &observed);
+    let history = vec![
+        build_retry_observation(1, &verification_results),
+        build_retry_observation(2, &verification_results),
+        build_retry_observation(3, &verification_results),
+    ];
+
+    let convergence = evaluate_convergence(&desired, &observed, &history, 3);
+
+    assert_eq!(convergence.status, ConvergenceStatus::RepeatedFailure);
+    assert_eq!(convergence.attempt_count, 3);
+    assert!(!convergence.can_continue);
+}
+
+#[test]
+fn convergence_status_classifies_blocked_and_success_cases() {
+    let desired = desired_state(vec![workload("alpha", QuadletType::Container, "alpha.container")]);
+    let blocked_observed = observed_state(vec![ObservedUnit {
+        unit_name: "alpha.service".to_string(),
+        active_state: UnitActiveState::Inactive,
+        enabled_state: EnabledState::Enabled,
+    }]);
+    let blocked_history = vec![build_retry_observation(
+        1,
+        &[VerificationResult {
+            target: "alpha.service".to_string(),
+            status: VerificationStatus::Failure,
+            details: Some("blocked: unit not active".to_string()),
+        }],
+    )];
+    let blocked = evaluate_convergence(&desired, &blocked_observed, &blocked_history, 3);
+    assert_eq!(blocked.status, ConvergenceStatus::Blocked);
+
+    let success_observed = observed_state(vec![ObservedUnit {
+        unit_name: "alpha.service".to_string(),
+        active_state: UnitActiveState::Active,
+        enabled_state: EnabledState::Enabled,
+    }]);
+    let success_history = vec![build_retry_observation(1, &verify_state(&desired, &success_observed))];
+    let success = evaluate_convergence(&desired, &success_observed, &success_history, 3);
+    assert_eq!(success.status, ConvergenceStatus::Success);
 }

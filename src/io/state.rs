@@ -10,7 +10,9 @@ use crate::core::reconcile::{
 };
 use crate::core::types::{
     ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState,
-    ReconciliationProvenance, ReconciliationStatus, TreeState,
+    DeterministicConvergenceRecord, DeterministicPersistedState, ReconciliationProvenance,
+    ReconciliationStatus, RetainedAppliedSnapshot, RollbackEligibility, RollbackTargetCandidate,
+    TreeState,
 };
 
 pub const STATE_FILE_ENV: &str = "CORE_OPS_STATE_FILE";
@@ -19,6 +21,7 @@ pub const CONTROLLER_VERSION_ENV: &str = "CORE_OPS_CONTROLLER_VERSION";
 pub const CONTROLLER_REVISION_ENV: &str = "CORE_OPS_CONTROLLER_REVISION";
 pub const CONTROLLER_BUILD_TIME_ENV: &str = "CORE_OPS_CONTROLLER_BUILD_TIME";
 pub const CONTROLLER_TREE_STATE_ENV: &str = "CORE_OPS_CONTROLLER_TREE_STATE";
+pub const DETERMINISTIC_STATE_FILE_NAME: &str = "deterministic-state.json";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReconciliationAttemptHandle {
@@ -244,4 +247,153 @@ fn timestamp_string() -> String {
         Ok(duration) => duration.as_secs().to_string(),
         Err(_) => "0".to_string(),
     }
+}
+
+pub fn default_deterministic_state_path() -> PathBuf {
+    default_state_file_path()
+        .parent()
+        .unwrap_or_else(|| Path::new("/var/lib/core-ops"))
+        .join(DETERMINISTIC_STATE_FILE_NAME)
+}
+
+pub fn read_deterministic_state(path: &Path) -> Result<Option<DeterministicPersistedState>, StateError> {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(StateError::Io(err.to_string())),
+    };
+    let state = serde_json::from_str(&contents)
+        .map_err(|err| StateError::Serialization(err.to_string()))?;
+    Ok(Some(state))
+}
+
+pub fn write_deterministic_state(
+    path: &Path,
+    state: &DeterministicPersistedState,
+) -> Result<(), StateError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| StateError::Io(format!("state path has no parent: {}", path.display())))?;
+    fs::create_dir_all(parent).map_err(|err| StateError::Io(err.to_string()))?;
+    let body =
+        serde_json::to_vec_pretty(state).map_err(|err| StateError::Serialization(err.to_string()))?;
+    let mut temp =
+        NamedTempFile::new_in(parent).map_err(|err| StateError::Io(err.to_string()))?;
+    use std::io::Write;
+    temp.write_all(&body)
+        .and_then(|_| temp.flush())
+        .map_err(|err| StateError::Io(err.to_string()))?;
+    temp.persist(path)
+        .map(|_| ())
+        .map_err(|err| StateError::Io(err.error.to_string()))
+}
+
+pub fn resolve_rollback_target(
+    state: &DeterministicPersistedState,
+    scope_id: &str,
+    target_revision_id: &str,
+) -> RollbackTargetCandidate {
+    match state
+        .retained_snapshots
+        .iter()
+        .find(|snapshot| snapshot.revision_id == target_revision_id)
+    {
+        None => RollbackTargetCandidate {
+            target_revision_id: target_revision_id.to_string(),
+            scope_id: scope_id.to_string(),
+            eligibility: RollbackEligibility::MissingSnapshot,
+            reason: "retained successful snapshot not found".to_string(),
+        },
+        Some(snapshot) if snapshot.scope_id != scope_id => RollbackTargetCandidate {
+            target_revision_id: target_revision_id.to_string(),
+            scope_id: scope_id.to_string(),
+            eligibility: RollbackEligibility::IncompatibleScope,
+            reason: format!(
+                "retained snapshot scope mismatch: expected {} but found {}",
+                scope_id, snapshot.scope_id
+            ),
+        },
+        Some(snapshot) if !snapshot.retained => RollbackTargetCandidate {
+            target_revision_id: target_revision_id.to_string(),
+            scope_id: scope_id.to_string(),
+            eligibility: RollbackEligibility::Expired,
+            reason: "retained snapshot expired from rollback window".to_string(),
+        },
+        Some(_) => RollbackTargetCandidate {
+            target_revision_id: target_revision_id.to_string(),
+            scope_id: scope_id.to_string(),
+            eligibility: RollbackEligibility::Eligible,
+            reason: "retained successful snapshot is rollback-eligible".to_string(),
+        },
+    }
+}
+
+pub fn retained_snapshot_for_target<'a>(
+    state: &'a DeterministicPersistedState,
+    scope_id: &str,
+    target_revision_id: &str,
+) -> Option<&'a RetainedAppliedSnapshot> {
+    state.retained_snapshots.iter().find(|snapshot| {
+        snapshot.revision_id == target_revision_id && snapshot.scope_id == scope_id && snapshot.retained
+    })
+}
+
+pub fn latest_retained_snapshot_for_scope<'a>(
+    state: &'a DeterministicPersistedState,
+    scope_id: &str,
+) -> Option<&'a RetainedAppliedSnapshot> {
+    state
+        .retained_snapshots
+        .iter()
+        .rev()
+        .find(|snapshot| snapshot.scope_id == scope_id && snapshot.retained)
+}
+
+pub fn retain_successful_snapshot(
+    state: &mut DeterministicPersistedState,
+    snapshot: RetainedAppliedSnapshot,
+    max_retained: usize,
+) {
+    state.retained_snapshots.retain(|existing| {
+        !(existing.scope_id == snapshot.scope_id && existing.revision_id == snapshot.revision_id)
+    });
+    state.retained_snapshots.push(snapshot);
+
+    let retained_count = state
+        .retained_snapshots
+        .iter()
+        .filter(|entry| entry.retained)
+        .count();
+    if retained_count <= max_retained {
+        return;
+    }
+
+    let mut overflow = retained_count - max_retained;
+    for entry in &mut state.retained_snapshots {
+        if overflow == 0 {
+            break;
+        }
+        if entry.retained {
+            entry.retained = false;
+            overflow -= 1;
+        }
+    }
+}
+
+pub fn record_rollback_outcome(
+    state: &mut DeterministicPersistedState,
+    target: RollbackTargetCandidate,
+    convergence: DeterministicConvergenceRecord,
+) {
+    state.current_scope = convergence.scope_id.clone();
+    state.latest_rollback_target = Some(target);
+    state.latest_convergence = Some(convergence);
+}
+
+pub fn record_convergence_outcome(
+    state: &mut DeterministicPersistedState,
+    convergence: DeterministicConvergenceRecord,
+) {
+    state.current_scope = convergence.scope_id.clone();
+    state.latest_convergence = Some(convergence);
 }

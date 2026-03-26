@@ -34,3 +34,6 @@ mod test_mount_failures;
 mod test_mount_removal;
 mod test_mount_reconcile;
 mod test_mount_reuse;
+mod test_deterministic_planning;
+mod test_rollback;
+mod test_convergence;

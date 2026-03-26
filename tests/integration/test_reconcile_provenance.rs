@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
-use core_ops::io::state::STATE_FILE_ENV;
+use core_ops::io::state::{DETERMINISTIC_STATE_FILE_NAME, STATE_FILE_ENV};
 use crate::integration::env_lock::path_lock;
 
 fn temp_dir(prefix: &str) -> PathBuf {
@@ -215,6 +215,80 @@ fn desired_state_provenance_remains_host_scoped() {
     );
     assert!(snapshot.get("desired_state_by_target").is_none());
     assert!(snapshot.get("targets").is_none());
+}
+
+#[test]
+fn deterministic_apply_persists_convergence_state_next_to_status_snapshot() {
+    let _lock = path_lock().lock().expect("path lock");
+    let repo = temp_dir("core_ops_repo_deterministic_state");
+    let revision = init_git_repo(&repo);
+
+    let temp = temp_dir("core_ops_deterministic_state");
+    fs::create_dir_all(&temp).expect("temp dir");
+    write_systemctl_stub(&temp);
+
+    let old_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{}", temp.display(), old_path);
+    std::env::set_var("PATH", new_path);
+    let _guard = PathGuard { previous: old_path };
+
+    let state_file = temp.join("status.json");
+    std::env::set_var(STATE_FILE_ENV, &state_file);
+    let _state_guard = StateFileGuard;
+
+    let host_quadlets = temp.join("host_quadlets");
+    fs::create_dir_all(&host_quadlets).expect("host quadlets");
+
+    let (result, _report, _plan) = core_ops::cli::apply::apply_with_report(
+        repo.to_str().expect("repo path"),
+        "main",
+        &host_quadlets,
+        true,
+        Some(state_file.clone()),
+    )
+    .expect("apply");
+    assert_eq!(result.run.summary, "converged");
+
+    let deterministic_state_path = state_file
+        .parent()
+        .expect("state parent")
+        .join(DETERMINISTIC_STATE_FILE_NAME);
+    let deterministic_snapshot: Value = serde_json::from_str(
+        &fs::read_to_string(&deterministic_state_path).expect("read deterministic snapshot"),
+    )
+    .expect("parse deterministic snapshot");
+
+    assert_eq!(deterministic_snapshot["schema_version"].as_u64(), Some(1));
+    assert_eq!(
+        deterministic_snapshot["latest_convergence"]["desired_revision_id"].as_str(),
+        Some(revision.as_str())
+    );
+    assert_eq!(
+        deterministic_snapshot["latest_convergence"]["status"].as_str(),
+        Some("success")
+    );
+    assert_eq!(
+        deterministic_snapshot["latest_convergence"]["can_continue"].as_bool(),
+        Some(true)
+    );
+    assert_eq!(
+        deterministic_snapshot["current_scope"],
+        deterministic_snapshot["latest_convergence"]["scope_id"]
+    );
+    assert_eq!(
+        deterministic_snapshot["retained_snapshots"]
+            .as_array()
+            .map(|entries| entries.len()),
+        Some(1)
+    );
+    assert_eq!(
+        deterministic_snapshot["retained_snapshots"][0]["revision_id"].as_str(),
+        Some(revision.as_str())
+    );
+    assert_eq!(
+        deterministic_snapshot["retained_snapshots"][0]["retained"].as_bool(),
+        Some(true)
+    );
 }
 
 struct PathGuard {

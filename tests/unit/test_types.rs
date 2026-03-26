@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 
 use core_ops::core::types::{
-    Boundaries, BoundaryScope, EnabledState, Invariant, MountDeclaration, MountDependency,
-    MountVerificationMode, PathDependencyMode, PreparedTargetPath, QuadletType, RestartPolicy,
-    UnitDependencyMode, Workload,
+    Boundaries, BoundaryScope, ConvergenceStatus, DependencyEdgeKind,
+    DeterministicPersistedState, EnabledState, Invariant, ManagedObjectKind, MountDeclaration,
+    MountDependency, MountVerificationMode, NormalizedManagedObject, NormalizedSnapshot,
+    PathDependencyMode, PreparedTargetPath, QuadletType, RestartPolicy, RollbackEligibility,
+    RollbackTargetCandidate, RuntimeVerificationSignal, SemanticDependencyEdge,
+    SemanticDependencyGraph, SemanticDependencyNode, UnitDependencyMode, Workload,
 };
 use core_ops::core::unit::systemd_unit_for_quadlet_file;
 use core_ops::io::quadlet::read_quadlet_dir;
@@ -116,6 +119,71 @@ fn quadlet_runtime_unit_names_follow_quadlet_rules() {
         "immich-network.service"
     );
     assert_eq!(systemd_unit_for_quadlet_file("pod.pod"), "pod-pod.service");
+}
+
+#[test]
+fn deterministic_reconciliation_types_are_explicit() {
+    let snapshot = NormalizedSnapshot {
+        revision_id: Some("rev-1".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![NormalizedManagedObject {
+            object_id: "alpha.container".to_string(),
+            object_kind: ManagedObjectKind::QuadletResource,
+            material_fields: Default::default(),
+            dependency_refs: vec!["config:/etc/alpha/env".to_string()],
+        }],
+    };
+    let graph = SemanticDependencyGraph {
+        nodes: vec![SemanticDependencyNode {
+            object_id: "alpha.container".to_string(),
+            object_kind: ManagedObjectKind::QuadletResource,
+            ordering_key: "alpha.container".to_string(),
+        }],
+        edges: vec![SemanticDependencyEdge {
+            from_object_id: "config:/etc/alpha/env".to_string(),
+            to_object_id: "alpha.container".to_string(),
+            edge_kind: DependencyEdgeKind::Explicit,
+            reason: "rendered config precedes container".to_string(),
+        }],
+    };
+    let rollback = RollbackTargetCandidate {
+        target_revision_id: "rev-0".to_string(),
+        scope_id: snapshot.scope_id.clone(),
+        eligibility: RollbackEligibility::Eligible,
+        reason: "retained successful snapshot".to_string(),
+    };
+    let signal = RuntimeVerificationSignal {
+        object_id: "alpha.container".to_string(),
+        unit_name: Some("alpha.service".to_string()),
+        active_state: Some("active".to_string()),
+        details: None,
+    };
+    let persisted = DeterministicPersistedState {
+        schema_version: 1,
+        current_scope: snapshot.scope_id.clone(),
+        retained_snapshots: Vec::new(),
+        latest_convergence: None,
+        latest_rollback_target: Some(rollback),
+    };
+
+    assert_eq!(snapshot.objects.len(), 1);
+    assert_eq!(graph.edges[0].edge_kind, DependencyEdgeKind::Explicit);
+    assert_eq!(signal.active_state.as_deref(), Some("active"));
+    assert_eq!(persisted.current_scope, "host:alpha");
+}
+
+#[test]
+fn convergence_status_covers_foundational_outcomes() {
+    let statuses = [
+        ConvergenceStatus::Success,
+        ConvergenceStatus::Partial,
+        ConvergenceStatus::Blocked,
+        ConvergenceStatus::RepeatedFailure,
+        ConvergenceStatus::Oscillation,
+        ConvergenceStatus::Failed,
+    ];
+
+    assert_eq!(statuses.len(), 6);
 }
 
 fn temp_dir(prefix: &str) -> PathBuf {

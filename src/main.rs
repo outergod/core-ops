@@ -60,6 +60,8 @@ fn run(cli: Cli) -> Result<(), CoreError> {
         Commands::Apply(args) => {
             let repo_source = args.repo;
             let rev = args.rev;
+            let rollback_to = args.rollback_to;
+            let rollback_plan_only = args.rollback_plan_only;
             let quadlet_dir = args.quadlet_dir;
             let audit_dir = args.audit_dir;
             let state_file = if args.force_no_state {
@@ -71,14 +73,25 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             set_systemd_unit_dir(&args.systemd_unit_dir);
             set_host_override(&args.host);
 
-            let (result, report, plan) =
+            let (result, report, plan) = if let Some(target_revision_id) = rollback_to.as_deref()
+            {
+                apply_cmd::execute_rollback_with_report(
+                    &repo_source,
+                    target_revision_id,
+                    &quadlet_dir,
+                    !no_reload,
+                    state_file.clone(),
+                    rollback_plan_only,
+                )?
+            } else {
                 apply_cmd::apply_with_report(
                     &repo_source,
                     &rev,
                     &quadlet_dir,
                     !no_reload,
                     state_file.clone(),
-                )?;
+                )?
+            };
             let run = result.run;
             let event = core_ops::core::audit::build_audit_event(
                 &run,

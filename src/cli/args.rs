@@ -2,6 +2,27 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
+const PLAN_AFTER_HELP: &str = "Examples:
+  core-ops plan --repo ./repo --rev main
+  core-ops plan --repo ./repo --rev main --host edge-01";
+
+const APPLY_AFTER_HELP: &str = "Examples:
+  core-ops apply --repo ./repo --rev main
+  core-ops apply --repo ./repo --rev main --rollback-to rev-1
+  core-ops apply --repo ./repo --rev main --rollback-to rev-1 --rollback-plan-only
+
+Deterministic reconciliation uses desired, last_applied, and actual state.
+Automatic retry is bounded; repeated failure or oscillation is surfaced in the
+structured convergence output instead of retrying indefinitely.";
+
+const STATUS_AFTER_HELP: &str = "Examples:
+  core-ops status
+  core-ops status --state-file /var/lib/core-ops/status.json
+
+Status output reads the canonical persisted provenance snapshot. Deterministic
+reconciliation convergence details are reported alongside the structured apply
+and audit flows.";
+
 #[derive(Parser, Debug)]
 #[command(
     name = "core-ops",
@@ -16,12 +37,15 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Compute a reconciliation plan, including native .mount/.automount artifacts with minimal [X-CoreOps] metadata and generated dependency semantics.
+    #[command(after_help = PLAN_AFTER_HELP)]
     Plan(PlanArgs),
     /// Apply a reconciliation plan, including CreateMountpoint-driven mountpoint preparation and mount-aware native unit activation.
+    #[command(after_help = APPLY_AFTER_HELP)]
     Apply(ApplyArgs),
     /// Run the agent once (intended for systemd service execution).
     Agent(AgentArgs),
     /// Display canonical persisted provenance from a status snapshot, treating invalid or missing snapshots as absent.
+    #[command(after_help = STATUS_AFTER_HELP)]
     Status(StatusArgs),
 }
 
@@ -78,6 +102,12 @@ pub struct ApplyArgs {
     /// Skip systemd daemon-reload after applying changes.
     #[arg(long)]
     pub no_reload: bool,
+    /// Roll back to a previously retained successful revision.
+    #[arg(long)]
+    pub rollback_to: Option<String>,
+    /// Compute the rollback plan without executing side effects.
+    #[arg(long, requires = "rollback_to")]
+    pub rollback_plan_only: bool,
 }
 
 #[derive(Args, Debug)]

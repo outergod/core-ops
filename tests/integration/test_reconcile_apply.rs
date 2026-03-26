@@ -4,9 +4,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::{reconcile_apply, ReconcileDependencies};
+use core_ops::core::types::{
+    ConvergenceStatus, DeterministicConvergenceRecord, DeterministicPersistedState,
+    NormalizedSnapshot, RetainedAppliedSnapshot, RollbackEligibility, RollbackTargetCandidate,
+};
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::read_observed_state;
 use core_ops::io::repo::load_desired_state;
+use core_ops::io::state::record_rollback_outcome;
 use crate::integration::env_lock::path_lock;
 
 fn temp_dir(prefix: &str) -> PathBuf {
@@ -147,4 +152,57 @@ fn map_io_error<E: std::fmt::Display>(err: E) -> CoreError {
         class: core_ops::core::types::FailureClass::Apply,
         message: err.to_string(),
     }
+}
+
+#[test]
+fn partial_rollback_progress_recording_preserves_target_and_failure_details() {
+    let mut state = DeterministicPersistedState {
+        schema_version: 1,
+        current_scope: "host:alpha".to_string(),
+        retained_snapshots: vec![RetainedAppliedSnapshot {
+            revision_id: "rev-1".to_string(),
+            scope_id: "host:alpha".to_string(),
+            snapshot: NormalizedSnapshot {
+                revision_id: Some("rev-1".to_string()),
+                scope_id: "host:alpha".to_string(),
+                objects: Vec::new(),
+            },
+            retained: true,
+        }],
+        latest_convergence: None,
+        latest_rollback_target: None,
+    };
+
+    record_rollback_outcome(
+        &mut state,
+        RollbackTargetCandidate {
+            target_revision_id: "rev-1".to_string(),
+            scope_id: "host:alpha".to_string(),
+            eligibility: RollbackEligibility::Eligible,
+            reason: "retained successful snapshot is rollback-eligible".to_string(),
+        },
+        DeterministicConvergenceRecord {
+            desired_revision_id: "rev-1".to_string(),
+            scope_id: "host:alpha".to_string(),
+            status: ConvergenceStatus::Partial,
+            attempt_count: 1,
+            affected_objects: vec!["alpha.service".to_string()],
+            completed_actions: vec!["config:/etc/alpha/env".to_string()],
+            failed_actions: vec!["alpha.service".to_string()],
+            can_continue: true,
+        },
+    );
+
+    assert_eq!(
+        state.latest_rollback_target.as_ref().map(|target| target.target_revision_id.as_str()),
+        Some("rev-1")
+    );
+    assert_eq!(
+        state.latest_convergence.as_ref().map(|record| &record.status),
+        Some(&ConvergenceStatus::Partial)
+    );
+    assert_eq!(
+        state.latest_convergence.as_ref().map(|record| record.failed_actions.len()),
+        Some(1)
+    );
 }

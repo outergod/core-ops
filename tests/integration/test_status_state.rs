@@ -18,7 +18,8 @@ use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::read_observed_state;
 use core_ops::io::repo::load_desired_state;
 use core_ops::io::state::{
-    persist_success_state, read_persisted_state, resolve_state_file, STATE_FILE_ENV,
+    persist_success_state, read_persisted_state, resolve_state_file, DETERMINISTIC_STATE_FILE_NAME,
+    STATE_FILE_ENV,
 };
 
 fn fixture(name: &str) -> String {
@@ -347,6 +348,47 @@ fn status_uses_implicit_state_path_when_no_explicit_path_is_given() {
     assert!(output.contains("\"status\": \"success\""));
 
     let _ = fs::remove_file(state_path);
+}
+
+#[test]
+fn status_appends_deterministic_convergence_and_rollback_summaries_when_present() {
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let state_path = temp_dir("core_ops_status_deterministic").join("status.json");
+    let state_dir = state_path.parent().expect("state dir").to_path_buf();
+    fs::create_dir_all(&state_dir).expect("create state dir");
+    fs::write(&state_path, fixture("valid-success.json")).expect("write state");
+    fs::write(
+        state_dir.join(DETERMINISTIC_STATE_FILE_NAME),
+        r#"{
+  "schema_version": 1,
+  "current_scope": "host:alpha",
+  "retained_snapshots": [],
+  "latest_convergence": {
+    "desired_revision_id": "rev-2",
+    "scope_id": "host:alpha",
+    "status": "repeated_failure",
+    "attempt_count": 3,
+    "affected_objects": ["alpha.service"],
+    "completed_actions": ["config:/etc/alpha/env"],
+    "failed_actions": ["alpha.service"],
+    "can_continue": false
+  },
+  "latest_rollback_target": {
+    "target_revision_id": "rev-1",
+    "scope_id": "host:alpha",
+    "eligibility": "eligible",
+    "reason": "retained successful snapshot is rollback-eligible"
+  }
+}"#,
+    )
+    .expect("write deterministic state");
+
+    let output = render_status(Some(state_path.clone()));
+    assert!(output.contains("convergence scope=host:alpha status=repeated_failure"));
+    assert!(output.contains("rollback target=rev-1 eligibility=eligible"));
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_file(state_dir.join(DETERMINISTIC_STATE_FILE_NAME));
 }
 
 #[test]

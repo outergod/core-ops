@@ -40,6 +40,10 @@ pub enum ValidationErrorKind {
     InvalidMountOwnershipScope,
     InvalidAutomount,
     ConflictingMountDefinition,
+    InvalidObjectIdentity,
+    SemanticDependencyCycle,
+    RollbackIneligible,
+    InvalidRetrySignature,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
