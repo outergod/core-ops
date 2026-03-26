@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::core::types::{
-    DesiredState, EnabledState, ObservedState, ObservedUnit, QuadletType, RestartPolicy,
-    UnitActiveState, Workload,
+    DesiredState, EnabledState, ManagedObjectKind, NormalizedManagedObject, NormalizedSnapshot,
+    ObservedState, ObservedUnit, QuadletType, RestartPolicy, RuntimeVerificationSignal, UnitActiveState,
+    Workload,
 };
 use crate::io::quadlet::{
     normalize_socket_contents, parse_quadlet_name, read_quadlet_dir, QuadletError,
@@ -83,6 +84,55 @@ pub fn read_observed_state(
         last_reconcile_id: None,
         host_info: None,
     })
+}
+
+pub fn build_observed_snapshot(observed: &ObservedState, scope_id: &str) -> NormalizedSnapshot {
+    let mut objects: Vec<NormalizedManagedObject> = observed
+        .workloads
+        .iter()
+        .map(|workload| {
+            let mut material_fields = std::collections::BTreeMap::new();
+            material_fields.insert("unit_name".to_string(), workload.systemd_unit_name.clone());
+            material_fields.insert(
+                "quadlet_type".to_string(),
+                format!("{:?}", workload.quadlet_type).to_lowercase(),
+            );
+            NormalizedManagedObject {
+                object_id: workload.systemd_unit_name.clone(),
+                object_kind: kind_for_quadlet_type(&workload.quadlet_type),
+                material_fields,
+                dependency_refs: Vec::new(),
+            }
+        })
+        .collect();
+    objects.sort_by(|a, b| a.object_id.cmp(&b.object_id));
+    NormalizedSnapshot {
+        revision_id: observed.observed_revision_id.clone(),
+        scope_id: scope_id.to_string(),
+        objects,
+    }
+}
+
+pub fn observed_runtime_signals(observed: &ObservedState) -> Vec<RuntimeVerificationSignal> {
+    observed
+        .units
+        .iter()
+        .map(|unit| RuntimeVerificationSignal {
+            object_id: unit.unit_name.clone(),
+            unit_name: Some(unit.unit_name.clone()),
+            active_state: Some(format!("{:?}", unit.active_state).to_lowercase()),
+            details: None,
+        })
+        .collect()
+}
+
+fn kind_for_quadlet_type(quadlet_type: &QuadletType) -> ManagedObjectKind {
+    match quadlet_type {
+        QuadletType::Mount => ManagedObjectKind::Mount,
+        QuadletType::Automount => ManagedObjectKind::Automount,
+        QuadletType::ConfigFile => ManagedObjectKind::RenderedArtifact,
+        _ => ManagedObjectKind::QuadletResource,
+    }
 }
 
 fn read_native_mount_units(dir: &Path, desired: &DesiredState) -> Result<Vec<Workload>, ObservedError> {

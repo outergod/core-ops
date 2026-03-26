@@ -4,7 +4,10 @@ use core_ops::core::types::{
     PreparedTargetPath, QuadletType, ReconciliationPlan, RestartPolicy, UnitDependencyMode,
     Workload,
 };
-use core_ops::core::validation::{validate_desired_state, validate_mount_model};
+use core_ops::core::validation::{
+    detect_semantic_dependency_cycle, validate_canonical_object_identity, validate_desired_state,
+    validate_mount_model, validate_retry_signature, validate_rollback_candidate,
+};
 use core_ops::core::boundaries::enforce_plan_boundaries;
 
 fn base_desired() -> DesiredState {
@@ -199,4 +202,50 @@ fn rejects_mount_dependency_outside_ownership_scope() {
     )
     .unwrap_err();
     assert!(err.message.contains("outside ownership scope"));
+}
+
+#[test]
+fn canonical_object_identity_rejects_whitespace() {
+    let err = validate_canonical_object_identity("alpha service").unwrap_err();
+    assert!(err.message.contains("whitespace"));
+}
+
+#[test]
+fn semantic_dependency_cycle_is_detected() {
+    let err = detect_semantic_dependency_cycle(&[
+        ("a".to_string(), "b".to_string()),
+        ("b".to_string(), "a".to_string()),
+    ])
+    .unwrap_err();
+    assert!(err.message.contains("cycle"));
+}
+
+#[test]
+fn rollback_candidate_must_be_retained_and_scope_compatible() {
+    let err = validate_rollback_candidate(
+        &["rev-1".to_string()],
+        "host:alpha",
+        "rev-1",
+        "host:beta",
+        true,
+    )
+    .unwrap_err();
+    assert!(err.message.contains("scope mismatch"));
+
+    let err = validate_rollback_candidate(
+        &["rev-1".to_string()],
+        "host:alpha",
+        "rev-2",
+        "host:alpha",
+        false,
+    )
+    .unwrap_err();
+    assert!(err.message.contains("not retained"));
+}
+
+#[test]
+fn retry_signature_requires_object_set_and_pattern() {
+    let err = validate_retry_signature("missing-parts").unwrap_err();
+    assert!(err.message.contains("invalid retry signature"));
+    assert!(validate_retry_signature("alpha|timeout").is_ok());
 }

@@ -1,6 +1,6 @@
 use core_ops::core::types::{
-    Boundaries, BoundaryScope, DesiredState, Invariant, ReconciliationProvenance,
-    ReconciliationStatus,
+    Boundaries, BoundaryScope, ConvergenceStatus, DesiredState, DeterministicConvergenceRecord,
+    Invariant, ReconciliationProvenance, ReconciliationStatus,
 };
 use core_ops::core::validation::validate_desired_state;
 
@@ -42,4 +42,21 @@ fn in_progress_reconciliation_cannot_have_finished_timestamp() {
     };
 
     assert!(!reconciliation.is_valid());
+}
+
+#[test]
+fn convergence_record_attempts_remain_bounded() {
+    let record = DeterministicConvergenceRecord {
+        desired_revision_id: "rev-1".to_string(),
+        scope_id: "host:alpha".to_string(),
+        status: ConvergenceStatus::RepeatedFailure,
+        attempt_count: 3,
+        affected_objects: vec!["alpha.container".to_string()],
+        completed_actions: Vec::new(),
+        failed_actions: vec!["alpha.container".to_string()],
+        can_continue: false,
+    };
+
+    assert!(record.attempt_count > 0);
+    assert!(!record.can_continue);
 }

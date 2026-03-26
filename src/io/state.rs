@@ -10,7 +10,7 @@ use crate::core::reconcile::{
 };
 use crate::core::types::{
     ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState,
-    ReconciliationProvenance, ReconciliationStatus, TreeState,
+    ReconciliationProvenance, ReconciliationStatus, TreeState, DeterministicPersistedState,
 };
 
 pub const STATE_FILE_ENV: &str = "CORE_OPS_STATE_FILE";
@@ -19,6 +19,7 @@ pub const CONTROLLER_VERSION_ENV: &str = "CORE_OPS_CONTROLLER_VERSION";
 pub const CONTROLLER_REVISION_ENV: &str = "CORE_OPS_CONTROLLER_REVISION";
 pub const CONTROLLER_BUILD_TIME_ENV: &str = "CORE_OPS_CONTROLLER_BUILD_TIME";
 pub const CONTROLLER_TREE_STATE_ENV: &str = "CORE_OPS_CONTROLLER_TREE_STATE";
+pub const DETERMINISTIC_STATE_FILE_NAME: &str = "deterministic-state.json";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReconciliationAttemptHandle {
@@ -244,4 +245,43 @@ fn timestamp_string() -> String {
         Ok(duration) => duration.as_secs().to_string(),
         Err(_) => "0".to_string(),
     }
+}
+
+pub fn default_deterministic_state_path() -> PathBuf {
+    default_state_file_path()
+        .parent()
+        .unwrap_or_else(|| Path::new("/var/lib/core-ops"))
+        .join(DETERMINISTIC_STATE_FILE_NAME)
+}
+
+pub fn read_deterministic_state(path: &Path) -> Result<Option<DeterministicPersistedState>, StateError> {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(StateError::Io(err.to_string())),
+    };
+    let state = serde_json::from_str(&contents)
+        .map_err(|err| StateError::Serialization(err.to_string()))?;
+    Ok(Some(state))
+}
+
+pub fn write_deterministic_state(
+    path: &Path,
+    state: &DeterministicPersistedState,
+) -> Result<(), StateError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| StateError::Io(format!("state path has no parent: {}", path.display())))?;
+    fs::create_dir_all(parent).map_err(|err| StateError::Io(err.to_string()))?;
+    let body =
+        serde_json::to_vec_pretty(state).map_err(|err| StateError::Serialization(err.to_string()))?;
+    let mut temp =
+        NamedTempFile::new_in(parent).map_err(|err| StateError::Io(err.to_string()))?;
+    use std::io::Write;
+    temp.write_all(&body)
+        .and_then(|_| temp.flush())
+        .map_err(|err| StateError::Io(err.to_string()))?;
+    temp.persist(path)
+        .map(|_| ())
+        .map_err(|err| StateError::Io(err.error.to_string()))
 }

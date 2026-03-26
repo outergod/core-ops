@@ -588,3 +588,170 @@ pub enum TreeState {
     Dirty,
     Unknown,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManagedObjectKind {
+    GeneratedUnit,
+    QuadletResource,
+    Mount,
+    Automount,
+    RenderedArtifact,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NormalizedManagedObject {
+    pub object_id: String,
+    pub object_kind: ManagedObjectKind,
+    pub material_fields: BTreeMap<String, String>,
+    pub dependency_refs: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NormalizedSnapshot {
+    pub revision_id: Option<String>,
+    pub scope_id: String,
+    pub objects: Vec<NormalizedManagedObject>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeVerificationSignal {
+    pub object_id: String,
+    pub unit_name: Option<String>,
+    pub active_state: Option<String>,
+    pub details: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticDependencyNode {
+    pub object_id: String,
+    pub object_kind: ManagedObjectKind,
+    pub ordering_key: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DependencyEdgeKind {
+    Explicit,
+    Implicit,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticDependencyEdge {
+    pub from_object_id: String,
+    pub to_object_id: String,
+    pub edge_kind: DependencyEdgeKind,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticDependencyGraph {
+    pub nodes: Vec<SemanticDependencyNode>,
+    pub edges: Vec<SemanticDependencyEdge>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeterministicActionClass {
+    Create,
+    Update,
+    Delete,
+    Replace,
+    NoOp,
+    Blocked,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DriftCategory {
+    ExpectedChange,
+    ExternalDrift,
+    StaleResidue,
+    RuntimeVariance,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StructuredDriftRecord {
+    pub object_id: String,
+    pub category: DriftCategory,
+    pub comparison_basis: String,
+    pub auto_action: bool,
+    pub attention_required: bool,
+    pub details: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeterministicPlannedAction {
+    pub object_id: String,
+    pub classification: DeterministicActionClass,
+    pub reason: String,
+    pub dependency_context: Vec<String>,
+    pub semantic_diff: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeterministicReconciliationPlan {
+    pub desired_revision_id: Option<String>,
+    pub baseline_revision_id: Option<String>,
+    pub scope_id: String,
+    pub actions: Vec<DeterministicPlannedAction>,
+    pub drift_records: Vec<StructuredDriftRecord>,
+    pub graph: SemanticDependencyGraph,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RollbackEligibility {
+    Eligible,
+    MissingSnapshot,
+    IncompatibleScope,
+    Expired,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetainedAppliedSnapshot {
+    pub revision_id: String,
+    pub scope_id: String,
+    pub snapshot: NormalizedSnapshot,
+    pub retained: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RollbackTargetCandidate {
+    pub target_revision_id: String,
+    pub scope_id: String,
+    pub eligibility: RollbackEligibility,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConvergenceStatus {
+    Success,
+    Partial,
+    Blocked,
+    RepeatedFailure,
+    Oscillation,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeterministicConvergenceRecord {
+    pub desired_revision_id: String,
+    pub scope_id: String,
+    pub status: ConvergenceStatus,
+    pub attempt_count: u32,
+    pub affected_objects: Vec<String>,
+    pub completed_actions: Vec<String>,
+    pub failed_actions: Vec<String>,
+    pub can_continue: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeterministicPersistedState {
+    pub schema_version: u32,
+    pub current_scope: String,
+    pub retained_snapshots: Vec<RetainedAppliedSnapshot>,
+    pub latest_convergence: Option<DeterministicConvergenceRecord>,
+    pub latest_rollback_target: Option<RollbackTargetCandidate>,
+}

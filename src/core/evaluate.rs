@@ -4,8 +4,9 @@ use std::path::Path;
 use crate::core::errors::EvaluationError;
 use crate::core::types::{
     ConfigFileSource, DropInSource, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn,
-    EvaluationInput, MountDependency, MountDeclaration, MountVerificationMode, PathDependencyMode,
-    PreparedTargetPath, QuadletType, ServiceDependencyEdit, UnitDependencyMode,
+    EvaluationInput, ManagedObjectKind, MountDependency, MountDeclaration, MountVerificationMode,
+    NormalizedManagedObject, NormalizedSnapshot, PathDependencyMode, PreparedTargetPath, QuadletType,
+    ServiceDependencyEdit, UnitDependencyMode,
     automount_unit_name_for_path, mount_unit_name_for_path,
 };
 use crate::core::unit::apply_service_mount_dependencies;
@@ -17,6 +18,44 @@ pub struct EvaluationOutput {
     pub config_files: Vec<EvaluatedConfigFile>,
     pub mount_declarations: Vec<MountDeclaration>,
     pub mount_dependencies: Vec<MountDependency>,
+}
+
+pub fn build_desired_snapshot(
+    desired_revision_id: &str,
+    scope_id: &str,
+    evaluation: &EvaluationOutput,
+) -> NormalizedSnapshot {
+    let mut objects = Vec::new();
+    for artifact in &evaluation.artifacts {
+        let mut material_fields = BTreeMap::new();
+        material_fields.insert("unit_name".to_string(), artifact.name.clone());
+        material_fields.insert(
+            "quadlet_type".to_string(),
+            format!("{:?}", artifact.quadlet_type).to_lowercase(),
+        );
+        objects.push(NormalizedManagedObject {
+            object_id: artifact.name.clone(),
+            object_kind: desired_object_kind(&artifact.quadlet_type),
+            material_fields,
+            dependency_refs: Vec::new(),
+        });
+    }
+    for config in &evaluation.config_files {
+        let mut material_fields = BTreeMap::new();
+        material_fields.insert("target_path".to_string(), config.target_path.clone());
+        objects.push(NormalizedManagedObject {
+            object_id: config.target_path.clone(),
+            object_kind: ManagedObjectKind::RenderedArtifact,
+            material_fields,
+            dependency_refs: Vec::new(),
+        });
+    }
+    objects.sort_by(|a, b| a.object_id.cmp(&b.object_id));
+    NormalizedSnapshot {
+        revision_id: Some(desired_revision_id.to_string()),
+        scope_id: scope_id.to_string(),
+        objects,
+    }
 }
 
 pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutput, EvaluationError> {
@@ -123,6 +162,14 @@ fn explicit_dependency_units(declaration: &MountDeclaration) -> Vec<String> {
     match declaration.automount_unit_name() {
         Some(automount_unit) => vec![automount_unit, declaration.mount_unit_name()],
         None => vec![declaration.mount_unit_name()],
+    }
+}
+
+fn desired_object_kind(quadlet_type: &QuadletType) -> ManagedObjectKind {
+    match quadlet_type {
+        QuadletType::Mount => ManagedObjectKind::Mount,
+        QuadletType::Automount => ManagedObjectKind::Automount,
+        _ => ManagedObjectKind::QuadletResource,
     }
 }
 

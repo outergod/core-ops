@@ -144,6 +144,103 @@ pub fn validate_mount_model(
     Ok(())
 }
 
+pub fn validate_canonical_object_identity(object_id: &str) -> Result<(), ValidationError> {
+    if object_id.trim().is_empty() {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidObjectIdentity,
+            "object identity must not be empty",
+        ));
+    }
+    if object_id.split_whitespace().count() > 1 {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidObjectIdentity,
+            format!("object identity must not contain whitespace: {}", object_id),
+        ));
+    }
+    Ok(())
+}
+
+pub fn detect_semantic_dependency_cycle(
+    edges: &[(String, String)],
+) -> Result<(), ValidationError> {
+    let mut incoming: HashMap<&str, usize> = HashMap::new();
+    let mut outgoing: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut nodes = HashSet::new();
+
+    for (from, to) in edges {
+        nodes.insert(from.as_str());
+        nodes.insert(to.as_str());
+        outgoing.entry(from.as_str()).or_default().push(to.as_str());
+        *incoming.entry(to.as_str()).or_insert(0) += 1;
+        incoming.entry(from.as_str()).or_insert(0);
+    }
+
+    let mut queue: Vec<&str> = nodes
+        .iter()
+        .copied()
+        .filter(|node| incoming.get(node).copied().unwrap_or(0) == 0)
+        .collect();
+    let mut visited = 0usize;
+
+    while let Some(node) = queue.pop() {
+        visited += 1;
+        if let Some(children) = outgoing.get(node) {
+            for child in children {
+                if let Some(count) = incoming.get_mut(child) {
+                    *count -= 1;
+                    if *count == 0 {
+                        queue.push(child);
+                    }
+                }
+            }
+        }
+    }
+
+    if visited != nodes.len() {
+        return Err(ValidationError::new(
+            ValidationErrorKind::SemanticDependencyCycle,
+            "semantic dependency cycle detected",
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn validate_rollback_candidate(
+    available_revisions: &[String],
+    scope_id: &str,
+    candidate_revision: &str,
+    candidate_scope: &str,
+    retained: bool,
+) -> Result<(), ValidationError> {
+    if candidate_scope != scope_id {
+        return Err(ValidationError::new(
+            ValidationErrorKind::RollbackIneligible,
+            format!(
+                "rollback target scope mismatch: expected {} but got {}",
+                scope_id, candidate_scope
+            ),
+        ));
+    }
+    if !retained || !available_revisions.iter().any(|rev| rev == candidate_revision) {
+        return Err(ValidationError::new(
+            ValidationErrorKind::RollbackIneligible,
+            format!("rollback target is not retained: {}", candidate_revision),
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_retry_signature(signature: &str) -> Result<(), ValidationError> {
+    if signature.trim().is_empty() || signature.split('|').count() < 2 {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidRetrySignature,
+            format!("invalid retry signature: {}", signature),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_mount_declaration(
     declaration: &MountDeclaration,
     selected_services: &HashSet<&str>,

@@ -36,16 +36,16 @@ description: "Task list for deterministic reconciliation"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T007 Define normalized snapshot, dependency graph, planned action, drift, rollback, and convergence types in `src/core/types.rs`
-- [ ] T008 Add deterministic reconciliation, rollback, and non-convergence error variants in `src/core/errors.rs`
-- [ ] T009 Implement validation helpers for canonical object identity, semantic dependency cycles, rollback eligibility, and retry signatures in `src/core/validation.rs`
-- [ ] T010 Extend persisted state handling for retained successful snapshots, rollback metadata, and convergence records in `src/io/state.rs`
-- [ ] T011 Extend observed-state loading to produce normalized actual snapshots and runtime verification signals in `src/io/observed.rs`
-- [ ] T012 Extend desired-state evaluation to emit normalized managed objects and scope metadata in `src/core/evaluate.rs`
-- [ ] T013 Add three-way planner entry points and semantic dependency graph scaffolding in `src/core/planner.rs`
-- [ ] T014 [P] Add unit tests for deterministic reconciliation types and invariants in `tests/unit/test_types.rs`
-- [ ] T015 [P] Add unit tests for validation rules, cycle detection, and retry-signature invariants in `tests/unit/test_validation.rs`
-- [ ] T016 [P] Add unit tests for retained applied snapshot persistence and rollback retention behavior in `tests/unit/test_state_snapshot.rs`
+- [X] T007 Define normalized snapshot, dependency graph, planned action, drift, rollback, and convergence types in `src/core/types.rs`
+- [X] T008 Add deterministic reconciliation, rollback, and non-convergence error variants in `src/core/errors.rs`
+- [X] T009 Implement validation helpers for canonical object identity, semantic dependency cycles, rollback eligibility, and retry signatures in `src/core/validation.rs`
+- [X] T010 Extend persisted state handling for retained successful snapshots, rollback metadata, and convergence records in `src/io/state.rs`
+- [X] T011 Extend observed-state loading to produce normalized actual snapshots and runtime verification signals in `src/io/observed.rs`
+- [X] T012 Extend desired-state evaluation to emit normalized managed objects and scope metadata in `src/core/evaluate.rs`
+- [X] T013 Add three-way planner entry points and semantic dependency graph scaffolding in `src/core/planner.rs`
+- [X] T014 [P] Add unit tests for deterministic reconciliation types and invariants in `tests/unit/test_types.rs`
+- [X] T015 [P] Add unit tests for validation rules, cycle detection, and retry-signature invariants in `tests/unit/test_validation.rs`
+- [X] T016 [P] Add unit tests for retained applied snapshot persistence and rollback retention behavior in `tests/unit/test_state_snapshot.rs`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 

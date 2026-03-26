@@ -2,9 +2,11 @@ use crate::core::boundaries::enforce_plan_boundaries;
 use crate::core::diff::diff_workloads;
 use crate::core::errors::{CoreError, ValidationError};
 use crate::core::types::{
-    DesiredState, DiffItem, DiffKind, FailureClass, GeneratedUnitSet, MountDeclaration,
-    MountDependency, PlanAction, PlanActionType, QuadletType, ReconciliationPlan, SafetyCheck,
-    ServiceDependencyEdit, ObservedState,
+    DependencyEdgeKind, DesiredState, DeterministicActionClass, DeterministicPlannedAction,
+    DeterministicReconciliationPlan, DiffItem, DiffKind, FailureClass, GeneratedUnitSet,
+    MountDeclaration, MountDependency, NormalizedSnapshot, PlanAction, PlanActionType,
+    QuadletType, ReconciliationPlan, SafetyCheck, SemanticDependencyEdge, SemanticDependencyGraph,
+    SemanticDependencyNode, ServiceDependencyEdit, StructuredDriftRecord, DriftCategory, ObservedState,
 };
 use crate::core::validation::validate_desired_state;
 use std::collections::HashSet;
@@ -72,6 +74,93 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
 
     enforce_plan_boundaries(&plan)?;
     Ok(plan)
+}
+
+pub fn build_semantic_dependency_graph(snapshot: &NormalizedSnapshot) -> SemanticDependencyGraph {
+    let mut nodes: Vec<SemanticDependencyNode> = snapshot
+        .objects
+        .iter()
+        .map(|object| SemanticDependencyNode {
+            object_id: object.object_id.clone(),
+            object_kind: object.object_kind.clone(),
+            ordering_key: object.object_id.clone(),
+        })
+        .collect();
+    nodes.sort_by(|a, b| a.ordering_key.cmp(&b.ordering_key));
+
+    let mut edges = Vec::new();
+    for object in &snapshot.objects {
+        for dep in &object.dependency_refs {
+            edges.push(SemanticDependencyEdge {
+                from_object_id: dep.clone(),
+                to_object_id: object.object_id.clone(),
+                edge_kind: DependencyEdgeKind::Explicit,
+                reason: "declared dependency".to_string(),
+            });
+        }
+    }
+    edges.sort_by(|a, b| {
+        (&a.from_object_id, &a.to_object_id, &a.reason).cmp(&(&b.from_object_id, &b.to_object_id, &b.reason))
+    });
+
+    SemanticDependencyGraph { nodes, edges }
+}
+
+pub fn plan_deterministic_reconciliation(
+    desired: &NormalizedSnapshot,
+    last_applied: Option<&NormalizedSnapshot>,
+    actual: &NormalizedSnapshot,
+) -> DeterministicReconciliationPlan {
+    let graph = build_semantic_dependency_graph(desired);
+    let mut desired_ids: Vec<String> = desired.objects.iter().map(|object| object.object_id.clone()).collect();
+    desired_ids.sort();
+    let actual_ids: HashSet<&str> = actual.objects.iter().map(|object| object.object_id.as_str()).collect();
+    let applied_ids: HashSet<&str> = last_applied
+        .map(|snapshot| snapshot.objects.iter().map(|object| object.object_id.as_str()).collect())
+        .unwrap_or_default();
+
+    let mut actions = Vec::new();
+    let mut drift_records = Vec::new();
+
+    for object_id in desired_ids {
+        let classification = if !actual_ids.contains(object_id.as_str()) {
+            DeterministicActionClass::Create
+        } else if !applied_ids.is_empty() && !applied_ids.contains(object_id.as_str()) {
+            DeterministicActionClass::Update
+        } else {
+            DeterministicActionClass::NoOp
+        };
+        if classification != DeterministicActionClass::NoOp {
+            drift_records.push(StructuredDriftRecord {
+                object_id: object_id.clone(),
+                category: if classification == DeterministicActionClass::Create {
+                    DriftCategory::ExpectedChange
+                } else {
+                    DriftCategory::ExternalDrift
+                },
+                comparison_basis: "three_way".to_string(),
+                auto_action: true,
+                attention_required: false,
+                details: "deterministic planner scaffolding".to_string(),
+            });
+        }
+        actions.push(DeterministicPlannedAction {
+            object_id,
+            classification,
+            reason: "deterministic planner scaffolding".to_string(),
+            dependency_context: Vec::new(),
+            semantic_diff: Default::default(),
+        });
+    }
+
+    DeterministicReconciliationPlan {
+        desired_revision_id: desired.revision_id.clone(),
+        baseline_revision_id: last_applied.and_then(|snapshot| snapshot.revision_id.clone()),
+        scope_id: desired.scope_id.clone(),
+        actions,
+        drift_records,
+        graph,
+    }
 }
 
 pub fn plan_mount_units(

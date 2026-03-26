@@ -3,12 +3,15 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use core_ops::core::types::{
-    ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState,
-    ReconciliationProvenance, ReconciliationStatus, TreeState, PERSISTED_PROVENANCE_SCHEMA_VERSION,
+    ControllerProvenance, ConvergenceStatus, DesiredStateProvenance, DeterministicConvergenceRecord,
+    DeterministicPersistedState, ManagedObjectKind, NormalizedManagedObject, NormalizedSnapshot,
+    PersistedProvenanceState, ReconciliationProvenance, ReconciliationStatus, RetainedAppliedSnapshot,
+    RollbackEligibility, RollbackTargetCandidate, TreeState, PERSISTED_PROVENANCE_SCHEMA_VERSION,
 };
 use core_ops::io::state::{
-    default_state_file_path, persist_finished_state, persist_in_progress_state,
-    read_persisted_state, resolve_state_file, write_persisted_state, STATE_FILE_ENV,
+    default_deterministic_state_path, default_state_file_path, persist_finished_state,
+    persist_in_progress_state, read_deterministic_state, read_persisted_state, resolve_state_file,
+    write_deterministic_state, write_persisted_state, STATE_FILE_ENV,
 };
 
 #[test]
@@ -189,6 +192,57 @@ fn state_file_resolution_uses_env_override_before_default() {
     assert_eq!(resolve_state_file(None), path);
 
     std::env::remove_var(STATE_FILE_ENV);
+}
+
+#[test]
+fn deterministic_state_round_trips_with_retained_snapshots() {
+    let path = temp_file("deterministic_state.json");
+    let state = DeterministicPersistedState {
+        schema_version: 1,
+        current_scope: "host:alpha".to_string(),
+        retained_snapshots: vec![RetainedAppliedSnapshot {
+            revision_id: "rev-1".to_string(),
+            scope_id: "host:alpha".to_string(),
+            snapshot: NormalizedSnapshot {
+                revision_id: Some("rev-1".to_string()),
+                scope_id: "host:alpha".to_string(),
+                objects: vec![NormalizedManagedObject {
+                    object_id: "alpha.container".to_string(),
+                    object_kind: ManagedObjectKind::QuadletResource,
+                    material_fields: Default::default(),
+                    dependency_refs: Vec::new(),
+                }],
+            },
+            retained: true,
+        }],
+        latest_convergence: Some(DeterministicConvergenceRecord {
+            desired_revision_id: "rev-1".to_string(),
+            scope_id: "host:alpha".to_string(),
+            status: ConvergenceStatus::Success,
+            attempt_count: 1,
+            affected_objects: vec!["alpha.container".to_string()],
+            completed_actions: vec!["alpha.container".to_string()],
+            failed_actions: Vec::new(),
+            can_continue: true,
+        }),
+        latest_rollback_target: Some(RollbackTargetCandidate {
+            target_revision_id: "rev-0".to_string(),
+            scope_id: "host:alpha".to_string(),
+            eligibility: RollbackEligibility::Eligible,
+            reason: "retained".to_string(),
+        }),
+    };
+
+    write_deterministic_state(&path, &state).expect("write deterministic state");
+    let loaded = read_deterministic_state(&path).expect("read deterministic state");
+    assert_eq!(loaded, Some(state));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn deterministic_state_default_path_uses_runtime_dir() {
+    let path = default_deterministic_state_path();
+    assert!(path.ends_with("deterministic-state.json"));
 }
 
 fn env_lock() -> &'static Mutex<()> {
