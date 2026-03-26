@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::core::audit::{format_audit_event_json, format_audit_record, AuditEvent};
-use crate::core::types::AuditRecord;
+use crate::core::types::{AuditRecord, DeterministicConvergenceRecord, RollbackTargetCandidate};
 
 #[derive(Debug)]
 pub enum AuditError {
@@ -49,4 +49,46 @@ pub fn journal_target(event: &AuditEvent) -> &'static str {
     } else {
         "audit"
     }
+}
+
+pub fn write_rollback_summary(
+    dir: &Path,
+    target: &RollbackTargetCandidate,
+    convergence: &DeterministicConvergenceRecord,
+) -> Result<String, AuditError> {
+    fs::create_dir_all(dir)?;
+    let file_name = format!("rollback-{}.log", target.target_revision_id);
+    let path = dir.join(&file_name);
+    let body = format!(
+        "target_revision={}\neligibility={:?}\nstatus={:?}\ncompleted_actions={}\nfailed_actions={}\ncan_continue={}\n",
+        target.target_revision_id,
+        target.eligibility,
+        convergence.status,
+        convergence.completed_actions.join(","),
+        convergence.failed_actions.join(","),
+        convergence.can_continue
+    );
+    fs::write(&path, body)?;
+    Ok(path.display().to_string())
+}
+
+pub fn write_convergence_summary(
+    dir: &Path,
+    convergence: &DeterministicConvergenceRecord,
+) -> Result<String, AuditError> {
+    fs::create_dir_all(dir)?;
+    let file_name = format!("convergence-{}.log", convergence.desired_revision_id);
+    let path = dir.join(&file_name);
+    let body = format!(
+        "scope={}\nstatus={:?}\nattempt_count={}\naffected_objects={}\ncompleted_actions={}\nfailed_actions={}\ncan_continue={}\n",
+        convergence.scope_id,
+        convergence.status,
+        convergence.attempt_count,
+        convergence.affected_objects.join(","),
+        convergence.completed_actions.join(","),
+        convergence.failed_actions.join(","),
+        convergence.can_continue
+    );
+    fs::write(&path, body)?;
+    Ok(path.display().to_string())
 }

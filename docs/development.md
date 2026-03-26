@@ -89,6 +89,62 @@ package version in `Cargo.toml`.
   review and a controller version update in `Cargo.toml` according to the
   project versioning policy.
 
+
+## Deterministic Reconciliation Workflow
+
+- Deterministic reconciliation uses three normalized inputs for a managed scope:
+  desired, `last_applied`, and observed actual state.
+- `core-ops plan` remains the review surface for this model. Repeated planning
+  with identical normalized inputs must produce materially identical action,
+  drift, and dependency ordering output.
+- `core-ops apply` only advances `last_applied` after side effects complete and
+  post-apply verification reports convergence. Partial, blocked, repeated-
+  failure, and oscillating outcomes keep the last known-good revision intact.
+- `core-ops apply --rollback-to <revision>` reuses the same planner and
+  dependency ordering as forward reconciliation. Use
+  `--rollback-plan-only` before execution when reviewing disruptive changes.
+- Retry is bounded. Repeated failure or oscillation for the same affected object
+  set stops automatic progress and records structured convergence diagnostics for
+  operator review.
+
+### Normalization Rules and Tolerated Runtime Variance
+
+Supported managed resource kinds in this iteration are generated systemd units,
+Quadlet resources, managed mounts, managed automounts, and rendered host
+artifacts.
+
+- Generated systemd units
+  - Normalize by canonical unit name and stable field ordering.
+  - Treat effective unit content, dependency directives, and enablement-relevant
+    semantics as material.
+  - Ignore formatting-only differences and transient runtime state such as the
+    currently active PID.
+- Quadlet resources
+  - Normalize by canonical resource filename and generated unit identity.
+  - Treat semantically relevant section keys and rendered content as material.
+  - Ignore ordering and whitespace differences that do not change generated
+    systemd behavior.
+- Managed mounts
+  - Normalize by native `.mount` unit identity derived from `Where=`.
+  - Treat source, target path, filesystem type, mount options, and
+    CoreOps-managed preparation semantics as material.
+  - Ignore runtime-only counters or other non-semantic mount statistics.
+- Managed automounts
+  - Normalize by native `.automount` unit identity derived from `Where=`.
+  - Treat the automount path and CoreOps-managed dependency semantics as
+    material.
+  - Ignore runtime-only activation timing details once the effective automount
+    contract matches desired state.
+- Rendered host artifacts
+  - Normalize by canonical target path and stable content representation.
+  - Treat rendered content and ownership/path semantics managed by CoreOps as
+    material.
+  - Ignore non-semantic formatting differences introduced during rendering.
+
+When a difference is intentionally ignored, it must be explainable as
+`runtime_variance` rather than being silently dropped from operator-visible
+reasoning.
+
 ## Native Mount Management Workflow
 
 - Author managed mounts as native `.mount` and optional `.automount` artifacts

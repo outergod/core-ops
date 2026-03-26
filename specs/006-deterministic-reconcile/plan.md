@@ -88,14 +88,17 @@ src/
 
 tests/
 ├── integration/
+│   ├── test_apply_report.rs
 │   ├── test_deterministic_planning.rs
 │   ├── test_plan.rs
+│   ├── test_quickstart_validation.rs
 │   ├── test_reconcile_apply.rs
 │   ├── test_rollback.rs
 │   ├── test_status_state.rs
 │   ├── test_convergence.rs
 │   ├── test_ordering.rs
 │   ├── test_idempotence.rs
+│   ├── test_retry.rs
 │   └── test_verification.rs
 └── unit/
     ├── test_invariants.rs
@@ -114,11 +117,11 @@ tests/
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| | | |
+| None | - | - |
 
 ## Version Review Record
 
 - Trigger: this feature materially changes reconciliation semantics, structured plan and result output, rollback behavior, and persisted applied-state expectations.
-- Compatibility policy review: required during implementation validation.
-- Expected outcome: minor-version review at minimum, because externally observable behavior and persisted reconciliation schema evolve but remain within the current pre-1.0 controller compatibility policy.
+- Compatibility policy review: completed during implementation validation.
+- Outcome: bump controller package version from `0.4.0` to `0.5.0` because deterministic reconciliation changes externally observable reconciliation semantics, structured plan/apply output, rollback behavior, and the deterministic persisted-state contract.
 - Canonical controller version remains sourced from `Cargo.toml`.

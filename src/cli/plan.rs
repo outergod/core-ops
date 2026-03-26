@@ -1,4 +1,6 @@
-use crate::cli::report::format_plan_report;
+use crate::cli::report::{
+    format_deterministic_plan_json, format_deterministic_plan_report, format_plan_report,
+};
 use crate::core::audit::{build_audit_event, build_audit_record, summarize_evaluation, AuditEvent};
 use crate::core::errors::CoreError;
 use crate::core::reconcile::{reconcile_plan, ReconcileDependencies};
@@ -8,6 +10,11 @@ pub struct PlanOutput {
     pub summary: String,
     pub audit_record: AuditRecord,
     pub audit_event: AuditEvent,
+}
+
+pub struct DeterministicPlanOutput {
+    pub summary: String,
+    pub machine: String,
 }
 
 pub fn plan(deps: &ReconcileDependencies<'_>) -> Result<PlanOutput, CoreError> {
@@ -62,4 +69,13 @@ fn append_mount_plan_summary(base: &str, desired: &crate::core::types::DesiredSt
         summary.push_str(&format!("\nautomount refs: {}", automount_refs));
     }
     summary
+}
+
+pub fn render_deterministic_plan(
+    plan: &crate::core::types::DeterministicReconciliationPlan,
+) -> DeterministicPlanOutput {
+    DeterministicPlanOutput {
+        summary: format_deterministic_plan_report(plan),
+        machine: format_deterministic_plan_json(plan),
+    }
 }

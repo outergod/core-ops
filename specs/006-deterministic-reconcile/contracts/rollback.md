@@ -2,7 +2,8 @@
 
 ## Purpose
 
-Define the minimum externally observable contract for selecting and planning rollback to a previously successful revision.
+Define the minimum externally observable contract for selecting and planning
+rollback to a previously successful revision in this iteration.
 
 ## Rollback request semantics
 
@@ -12,7 +13,8 @@ A rollback request MUST identify:
 - `scope_id`
 - whether the request is `plan_only` or execute-through-normal-reconcile
 
-Rollback MUST be planned through the same three-way reconciliation path used for forward reconciliation.
+Rollback MUST be planned through the same three-way reconciliation path used
+for forward reconciliation.
 
 ## Eligibility rules
 
@@ -23,33 +25,47 @@ A rollback target is eligible only when all of the following are true:
 - the retained snapshot is compatible with the current managed scope
 - the planner has enough metadata to construct dependency-aware actions
 
-## Failure contract
+## Rollback report contract
 
-Rollback planning MUST fail before execution when eligibility is not satisfied. Failure output MUST identify:
+Rollback planning/reporting MUST identify:
 
 - `target_revision_id`
-- `eligibility_status`
-- `eligibility_reason`
-- whether execution made any changes (must be `false` for eligibility failure)
+- `scope_id`
+- `eligibility`
+- `reason`
+- the embedded deterministic plan summary when eligibility succeeds
+
+For the current CLI/report surface, the rollback report is human-readable text
+that MUST include:
+
+- `rollback target=<target_revision_id>`
+- `eligibility=<eligibility>`
+- the standard deterministic plan summary including `scope`, `desired_revision`,
+  `baseline_revision`, and ordered action reasoning
+
+Rollback planning MUST fail before execution when eligibility is not
+satisfied. Eligibility failure output MUST identify the target revision and
+eligibility reason, and it MUST not claim that rollback actions were executed.
 
 ## Successful rollback plan contract
 
-A successful rollback plan MUST expose the standard structured diff contract plus:
-
-- `rollback: true`
-- `rollback_target_revision_id`
-- any destructive or disruptive actions expected during restoration
+A successful rollback plan MUST expose the standard deterministic plan contract
+plus rollback-target context. Destructive or disruptive actions MUST remain
+visible through the embedded action classifications and reasons.
 
 ## Partial rollback result contract
 
-If execution does not fully converge, the result MUST record:
+If execution does not fully converge, the deterministic convergence record
+persisted for the scope MUST record:
 
-- `rollback_target_revision_id`
+- `desired_revision_id`
+- `scope_id`
+- `status`
+- `attempt_count`
+- `affected_objects`
 - `completed_actions`
 - `failed_actions`
-- `remaining_drift`
 - `can_continue`
-- `result_status`
 
 ## Safety rules
 

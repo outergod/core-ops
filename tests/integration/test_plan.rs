@@ -4,6 +4,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::{reconcile_plan, ReconcileDependencies};
+use core_ops::core::reconcile::reconcile_deterministic_plan;
+use core_ops::core::types::{DriftCategory, ManagedObjectKind, NormalizedManagedObject, NormalizedSnapshot};
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::read_observed_state;
 use core_ops::io::repo::load_desired_state;
@@ -94,4 +96,75 @@ fn map_io_error<E: std::fmt::Display>(err: E) -> CoreError {
         class: core_ops::core::types::FailureClass::Plan,
         message: err.to_string(),
     }
+}
+
+fn object(
+    object_id: &str,
+    object_kind: ManagedObjectKind,
+    material_fields: &[(&str, &str)],
+    dependency_refs: &[&str],
+) -> NormalizedManagedObject {
+    NormalizedManagedObject {
+        object_id: object_id.to_string(),
+        object_kind,
+        material_fields: material_fields
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect(),
+        dependency_refs: dependency_refs.iter().map(|value| value.to_string()).collect(),
+    }
+}
+
+#[test]
+fn external_drift_is_classified_and_ordering_is_dependency_aware() {
+    let desired = NormalizedSnapshot {
+        revision_id: Some("rev-1".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            object(
+                "config:/etc/alpha/env",
+                ManagedObjectKind::RenderedArtifact,
+                &[("path", "/etc/alpha/env"), ("sha", "abc123")],
+                &[],
+            ),
+            object(
+                "alpha.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "alpha.service"), ("image", "ghcr.io/example:1")],
+                &["config:/etc/alpha/env"],
+            ),
+        ],
+    };
+    let last_applied = desired.clone();
+    let actual = NormalizedSnapshot {
+        revision_id: Some("obs-1".to_string()),
+        scope_id: desired.scope_id.clone(),
+        objects: vec![
+            object(
+                "config:/etc/alpha/env",
+                ManagedObjectKind::RenderedArtifact,
+                &[("path", "/etc/alpha/env"), ("sha", "abc123")],
+                &[],
+            ),
+            object(
+                "alpha.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "alpha.service"), ("image", "ghcr.io/example:debug")],
+                &["config:/etc/alpha/env"],
+            ),
+        ],
+    };
+
+    let result = reconcile_deterministic_plan(&desired, Some(&last_applied), &actual)
+        .expect("deterministic plan");
+
+    assert_eq!(result.plan.actions[0].object_id, "config:/etc/alpha/env");
+    assert_eq!(result.plan.actions[1].object_id, "alpha.service");
+    assert_eq!(result.plan.drift_records.len(), 1);
+    assert_eq!(result.plan.drift_records[0].category, DriftCategory::ExternalDrift);
+    assert!(result.plan.actions[1]
+        .semantic_diff
+        .get("image")
+        .expect("image diff")
+        .contains("ghcr.io/example:debug"));
 }

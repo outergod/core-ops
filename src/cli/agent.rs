@@ -80,6 +80,10 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         );
         let _ = audit_io::write_audit_record(dir, &record)
             .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
+        if let Some(convergence) = result.convergence.as_ref() {
+            let _ = audit_io::write_convergence_summary(dir, convergence)
+                .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
+        }
     }
 
     Ok(AgentOutput { run, report })

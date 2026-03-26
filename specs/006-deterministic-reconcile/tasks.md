@@ -59,19 +59,19 @@ description: "Task list for deterministic reconciliation"
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T017 [P] [US1] Add integration test for deterministic three-way planning and no-op detection across generated systemd units, Quadlet resources, managed mounts or automounts, and rendered host artifacts in `tests/integration/test_deterministic_planning.rs`
-- [ ] T018 [P] [US1] Add integration test for external drift classification and dependency-aware ordering in `tests/integration/test_plan.rs`
-- [ ] T019 [P] [US1] Add contract test for structured diff output in `tests/integration/test_status_contract.rs`
-- [ ] T020 [P] [US1] Add unit tests for action classification and deterministic ordering in `tests/unit/test_planner.rs`
+- [X] T017 [P] [US1] Add integration test for deterministic three-way planning and no-op detection across generated systemd units, Quadlet resources, managed mounts or automounts, and rendered host artifacts in `tests/integration/test_deterministic_planning.rs`
+- [X] T018 [P] [US1] Add integration test for external drift classification and dependency-aware ordering in `tests/integration/test_plan.rs`
+- [X] T019 [P] [US1] Add contract test for structured diff output in `tests/integration/test_status_contract.rs`
+- [X] T020 [P] [US1] Add unit tests for action classification and deterministic ordering in `tests/unit/test_planner.rs`
 
 ### Implementation for User Story 1
 
-- [ ] T021 [US1] Implement normalized three-way semantic diffing and drift categorization across generated systemd units, Quadlet resources, managed mounts or automounts, and rendered host artifacts in `src/core/diff.rs`
-- [ ] T022 [US1] Implement deterministic action classification, topological ordering, and explanation generation across the supported managed resource kinds in `src/core/planner.rs`
-- [ ] T023 [US1] Implement planning orchestration for desired, last_applied, and actual state in `src/core/reconcile.rs`
-- [ ] T024 [US1] Implement machine-readable plan output and dry-run rendering in `src/cli/plan.rs`
-- [ ] T025 [US1] Derive human-readable plan rendering from structured diff output in `src/cli/report.rs`
-- [ ] T026 [US1] Surface three-way planning provenance, baseline revision, and drift summaries in `src/cli/status.rs`
+- [X] T021 [US1] Implement normalized three-way semantic diffing and drift categorization across generated systemd units, Quadlet resources, managed mounts or automounts, and rendered host artifacts in `src/core/diff.rs`
+- [X] T022 [US1] Implement deterministic action classification, topological ordering, and explanation generation across the supported managed resource kinds in `src/core/planner.rs`
+- [X] T023 [US1] Implement planning orchestration for desired, last_applied, and actual state in `src/core/reconcile.rs`
+- [X] T024 [US1] Implement machine-readable plan output and dry-run rendering in `src/cli/plan.rs`
+- [X] T025 [US1] Derive human-readable plan rendering from structured diff output in `src/cli/report.rs`
+- [X] T026 [US1] Surface three-way planning provenance, baseline revision, and drift summaries in `src/cli/status.rs`
 
 **Checkpoint**: User Story 1 should be fully functional and testable independently
 
@@ -85,19 +85,19 @@ description: "Task list for deterministic reconciliation"
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T027 [P] [US2] Add integration test for rollback planning and execution against a retained successful revision in `tests/integration/test_rollback.rs`
-- [ ] T028 [P] [US2] Add integration test for rollback rejection when retained snapshot metadata is missing or expired in `tests/integration/test_rollback.rs`
-- [ ] T029 [P] [US2] Add integration test for partial rollback progress recording in `tests/integration/test_reconcile_apply.rs`
-- [ ] T030 [P] [US2] Add unit tests for rollback eligibility and successful-apply boundary rules in `tests/unit/test_invariants.rs`
+- [X] T027 [P] [US2] Add integration test for rollback planning and execution against a retained successful revision in `tests/integration/test_rollback.rs`
+- [X] T028 [P] [US2] Add integration test for rollback rejection when retained snapshot metadata is missing or expired in `tests/integration/test_rollback.rs`
+- [X] T029 [P] [US2] Add integration test for partial rollback progress recording in `tests/integration/test_reconcile_apply.rs`
+- [X] T030 [P] [US2] Add unit tests for rollback eligibility and successful-apply boundary rules in `tests/unit/test_invariants.rs`
 
 ### Implementation for User Story 2
 
-- [ ] T031 [US2] Implement rollback target resolution and retention-window eligibility checks in `src/io/state.rs`
-- [ ] T032 [US2] Implement rollback planning through the normal three-way reconciliation path in `src/core/reconcile.rs`
-- [ ] T033 [US2] Implement rollback-specific action ordering and disruption reporting in `src/core/planner.rs`
-- [ ] T034 [US2] Add rollback CLI arguments and execution wiring in `src/cli/args.rs` and `src/cli/apply.rs`
-- [ ] T035 [US2] Persist partial rollback outcomes without advancing `last_applied` in `src/io/audit.rs` and `src/io/state.rs`
-- [ ] T036 [US2] Surface rollback eligibility, target revision, and partial-progress results in `src/cli/status.rs` and `src/cli/report.rs`
+- [X] T031 [US2] Implement rollback target resolution and retention-window eligibility checks in `src/io/state.rs`
+- [X] T032 [US2] Implement rollback planning through the normal three-way reconciliation path in `src/core/reconcile.rs`
+- [X] T033 [US2] Implement rollback-specific action ordering and disruption reporting in `src/core/planner.rs`
+- [X] T034 [US2] Add rollback CLI arguments and execution wiring in `src/cli/args.rs` and `src/cli/apply.rs`
+- [X] T035 [US2] Persist partial rollback outcomes without advancing `last_applied` in `src/io/audit.rs` and `src/io/state.rs`
+- [X] T036 [US2] Surface rollback eligibility, target revision, and partial-progress results in `src/cli/status.rs` and `src/cli/report.rs`
 
 **Checkpoint**: User Story 2 should be fully functional and testable independently
 
@@ -111,19 +111,19 @@ description: "Task list for deterministic reconciliation"
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T037 [P] [US3] Add integration test for repeated-failure detection and bounded retry stop behavior in `tests/integration/test_convergence.rs`
-- [ ] T038 [P] [US3] Add integration test for oscillation detection across repeated reconciliation attempts in `tests/integration/test_retry.rs`
-- [ ] T039 [P] [US3] Add integration test for machine-readable and human-readable reconcile result parity in `tests/integration/test_apply_report.rs`
-- [ ] T040 [P] [US3] Add unit tests for convergence status classification and retry-budget enforcement in `tests/unit/test_verification.rs`
+- [X] T037 [P] [US3] Add integration test for repeated-failure detection and bounded retry stop behavior in `tests/integration/test_convergence.rs`
+- [X] T038 [P] [US3] Add integration test for oscillation detection across repeated reconciliation attempts in `tests/integration/test_retry.rs`
+- [X] T039 [P] [US3] Add integration test for machine-readable and human-readable reconcile result parity in `tests/integration/test_apply_report.rs`
+- [X] T040 [P] [US3] Add unit tests for convergence status classification and retry-budget enforcement in `tests/unit/test_verification.rs`
 
 ### Implementation for User Story 3
 
-- [ ] T041 [US3] Implement repeated-failure and oscillation signature tracking in `src/core/retry.rs`
-- [ ] T042 [US3] Implement post-apply convergence evaluation and non-convergence classification for the supported generated unit, Quadlet, mount or automount, and rendered artifact kinds in `src/core/verify.rs`
-- [ ] T043 [US3] Integrate bounded retry orchestration and intervention-required outcomes into `src/core/reconcile.rs` and `src/cli/agent.rs`
-- [ ] T044 [US3] Implement structured reconcile result output for apply and agent runs in `src/cli/report.rs` and `src/cli/apply.rs`
-- [ ] T045 [US3] Persist non-convergence diagnostics, affected objects, and attempt history summaries in `src/io/audit.rs` and `src/io/state.rs`
-- [ ] T046 [US3] Surface bounded retry exhaustion, oscillation, and blocked-state summaries in `src/cli/status.rs`
+- [X] T041 [US3] Implement repeated-failure and oscillation signature tracking in `src/core/retry.rs`
+- [X] T042 [US3] Implement post-apply convergence evaluation and non-convergence classification for the supported generated unit, Quadlet, mount or automount, and rendered artifact kinds in `src/core/verify.rs`
+- [X] T043 [US3] Integrate bounded retry orchestration and intervention-required outcomes into `src/core/reconcile.rs` and `src/cli/agent.rs`
+- [X] T044 [US3] Implement structured reconcile result output for apply and agent runs in `src/cli/report.rs` and `src/cli/apply.rs`
+- [X] T045 [US3] Persist non-convergence diagnostics, affected objects, and attempt history summaries in `src/io/audit.rs` and `src/io/state.rs`
+- [X] T046 [US3] Surface bounded retry exhaustion, oscillation, and blocked-state summaries in `src/cli/status.rs`
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -133,15 +133,16 @@ description: "Task list for deterministic reconciliation"
 
 **Purpose**: Documentation, quickstart validation, release/version review, and full-suite regression coverage
 
-- [ ] T047 [P] Update deterministic reconciliation operator and developer guidance in `docs/development.md`
-- [ ] T048 [P] Update CLI help text and examples for three-way plan, rollback, and non-convergence reporting in `src/cli/args.rs`
-- [ ] T049 [P] Validate deterministic reconciliation quickstart scenarios in `tests/integration/test_quickstart_validation.rs`
-- [ ] T050 [P] Add end-to-end regression coverage for plan/apply/status provenance under deterministic reconciliation in `tests/integration/test_reconcile_provenance.rs`
-- [ ] T051 [P] Validate structured diff and rollback contracts against implemented behavior in `tests/integration/test_status_contract.rs` and `tests/integration/test_rollback.rs`
-- [ ] T052 [P] Document per-resource normalization rules and tolerated runtime variance for supported managed resource kinds in `specs/006-deterministic-reconcile/contracts/structured-diff.md` and `docs/development.md`
-- [ ] T053 [P] Record release-version-policy review outcome for deterministic reconciliation in `specs/006-deterministic-reconcile/plan.md`
-- [ ] T054 [P] Evaluate and apply the required controller package-version update in `Cargo.toml`
-- [ ] T055 Run the full deterministic reconciliation test suite with `cargo test`
+- [X] T047 [P] Update deterministic reconciliation operator and developer guidance in `docs/development.md`
+- [X] T048 [P] Update CLI help text and examples for three-way plan, rollback, and non-convergence reporting in `src/cli/args.rs`
+- [X] T049 [P] Validate deterministic reconciliation quickstart scenarios in `tests/integration/test_quickstart_validation.rs`
+- [X] T050 [P] Add end-to-end regression coverage for plan/apply/status provenance under deterministic reconciliation in `tests/integration/test_reconcile_provenance.rs`
+- [X] T051 [P] Validate structured diff and rollback contracts against implemented behavior in `tests/integration/test_status_contract.rs` and `tests/integration/test_rollback.rs`
+- [X] T052 [P] Document per-resource normalization rules and tolerated runtime variance for supported managed resource kinds in `specs/006-deterministic-reconcile/contracts/structured-diff.md` and `docs/development.md`
+- [X] T053 [P] Record release-version-policy review outcome for deterministic reconciliation in `specs/006-deterministic-reconcile/plan.md`
+- [X] T054 [P] Evaluate and apply the required controller package-version update in `Cargo.toml`
+- [X] T055 Run the full deterministic reconciliation test suite with `cargo test`
+- [X] T056 [P] Validate representative rollback plan and execution timing against SC-003 in `tests/integration/test_rollback.rs`
 
 ---
 

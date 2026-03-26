@@ -1,15 +1,15 @@
 use crate::core::boundaries::enforce_plan_boundaries;
-use crate::core::diff::diff_workloads;
+use crate::core::diff::{diff_normalized_snapshots, diff_workloads};
 use crate::core::errors::{CoreError, ValidationError};
 use crate::core::types::{
     DependencyEdgeKind, DesiredState, DeterministicActionClass, DeterministicPlannedAction,
     DeterministicReconciliationPlan, DiffItem, DiffKind, FailureClass, GeneratedUnitSet,
     MountDeclaration, MountDependency, NormalizedSnapshot, PlanAction, PlanActionType,
     QuadletType, ReconciliationPlan, SafetyCheck, SemanticDependencyEdge, SemanticDependencyGraph,
-    SemanticDependencyNode, ServiceDependencyEdit, StructuredDriftRecord, DriftCategory, ObservedState,
+    SemanticDependencyNode, ServiceDependencyEdit, ObservedState,
 };
-use crate::core::validation::validate_desired_state;
-use std::collections::HashSet;
+use crate::core::validation::{detect_semantic_dependency_cycle, validate_desired_state};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<ReconciliationPlan, CoreError> {
@@ -110,57 +110,93 @@ pub fn plan_deterministic_reconciliation(
     desired: &NormalizedSnapshot,
     last_applied: Option<&NormalizedSnapshot>,
     actual: &NormalizedSnapshot,
-) -> DeterministicReconciliationPlan {
+) -> Result<DeterministicReconciliationPlan, CoreError> {
     let graph = build_semantic_dependency_graph(desired);
-    let mut desired_ids: Vec<String> = desired.objects.iter().map(|object| object.object_id.clone()).collect();
-    desired_ids.sort();
-    let actual_ids: HashSet<&str> = actual.objects.iter().map(|object| object.object_id.as_str()).collect();
-    let applied_ids: HashSet<&str> = last_applied
-        .map(|snapshot| snapshot.objects.iter().map(|object| object.object_id.as_str()).collect())
+    let graph_edges = graph
+        .edges
+        .iter()
+        .map(|edge| (edge.from_object_id.clone(), edge.to_object_id.clone()))
+        .collect::<Vec<_>>();
+    detect_semantic_dependency_cycle(&graph_edges).map_err(map_validation_error)?;
+    let drift_records = diff_normalized_snapshots(desired, last_applied, actual);
+    let desired_map = index_normalized_objects(&desired.objects);
+    let actual_map = index_normalized_objects(&actual.objects);
+    let applied_map = last_applied
+        .map(|snapshot| index_normalized_objects(&snapshot.objects))
         .unwrap_or_default();
-
+    let desired_ids = ordered_desired_ids(&graph);
     let mut actions = Vec::new();
-    let mut drift_records = Vec::new();
-
     for object_id in desired_ids {
-        let classification = if !actual_ids.contains(object_id.as_str()) {
+        let desired_object = desired_map
+            .get(object_id.as_str())
+            .expect("desired object is present");
+        let dependency_context = desired_object.dependency_refs.clone();
+        let actual_object = actual_map.get(object_id.as_str());
+        let applied_object = applied_map.get(object_id.as_str());
+        let classification = if dependency_context
+            .iter()
+            .any(|dependency| !desired_map.contains_key(dependency.as_str()))
+        {
+            DeterministicActionClass::Blocked
+        } else if actual_object.is_none() {
             DeterministicActionClass::Create
-        } else if !applied_ids.is_empty() && !applied_ids.contains(object_id.as_str()) {
+        } else if actual_object != Some(desired_object) {
             DeterministicActionClass::Update
         } else {
             DeterministicActionClass::NoOp
         };
-        if classification != DeterministicActionClass::NoOp {
-            drift_records.push(StructuredDriftRecord {
-                object_id: object_id.clone(),
-                category: if classification == DeterministicActionClass::Create {
-                    DriftCategory::ExpectedChange
-                } else {
-                    DriftCategory::ExternalDrift
-                },
-                comparison_basis: "three_way".to_string(),
-                auto_action: true,
-                attention_required: false,
-                details: "deterministic planner scaffolding".to_string(),
-            });
-        }
         actions.push(DeterministicPlannedAction {
-            object_id,
+            object_id: object_id.clone(),
             classification,
-            reason: "deterministic planner scaffolding".to_string(),
-            dependency_context: Vec::new(),
-            semantic_diff: Default::default(),
+            reason: action_reason(
+                desired_object,
+                applied_object,
+                actual_object,
+                &dependency_context,
+            ),
+            dependency_context,
+            semantic_diff: semantic_diff(desired_object, actual_object, applied_object),
         });
     }
 
-    DeterministicReconciliationPlan {
+    for object_id in ordered_delete_ids(actual, desired).map_err(map_validation_error)? {
+        actions.push(DeterministicPlannedAction {
+            object_id,
+            classification: DeterministicActionClass::Delete,
+            reason: "actual object is outside desired snapshot".to_string(),
+            dependency_context: Vec::new(),
+            semantic_diff: BTreeMap::new(),
+        });
+    }
+
+    Ok(DeterministicReconciliationPlan {
         desired_revision_id: desired.revision_id.clone(),
         baseline_revision_id: last_applied.and_then(|snapshot| snapshot.revision_id.clone()),
         scope_id: desired.scope_id.clone(),
         actions,
         drift_records,
         graph,
+    })
+}
+
+pub fn plan_rollback_reconciliation(
+    target_snapshot: &NormalizedSnapshot,
+    current_applied: Option<&NormalizedSnapshot>,
+    actual: &NormalizedSnapshot,
+    target_revision_id: &str,
+) -> Result<DeterministicReconciliationPlan, CoreError> {
+    let mut plan = plan_deterministic_reconciliation(target_snapshot, current_applied, actual)?;
+    for action in &mut plan.actions {
+        action.reason = match action.classification {
+            DeterministicActionClass::Delete | DeterministicActionClass::Replace => format!(
+                "rollback to {} requires disruptive {}",
+                target_revision_id,
+                action_class_label(&action.classification)
+            ),
+            _ => format!("rollback to {}: {}", target_revision_id, action.reason),
+        };
     }
+    Ok(plan)
 }
 
 pub fn plan_mount_units(
@@ -192,6 +228,150 @@ pub fn plan_mount_units(
         service_dependency_edits,
         removal_candidates,
     }
+}
+
+fn index_normalized_objects(
+    objects: &[crate::core::types::NormalizedManagedObject],
+) -> BTreeMap<&str, &crate::core::types::NormalizedManagedObject> {
+    let mut map = BTreeMap::new();
+    for object in objects {
+        map.insert(object.object_id.as_str(), object);
+    }
+    map
+}
+
+fn ordered_desired_ids(graph: &SemanticDependencyGraph) -> Vec<String> {
+    let mut incoming = BTreeMap::<&str, usize>::new();
+    let mut outgoing = BTreeMap::<&str, Vec<&str>>::new();
+    for node in &graph.nodes {
+        incoming.insert(node.object_id.as_str(), 0);
+        outgoing.insert(node.object_id.as_str(), Vec::new());
+    }
+    for edge in &graph.edges {
+        if incoming.contains_key(edge.to_object_id.as_str())
+            && outgoing.contains_key(edge.from_object_id.as_str())
+        {
+            *incoming.get_mut(edge.to_object_id.as_str()).expect("incoming edge") += 1;
+            outgoing
+                .get_mut(edge.from_object_id.as_str())
+                .expect("outgoing edge")
+                .push(edge.to_object_id.as_str());
+        }
+    }
+
+    let mut ready = BTreeSet::new();
+    for node in &graph.nodes {
+        if incoming.get(node.object_id.as_str()) == Some(&0) {
+            ready.insert(node.ordering_key.clone());
+        }
+    }
+
+    let mut ordered = Vec::new();
+    while let Some(next) = ready.pop_first() {
+        ordered.push(next.clone());
+        let neighbors = outgoing
+            .get(next.as_str())
+            .cloned()
+            .unwrap_or_default();
+        for neighbor in neighbors {
+            let count = incoming.get_mut(neighbor).expect("neighbor present");
+            *count -= 1;
+            if *count == 0 {
+                ready.insert(neighbor.to_string());
+            }
+        }
+    }
+
+    ordered
+}
+
+fn action_reason(
+    desired: &crate::core::types::NormalizedManagedObject,
+    applied: Option<&&crate::core::types::NormalizedManagedObject>,
+    actual: Option<&&crate::core::types::NormalizedManagedObject>,
+    dependency_context: &[String],
+) -> String {
+    if dependency_context
+        .iter()
+        .any(|dependency| dependency == &desired.object_id)
+    {
+        "object declares a self-dependency".to_string()
+    } else if dependency_context.is_empty() {
+        action_reason_without_dependencies(desired, applied, actual)
+    } else if actual.is_none() {
+        "object missing from actual state after dependency prerequisites".to_string()
+    } else if actual != Some(&desired) {
+        "actual state diverged from desired snapshot after dependency ordering".to_string()
+    } else if applied != Some(&desired) {
+        "desired snapshot changed since last applied state but actual already converged".to_string()
+    } else {
+        "desired, last applied, and actual state already match after dependency ordering".to_string()
+    }
+}
+
+fn action_reason_without_dependencies(
+    desired: &crate::core::types::NormalizedManagedObject,
+    applied: Option<&&crate::core::types::NormalizedManagedObject>,
+    actual: Option<&&crate::core::types::NormalizedManagedObject>,
+) -> String {
+    if actual.is_none() {
+        "object missing from actual state".to_string()
+    } else if actual != Some(&desired) {
+        "actual state diverged from desired snapshot".to_string()
+    } else if applied != Some(&desired) {
+        "desired snapshot changed since last applied state but actual already converged".to_string()
+    } else {
+        "desired, last applied, and actual state already match".to_string()
+    }
+}
+
+fn semantic_diff(
+    desired: &crate::core::types::NormalizedManagedObject,
+    actual: Option<&&crate::core::types::NormalizedManagedObject>,
+    applied: Option<&&crate::core::types::NormalizedManagedObject>,
+) -> BTreeMap<String, String> {
+    let mut diff = BTreeMap::new();
+    for (key, desired_value) in &desired.material_fields {
+        let actual_value = actual.and_then(|object| object.material_fields.get(key));
+        let applied_value = applied.and_then(|object| object.material_fields.get(key));
+        if actual_value != Some(desired_value) || applied_value != Some(desired_value) {
+            diff.insert(
+                key.clone(),
+                format!(
+                    "desired={} actual={} applied={}",
+                    desired_value,
+                    actual_value.map(String::as_str).unwrap_or("<absent>"),
+                    applied_value.map(String::as_str).unwrap_or("<absent>"),
+                ),
+            );
+        }
+    }
+    diff
+}
+
+pub fn ordered_delete_ids(
+    actual: &NormalizedSnapshot,
+    desired: &NormalizedSnapshot,
+) -> Result<Vec<String>, ValidationError> {
+    let actual_graph = build_semantic_dependency_graph(actual);
+    let graph_edges = actual_graph
+        .edges
+        .iter()
+        .map(|edge| (edge.from_object_id.clone(), edge.to_object_id.clone()))
+        .collect::<Vec<_>>();
+    detect_semantic_dependency_cycle(&graph_edges)?;
+
+    let desired_ids = desired
+        .objects
+        .iter()
+        .map(|object| object.object_id.as_str())
+        .collect::<HashSet<_>>();
+    let mut stale = ordered_desired_ids(&actual_graph)
+        .into_iter()
+        .filter(|object_id| !desired_ids.contains(object_id.as_str()))
+        .collect::<Vec<_>>();
+    stale.reverse();
+    Ok(stale)
 }
 
 fn explicit_dependency_units(declaration: &MountDeclaration) -> Vec<String> {
@@ -306,6 +486,17 @@ fn actions_for_diff(
             }
             actions
         }
+    }
+}
+
+fn action_class_label(action: &DeterministicActionClass) -> &'static str {
+    match action {
+        DeterministicActionClass::Create => "create",
+        DeterministicActionClass::Update => "update",
+        DeterministicActionClass::Delete => "delete",
+        DeterministicActionClass::Replace => "replace",
+        DeterministicActionClass::NoOp => "no_op",
+        DeterministicActionClass::Blocked => "blocked",
     }
 }
 

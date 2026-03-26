@@ -1,9 +1,11 @@
-use core_ops::core::planner::plan;
-use core_ops::core::planner::plan_mount_units;
+use std::collections::BTreeMap;
+
+use core_ops::core::planner::{plan, plan_deterministic_reconciliation, plan_mount_units};
 use core_ops::core::unit::{apply_service_mount_dependencies, render_mount_unit};
 use core_ops::core::types::{
-    Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, MountDeclaration,
-    MountDependency, MountVerificationMode, ObservedState, PathDependencyMode, QuadletType,
+    Boundaries, BoundaryScope, DesiredState, DeterministicActionClass, EnabledState, Invariant,
+    ManagedObjectKind, MountDeclaration, MountDependency, MountVerificationMode,
+    NormalizedManagedObject, NormalizedSnapshot, ObservedState, PathDependencyMode, QuadletType,
     RestartPolicy, UnitDependencyMode, Workload,
 };
 
@@ -221,4 +223,214 @@ fn mount_planning_expands_path_and_explicit_unit_dependencies() {
     );
     assert!(service_contents.contains("RequiresMountsFor=/var/lib/immich/media"));
     assert!(service_contents.contains("After=var-lib-immich-media.automount var-lib-immich-media.mount"));
+}
+
+fn normalized_object(
+    object_id: &str,
+    object_kind: ManagedObjectKind,
+    material_fields: &[(&str, &str)],
+    dependency_refs: &[&str],
+) -> NormalizedManagedObject {
+    NormalizedManagedObject {
+        object_id: object_id.to_string(),
+        object_kind,
+        material_fields: material_fields
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect::<BTreeMap<_, _>>(),
+        dependency_refs: dependency_refs.iter().map(|value| value.to_string()).collect(),
+    }
+}
+
+#[test]
+fn deterministic_planner_orders_objects_by_dependency_graph() {
+    let desired = NormalizedSnapshot {
+        revision_id: Some("rev-1".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            normalized_object(
+                "alpha.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "alpha.service")],
+                &["config:/etc/alpha/env", "var-lib-alpha.mount"],
+            ),
+            normalized_object(
+                "config:/etc/alpha/env",
+                ManagedObjectKind::RenderedArtifact,
+                &[("path", "/etc/alpha/env")],
+                &[],
+            ),
+            normalized_object(
+                "var-lib-alpha.mount",
+                ManagedObjectKind::Mount,
+                &[("unit", "var-lib-alpha.mount")],
+                &[],
+            ),
+        ],
+    };
+    let actual = desired.clone();
+    let applied = desired.clone();
+
+    let plan = plan_deterministic_reconciliation(&desired, Some(&applied), &actual)
+        .expect("deterministic plan");
+    let ordered: Vec<&str> = plan.actions.iter().map(|action| action.object_id.as_str()).collect();
+
+    assert_eq!(
+        ordered,
+        vec!["config:/etc/alpha/env", "var-lib-alpha.mount", "alpha.service"]
+    );
+}
+
+#[test]
+fn deterministic_planner_classifies_create_update_delete_and_blocked_actions() {
+    let desired = NormalizedSnapshot {
+        revision_id: Some("rev-2".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            normalized_object(
+                "alpha.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "alpha.service"), ("image", "stable")],
+                &[],
+            ),
+            normalized_object(
+                "beta.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "beta.service"), ("image", "stable")],
+                &[],
+            ),
+            normalized_object(
+                "gamma.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "gamma.service")],
+                &["missing.dependency"],
+            ),
+        ],
+    };
+    let applied = NormalizedSnapshot {
+        revision_id: Some("rev-1".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            normalized_object(
+                "alpha.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "alpha.service"), ("image", "stable")],
+                &[],
+            ),
+            normalized_object(
+                "beta.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "beta.service"), ("image", "stable")],
+                &[],
+            ),
+            normalized_object(
+                "obsolete.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "obsolete.service")],
+                &[],
+            ),
+        ],
+    };
+    let actual = NormalizedSnapshot {
+        revision_id: Some("obs-2".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            normalized_object(
+                "alpha.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "alpha.service"), ("image", "debug")],
+                &[],
+            ),
+            normalized_object(
+                "obsolete.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "obsolete.service")],
+                &[],
+            ),
+        ],
+    };
+
+    let plan = plan_deterministic_reconciliation(&desired, Some(&applied), &actual)
+        .expect("deterministic plan");
+    let classifications: Vec<(&str, DeterministicActionClass)> = plan
+        .actions
+        .iter()
+        .map(|action| (action.object_id.as_str(), action.classification.clone()))
+        .collect();
+
+    assert!(classifications.contains(&("alpha.service", DeterministicActionClass::Update)));
+    assert!(classifications.contains(&("beta.service", DeterministicActionClass::Create)));
+    assert!(classifications.contains(&("gamma.service", DeterministicActionClass::Blocked)));
+    assert!(classifications.contains(&("obsolete.service", DeterministicActionClass::Delete)));
+}
+
+#[test]
+fn deterministic_planner_rejects_semantic_dependency_cycles() {
+    let desired = NormalizedSnapshot {
+        revision_id: Some("rev-3".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            normalized_object(
+                "alpha.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "alpha.service")],
+                &["beta.service"],
+            ),
+            normalized_object(
+                "beta.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "beta.service")],
+                &["alpha.service"],
+            ),
+        ],
+    };
+    let actual = NormalizedSnapshot {
+        revision_id: Some("obs-3".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: Vec::new(),
+    };
+
+    let err = plan_deterministic_reconciliation(&desired, None, &actual)
+        .expect_err("cycle must fail planning");
+
+    assert_eq!(err.class, core_ops::core::types::FailureClass::Validation);
+    assert!(err.message.contains("semantic dependency cycle"));
+}
+
+#[test]
+fn deterministic_planner_deletes_in_reverse_dependency_order() {
+    let desired = NormalizedSnapshot {
+        revision_id: Some("rev-4".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: Vec::new(),
+    };
+    let actual = NormalizedSnapshot {
+        revision_id: Some("obs-4".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            normalized_object(
+                "config:/etc/alpha/env",
+                ManagedObjectKind::RenderedArtifact,
+                &[("path", "/etc/alpha/env")],
+                &[],
+            ),
+            normalized_object(
+                "alpha.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "alpha.service")],
+                &["config:/etc/alpha/env"],
+            ),
+        ],
+    };
+
+    let plan = plan_deterministic_reconciliation(&desired, None, &actual)
+        .expect("deterministic plan");
+    let delete_ids: Vec<&str> = plan
+        .actions
+        .iter()
+        .filter(|action| action.classification == DeterministicActionClass::Delete)
+        .map(|action| action.object_id.as_str())
+        .collect();
+
+    assert_eq!(delete_ids, vec!["alpha.service", "config:/etc/alpha/env"]);
 }

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use core_ops::cli::apply::apply_with_report;
+use serde_json::Value;
 use crate::integration::env_lock::path_lock;
 
 fn temp_dir(prefix: &str) -> PathBuf {
@@ -106,10 +107,23 @@ fn apply_report_includes_diffs_and_actions() {
     let host_quadlets = temp_dir("core_ops_host_apply_report");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
 
-    let (_result, report, _plan) =
+    let (result, report, _plan) =
         apply_with_report(repo.to_str().unwrap(), &rev, &host_quadlets, false, None)
             .expect("apply report");
 
     assert!(report.contains("diffs"));
     assert!(report.contains("actions"));
+    let json_line = report
+        .lines()
+        .find(|line| line.starts_with('{'))
+        .expect("structured apply report json");
+    let parsed: Value = serde_json::from_str(json_line).expect("parse apply json");
+    let expected_status = match result.run.status {
+        core_ops::core::types::RunStatus::Success => "success",
+        core_ops::core::types::RunStatus::Failure => "failure",
+    };
+    assert_eq!(parsed["status"].as_str(), Some(expected_status));
+    assert_eq!(parsed["summary"].as_str(), Some(result.run.summary.as_str()));
+    assert!(parsed["verification_results"].is_array());
+    assert!(parsed["convergence"]["status"].is_string());
 }

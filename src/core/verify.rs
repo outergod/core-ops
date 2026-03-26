@@ -1,6 +1,7 @@
+use crate::core::retry::{build_retry_observation, evaluate_retry_history, RetryObservation};
 use crate::core::types::{
-    DesiredState, MountDeclaration, ObservedState, QuadletType, UnitActiveState,
-    VerificationResult, VerificationStatus,
+    ConvergenceStatus, DesiredState, DeterministicConvergenceRecord, MountDeclaration,
+    ObservedState, QuadletType, UnitActiveState, VerificationResult, VerificationStatus,
 };
 use crate::core::unit::systemd_unit_for_quadlet_file;
 use std::collections::BTreeMap;
@@ -39,6 +40,62 @@ pub fn verify_state(desired: &DesiredState, observed: &ObservedState) -> Vec<Ver
             )
         })
         .collect()
+}
+
+pub fn evaluate_convergence(
+    desired: &DesiredState,
+    observed: &ObservedState,
+    history: &[RetryObservation],
+    retry_budget: u32,
+) -> DeterministicConvergenceRecord {
+    let verification_results = verify_state(desired, observed);
+    let attempt = history.last().map(|entry| entry.attempt).unwrap_or(1);
+    let evaluation = history
+        .last()
+        .cloned()
+        .unwrap_or_else(|| build_retry_observation(attempt, &verification_results));
+    let derived = evaluate_retry_history(history, retry_budget).unwrap_or_else(|| {
+        evaluate_retry_history(&[evaluation], retry_budget).expect("derived convergence")
+    });
+    let failed_actions = verification_results
+        .iter()
+        .filter(|result| result.status == VerificationStatus::Failure)
+        .map(|result| result.target.clone())
+        .collect::<Vec<_>>();
+    let completed_actions = verification_results
+        .iter()
+        .filter(|result| result.status == VerificationStatus::Success)
+        .map(|result| result.target.clone())
+        .collect::<Vec<_>>();
+
+    let status = if verification_results.iter().all(|result| result.status == VerificationStatus::Success) {
+        ConvergenceStatus::Success
+    } else {
+        derived.status.clone()
+    };
+    let can_continue = matches!(
+        status,
+        ConvergenceStatus::Success | ConvergenceStatus::Partial | ConvergenceStatus::Failed
+    );
+
+    DeterministicConvergenceRecord {
+        desired_revision_id: desired.revision_id.clone(),
+        scope_id: observed
+            .host_info
+            .as_ref()
+            .map(|host| format!("host:{}", host.hostname))
+            .unwrap_or_else(|| "scope:default".to_string()),
+        status,
+        attempt_count: attempt,
+        affected_objects: if derived.affected_objects.is_empty() {
+            failed_actions.clone()
+        } else {
+            derived.affected_objects.clone()
+        },
+        completed_actions,
+        failed_actions,
+        can_continue,
+    }
 }
 
 fn verify_workload(

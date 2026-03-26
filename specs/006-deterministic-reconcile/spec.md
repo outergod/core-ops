@@ -205,9 +205,12 @@ As an operator or automation agent, I want CoreOps to detect blocked, repeated, 
 ## Open Questions
 
 - How are restart requirements inferred from specific field changes?
-- What is the minimum rollback history retention policy?
-- What command and output shapes should the humane CLI expose?
 - Which objects become first-class graph nodes versus derived planning details?
+
+## Follow-Up Questions
+
+- What default rollback retention window should later product policy adopt beyond the bounded-history requirement established in this iteration?
+- What humane CLI presentation shapes should later operator-focused UX layers expose on top of the core machine-readable and human-readable reporting introduced here?
 
 ## Deferred Design Notes
 

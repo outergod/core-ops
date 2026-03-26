@@ -52,3 +52,16 @@ fn quickstart_mentions_mount_management_workflow_and_version_outcome() {
     assert!(contents.contains("busy"));
     assert!(contents.contains("0.3.0 -> 0.4.0"));
 }
+
+#[test]
+fn quickstart_mentions_deterministic_reconciliation_flow() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let quickstart = root.join("specs/006-deterministic-reconcile/quickstart.md");
+    let contents = fs::read_to_string(&quickstart).expect("read quickstart");
+
+    assert!(contents.contains("three-way plan"));
+    assert!(contents.contains("last_applied"));
+    assert!(contents.contains("external_drift"));
+    assert!(contents.contains("rollback"));
+    assert!(contents.contains("oscillation"));
+}
