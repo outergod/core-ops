@@ -221,9 +221,7 @@ fn rollback_report_includes_target_context_and_embedded_plan_summary() {
 
     assert!(report.contains("rollback target=rev-1"));
     assert!(report.contains("eligibility=Eligible"));
-    assert!(report.contains("deterministic plan scope=host:alpha"));
-    assert!(report.contains("desired_revision=rev-1"));
-    assert!(report.contains("baseline_revision=rev-2"));
+    assert!(report.contains("Plan for host alpha @ rev-2 → rev-1"));
 }
 
 #[test]
@@ -244,6 +242,11 @@ fn rollback_contract_document_matches_current_report_surface() {
 #[test]
 fn rollback_plan_only_executes_the_reachable_cli_helper() {
     let _lock = path_lock().lock().expect("path lock");
+    let previous_host = std::env::var_os("CORE_OPS_HOST");
+    std::env::set_var("CORE_OPS_HOST", "kadath");
+    let _host_guard = HostGuard {
+        previous: previous_host,
+    };
     let repo = temp_file("rollback_repo");
     let repo_dir = repo.with_extension("");
     std::fs::create_dir_all(&repo_dir).expect("repo dir");
@@ -325,14 +328,14 @@ fn rollback_plan_only_executes_the_reachable_cli_helper() {
         &deterministic_path,
         &DeterministicPersistedState {
             schema_version: 1,
-            current_scope: "scope:default".to_string(),
+            current_scope: "host:kadath".to_string(),
             retained_snapshots: vec![
                 RetainedAppliedSnapshot {
                     revision_id: rev1.clone(),
-                    scope_id: "scope:default".to_string(),
+                    scope_id: "host:kadath".to_string(),
                     snapshot: NormalizedSnapshot {
                         revision_id: Some(rev1.clone()),
-                        scope_id: "scope:default".to_string(),
+                        scope_id: "host:kadath".to_string(),
                         objects: vec![object(
                             "alpha.service",
                             ManagedObjectKind::QuadletResource,
@@ -344,10 +347,10 @@ fn rollback_plan_only_executes_the_reachable_cli_helper() {
                 },
                 RetainedAppliedSnapshot {
                     revision_id: rev2.clone(),
-                    scope_id: "scope:default".to_string(),
+                    scope_id: "host:kadath".to_string(),
                     snapshot: NormalizedSnapshot {
                         revision_id: Some(rev2.clone()),
-                        scope_id: "scope:default".to_string(),
+                        scope_id: "host:kadath".to_string(),
                         objects: vec![object(
                             "alpha.service",
                             ManagedObjectKind::QuadletResource,
@@ -376,12 +379,17 @@ fn rollback_plan_only_executes_the_reachable_cli_helper() {
 
     assert_eq!(result.run.summary, format!("rollback plan ready for {}", rev1));
     assert!(report.contains("rollback target="));
-    assert!(report.contains("desired_revision="));
+    assert!(report.contains("Plan for host kadath @ "));
 }
 
 #[test]
 fn representative_rollback_plan_and_execution_complete_within_sc003_budget() {
     let _lock = path_lock().lock().expect("path lock");
+    let previous_host = std::env::var_os("CORE_OPS_HOST");
+    std::env::set_var("CORE_OPS_HOST", "kadath");
+    let _host_guard = HostGuard {
+        previous: previous_host,
+    };
     let repo = temp_file("rollback_timing_repo");
     let repo_dir = repo.with_extension("");
     fs::create_dir_all(&repo_dir).expect("repo dir");
@@ -468,14 +476,14 @@ fn representative_rollback_plan_and_execution_complete_within_sc003_budget() {
         &deterministic_path,
         &DeterministicPersistedState {
             schema_version: 1,
-            current_scope: "scope:default".to_string(),
+            current_scope: "host:kadath".to_string(),
             retained_snapshots: vec![
                 RetainedAppliedSnapshot {
                     revision_id: rev1.clone(),
-                    scope_id: "scope:default".to_string(),
+                    scope_id: "host:kadath".to_string(),
                     snapshot: NormalizedSnapshot {
                         revision_id: Some(rev1.clone()),
-                        scope_id: "scope:default".to_string(),
+                        scope_id: "host:kadath".to_string(),
                         objects: vec![object(
                             "alpha.service",
                             ManagedObjectKind::QuadletResource,
@@ -487,10 +495,10 @@ fn representative_rollback_plan_and_execution_complete_within_sc003_budget() {
                 },
                 RetainedAppliedSnapshot {
                     revision_id: rev2.clone(),
-                    scope_id: "scope:default".to_string(),
+                    scope_id: "host:kadath".to_string(),
                     snapshot: NormalizedSnapshot {
                         revision_id: Some(rev2),
-                        scope_id: "scope:default".to_string(),
+                        scope_id: "host:kadath".to_string(),
                         objects: vec![object(
                             "alpha.service",
                             ManagedObjectKind::QuadletResource,
@@ -544,5 +552,19 @@ struct PathGuard {
 impl Drop for PathGuard {
     fn drop(&mut self) {
         std::env::set_var("PATH", &self.previous);
+    }
+}
+
+struct HostGuard {
+    previous: Option<std::ffi::OsString>,
+}
+
+impl Drop for HostGuard {
+    fn drop(&mut self) {
+        if let Some(value) = &self.previous {
+            std::env::set_var("CORE_OPS_HOST", value);
+        } else {
+            std::env::remove_var("CORE_OPS_HOST");
+        }
     }
 }

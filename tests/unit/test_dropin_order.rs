@@ -4,7 +4,6 @@ use core_ops::core::types::{
     ServiceCatalog, ServiceDefinition,
 };
 use std::collections::BTreeMap;
-
 #[test]
 fn applies_dropins_in_lexicographic_order_with_host_overrides_last() {
     let service = ServiceDefinition {
@@ -28,8 +27,6 @@ fn applies_dropins_in_lexicographic_order_with_host_overrides_last() {
             },
         ],
         config_files: Vec::new(),
-        mount_declarations: Vec::new(),
-        service_mounts: Vec::new(),
     };
 
     let mut services = BTreeMap::new();
@@ -49,8 +46,6 @@ fn applies_dropins_in_lexicographic_order_with_host_overrides_last() {
                 source_path: "/hosts/kadath/overrides/alpha.container.d/20-host.conf".to_string(),
             }],
             config_overrides: Vec::new(),
-            mount_overrides: Vec::new(),
-            service_mount_overrides: BTreeMap::new(),
         },
     };
 

@@ -1,12 +1,15 @@
 use std::path::PathBuf;
 
 use core_ops::core::types::{
-    Boundaries, BoundaryScope, ConvergenceStatus, DependencyEdgeKind,
-    DeterministicPersistedState, EnabledState, Invariant, ManagedObjectKind, MountDeclaration,
+    Boundaries, BoundaryScope, Cause, CauseKind, ConvergenceStatus, DependencyEdgeKind,
+    DependencyEdgeView, DependencyRelation, DeterministicPersistedState, EnabledState,
+    ExplainOutputView, Invariant, ManagedObjectKind, ManagedObjectRef, MountDeclaration,
     MountDependency, MountVerificationMode, NormalizedManagedObject, NormalizedSnapshot,
-    PathDependencyMode, PreparedTargetPath, QuadletType, RestartPolicy, RollbackEligibility,
+    PathDependencyMode, PlanEntry, PlanEntryAction, PlanOutputView, PlanSummaryView,
+    PreparedTargetPath, QuadletType, RestartPolicy, RevisionContext, RollbackEligibility,
     RollbackTargetCandidate, RuntimeVerificationSignal, SemanticDependencyEdge,
-    SemanticDependencyGraph, SemanticDependencyNode, UnitDependencyMode, Workload,
+    SemanticDependencyGraph, SemanticDependencyNode, SemanticDiffKind, SemanticDiffView,
+    UnitDependencyMode, Workload,
 };
 use core_ops::core::unit::systemd_unit_for_quadlet_file;
 use core_ops::io::quadlet::read_quadlet_dir;
@@ -70,7 +73,6 @@ fn mount_declaration_derives_native_unit_names() {
         network_backed: true,
         automount: true,
         verification_mode: MountVerificationMode::UnitAndPath,
-        ownership_scope: vec!["immich".to_string()],
         prepared_path: None,
     };
 
@@ -86,10 +88,6 @@ fn prepared_target_metadata_and_dependency_identity_are_explicit() {
     let prepared = PreparedTargetPath {
         path: "/var/lib/immich/media".to_string(),
         create_if_missing: true,
-        owner: Some("1000".to_string()),
-        group: Some("1000".to_string()),
-        mode: Some("0755".to_string()),
-        service_consumed: true,
     };
     let dependency = MountDependency {
         service_name: "immich".to_string(),
@@ -99,7 +97,7 @@ fn prepared_target_metadata_and_dependency_identity_are_explicit() {
         unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
     };
 
-    assert_eq!(prepared.owner.as_deref(), Some("1000"));
+    assert!(prepared.create_if_missing);
     assert_eq!(dependency.mount_ids, vec!["immich-media"]);
 }
 
@@ -184,6 +182,81 @@ fn convergence_status_covers_foundational_outcomes() {
     ];
 
     assert_eq!(statuses.len(), 6);
+}
+
+#[test]
+fn public_output_types_preserve_stable_identity_and_schema_shape() {
+    let object = ManagedObjectRef {
+        resource_type: "service".to_string(),
+        name: "alpha.service".to_string(),
+        display_id: "service/alpha.service".to_string(),
+    };
+    let entry = PlanEntry {
+        object: object.clone(),
+        action: PlanEntryAction::Update,
+        causes: vec![Cause {
+            kind: CauseKind::DesiredChange,
+            summary: "service definition changed".to_string(),
+            source_object: None,
+            details: None,
+        }],
+        dependencies: vec![DependencyEdgeView {
+            relation: DependencyRelation::Prerequisite,
+            object: ManagedObjectRef {
+                resource_type: "config".to_string(),
+                name: "config:/etc/alpha/env".to_string(),
+                display_id: "config/etc/alpha/env".to_string(),
+            },
+        }],
+        order_index: 0,
+        diff: Some(SemanticDiffView {
+            kind: SemanticDiffKind::SemanticOnly,
+            summary: "image field changed".to_string(),
+            unified_diff: None,
+            details: None,
+        }),
+        unchanged: Some(false),
+        notes: None,
+    };
+    let plan = PlanOutputView {
+        view_kind: "plan".to_string(),
+        revision_context: RevisionContext {
+            target_revision: "rev-2".to_string(),
+            last_applied_revision: Some("rev-1".to_string()),
+            change_revision: Some("rev-2".to_string()),
+        },
+        summary: PlanSummaryView {
+            changed_count: 1,
+            unchanged_count: 0,
+            blocked_count: 0,
+            skipped_count: 0,
+            total_count: Some(1),
+        },
+        entries: vec![entry],
+    };
+    let explain = ExplainOutputView {
+        view_kind: "explain".to_string(),
+        revision_context: plan.revision_context.clone(),
+        object,
+        action_or_outcome: "update".to_string(),
+        causes: plan.entries[0].causes.clone(),
+        dependencies: plan.entries[0].dependencies.clone(),
+        diff: plan.entries[0].diff.clone(),
+        history: None,
+    };
+
+    let plan_json = serde_json::to_value(&plan).expect("serialize plan output");
+    let explain_json = serde_json::to_value(&explain).expect("serialize explain output");
+
+    assert_eq!(plan_json["view_kind"].as_str(), Some("plan"));
+    assert_eq!(
+        plan_json["entries"][0]["object"]["display_id"].as_str(),
+        Some("service/alpha.service")
+    );
+    assert_eq!(
+        explain_json["dependencies"][0]["relation"].as_str(),
+        Some("prerequisite")
+    );
 }
 
 fn temp_dir(prefix: &str) -> PathBuf {

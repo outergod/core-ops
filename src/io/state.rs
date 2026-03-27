@@ -21,6 +21,7 @@ pub const CONTROLLER_VERSION_ENV: &str = "CORE_OPS_CONTROLLER_VERSION";
 pub const CONTROLLER_REVISION_ENV: &str = "CORE_OPS_CONTROLLER_REVISION";
 pub const CONTROLLER_BUILD_TIME_ENV: &str = "CORE_OPS_CONTROLLER_BUILD_TIME";
 pub const CONTROLLER_TREE_STATE_ENV: &str = "CORE_OPS_CONTROLLER_TREE_STATE";
+// Operator-facing plan/apply/result views evolve independently from persisted on-disk state.
 pub const DETERMINISTIC_STATE_FILE_NAME: &str = "deterministic-state.json";
 
 #[derive(Clone, Debug, PartialEq, Eq)]

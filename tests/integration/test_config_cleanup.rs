@@ -114,7 +114,6 @@ fn mount_related_config_reapply_is_idempotent() {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: None,
         }],
         mount_dependencies: Vec::new(),

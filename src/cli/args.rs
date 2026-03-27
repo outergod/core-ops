@@ -1,6 +1,8 @@
+use std::sync::OnceLock;
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
+use crate::build_info::{BUILD_REVISION, BUILD_TREE_STATE};
 
 const PLAN_AFTER_HELP: &str = "Examples:
   core-ops plan --repo ./repo --rev main
@@ -27,6 +29,7 @@ and audit flows.";
 #[command(
     name = "core-ops",
     version,
+    long_version = long_version(),
     about = "GitOps controller for Quadlet, native systemd units, and mount-aware reconciliation"
 )]
 pub struct Cli {
@@ -69,6 +72,12 @@ pub struct PlanArgs {
     /// Optional directory for persisted audit records.
     #[arg(long)]
     pub audit_dir: Option<PathBuf>,
+    /// Emit authoritative machine-readable `PlanOutput` JSON.
+    #[arg(long)]
+    pub json: bool,
+    /// Show full diff hunks and include zero-value summary counts.
+    #[arg(long, short = 'v', conflicts_with = "json")]
+    pub verbose: bool,
 }
 
 #[derive(Args, Debug)]
@@ -150,4 +159,34 @@ pub struct StatusArgs {
     /// `/var/lib/core-ops/status.json`.
     #[arg(long)]
     pub state_file: Option<PathBuf>,
+}
+
+fn long_version() -> &'static str {
+    static LONG_VERSION: OnceLock<String> = OnceLock::new();
+    LONG_VERSION.get_or_init(|| {
+        let mut version = env!("CARGO_PKG_VERSION").to_string();
+        if let Some(revision) = BUILD_REVISION {
+            version.push_str(&format!(" ({})", short_revision(revision)));
+            if BUILD_TREE_STATE != "clean" {
+                version.push_str(&format!(" {BUILD_TREE_STATE}"));
+            }
+        } else if BUILD_TREE_STATE != "clean" {
+            version.push_str(&format!(" ({BUILD_TREE_STATE})"));
+        }
+        version
+    })
+}
+
+fn short_revision(revision: &str) -> &str {
+    &revision[..revision.len().min(8)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::long_version;
+
+    #[test]
+    fn long_version_includes_package_version() {
+        assert!(long_version().contains(env!("CARGO_PKG_VERSION")));
+    }
 }

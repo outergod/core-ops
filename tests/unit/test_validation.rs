@@ -1,12 +1,14 @@
 use core_ops::core::types::{
-    Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, MountDeclaration,
-    MountDependency, MountVerificationMode, PathDependencyMode, PlanAction, PlanActionType,
-    PreparedTargetPath, QuadletType, ReconciliationPlan, RestartPolicy, UnitDependencyMode,
-    Workload,
+    Boundaries, BoundaryScope, Cause, CauseKind, DependencyEdgeView, DependencyRelation,
+    DesiredState, EnabledState, Invariant, ManagedObjectRef, MountDeclaration, MountDependency,
+    MountVerificationMode, PathDependencyMode, PlanAction, PlanActionType, PlanEntry,
+    PlanEntryAction, PlanOutputView, PlanSummaryView, PreparedTargetPath, QuadletType,
+    ReconciliationPlan, RestartPolicy, RevisionContext, UnitDependencyMode, Workload,
 };
 use core_ops::core::validation::{
     detect_semantic_dependency_cycle, validate_canonical_object_identity, validate_desired_state,
-    validate_mount_model, validate_retry_signature, validate_rollback_candidate,
+    validate_mount_model, validate_plan_output_view, validate_retry_signature,
+    validate_rollback_candidate,
 };
 use core_ops::core::boundaries::enforce_plan_boundaries;
 
@@ -139,7 +141,6 @@ fn rejects_automount_for_non_network_mounts() {
         network_backed: false,
         automount: true,
         verification_mode: MountVerificationMode::UnitAndPath,
-        ownership_scope: vec!["alpha".to_string()],
         prepared_path: None,
     }];
 
@@ -148,7 +149,7 @@ fn rejects_automount_for_non_network_mounts() {
 }
 
 #[test]
-fn rejects_prepared_ownership_for_non_service_consumed_paths() {
+fn rejects_prepared_path_that_differs_from_mount_target() {
     let mounts = vec![MountDeclaration {
         id: "immich-media".to_string(),
         target_path: "/var/lib/immich/media".to_string(),
@@ -158,23 +159,18 @@ fn rejects_prepared_ownership_for_non_service_consumed_paths() {
         network_backed: true,
         automount: false,
         verification_mode: MountVerificationMode::UnitAndPath,
-        ownership_scope: vec!["immich".to_string()],
         prepared_path: Some(PreparedTargetPath {
-            path: "/var/lib/immich/media".to_string(),
+            path: "/srv/immich/media".to_string(),
             create_if_missing: true,
-            owner: Some("1000".to_string()),
-            group: None,
-            mode: None,
-            service_consumed: false,
         }),
     }];
 
     let err = validate_mount_model(&mounts, &[], Some(&["immich".to_string()])).unwrap_err();
-    assert!(err.message.contains("service-consumed"));
+    assert!(err.message.contains("must match mount target"));
 }
 
 #[test]
-fn rejects_mount_dependency_outside_ownership_scope() {
+fn rejects_mount_dependency_for_unknown_mount_reference() {
     let mounts = vec![MountDeclaration {
         id: "immich-media".to_string(),
         target_path: "/var/lib/immich/media".to_string(),
@@ -184,12 +180,11 @@ fn rejects_mount_dependency_outside_ownership_scope() {
         network_backed: true,
         automount: false,
         verification_mode: MountVerificationMode::UnitAndPath,
-        ownership_scope: vec!["immich".to_string()],
         prepared_path: None,
     }];
     let dependencies = vec![MountDependency {
-        service_name: "gallery".to_string(),
-        mount_ids: vec!["immich-media".to_string()],
+        service_name: "immich".to_string(),
+        mount_ids: vec!["unknown".to_string()],
         consumed_paths: vec!["/var/lib/immich/media".to_string()],
         path_dependency_mode: PathDependencyMode::RequiresMountsFor,
         unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
@@ -198,10 +193,10 @@ fn rejects_mount_dependency_outside_ownership_scope() {
     let err = validate_mount_model(
         &mounts,
         &dependencies,
-        Some(&["immich".to_string(), "gallery".to_string()]),
+        Some(&["immich".to_string()]),
     )
     .unwrap_err();
-    assert!(err.message.contains("outside ownership scope"));
+    assert!(err.message.contains("unknown mount declaration"));
 }
 
 #[test]
@@ -248,4 +243,88 @@ fn retry_signature_requires_object_set_and_pattern() {
     let err = validate_retry_signature("missing-parts").unwrap_err();
     assert!(err.message.contains("invalid retry signature"));
     assert!(validate_retry_signature("alpha|timeout").is_ok());
+}
+
+#[test]
+fn plan_output_validation_rejects_non_sequential_order_indices() {
+    let err = validate_plan_output_view(&PlanOutputView {
+        view_kind: "plan".to_string(),
+        revision_context: RevisionContext {
+            target_revision: "rev-2".to_string(),
+            last_applied_revision: None,
+            change_revision: None,
+        },
+        summary: PlanSummaryView {
+            changed_count: 1,
+            unchanged_count: 0,
+            blocked_count: 0,
+            skipped_count: 0,
+            total_count: Some(1),
+        },
+        entries: vec![PlanEntry {
+            object: ManagedObjectRef {
+                resource_type: "service".to_string(),
+                name: "alpha.service".to_string(),
+                display_id: "service/alpha.service".to_string(),
+            },
+            action: PlanEntryAction::Update,
+            causes: vec![Cause {
+                kind: CauseKind::DesiredChange,
+                summary: "image changed".to_string(),
+                source_object: None,
+                details: None,
+            }],
+            dependencies: vec![DependencyEdgeView {
+                relation: DependencyRelation::Prerequisite,
+                object: ManagedObjectRef {
+                    resource_type: "config".to_string(),
+                    name: "config:/etc/alpha/env".to_string(),
+                    display_id: "config/etc/alpha/env".to_string(),
+                },
+            }],
+            order_index: 1,
+            diff: None,
+            unchanged: Some(false),
+            notes: None,
+        }],
+    })
+    .unwrap_err();
+
+    assert!(err.message.contains("sequential order indices"));
+}
+
+#[test]
+fn plan_output_validation_rejects_non_noop_entries_without_causes() {
+    let err = validate_plan_output_view(&PlanOutputView {
+        view_kind: "plan".to_string(),
+        revision_context: RevisionContext {
+            target_revision: "rev-2".to_string(),
+            last_applied_revision: None,
+            change_revision: None,
+        },
+        summary: PlanSummaryView {
+            changed_count: 1,
+            unchanged_count: 0,
+            blocked_count: 0,
+            skipped_count: 0,
+            total_count: Some(1),
+        },
+        entries: vec![PlanEntry {
+            object: ManagedObjectRef {
+                resource_type: "service".to_string(),
+                name: "alpha.service".to_string(),
+                display_id: "service/alpha.service".to_string(),
+            },
+            action: PlanEntryAction::Update,
+            causes: Vec::new(),
+            dependencies: Vec::new(),
+            order_index: 0,
+            diff: None,
+            unchanged: Some(false),
+            notes: None,
+        }],
+    })
+    .unwrap_err();
+
+    assert!(err.message.contains("must include a cause"));
 }

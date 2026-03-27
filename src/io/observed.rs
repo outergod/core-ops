@@ -7,6 +7,7 @@ use crate::core::types::{
     ObservedState, ObservedUnit, QuadletType, RestartPolicy, RuntimeVerificationSignal, UnitActiveState,
     Workload,
 };
+use crate::core::evaluate::dependency_refs_for_workload_state;
 use crate::io::quadlet::{
     normalize_socket_contents, parse_quadlet_name, read_quadlet_dir, QuadletError,
     SOCKET_MANAGED_MARKER,
@@ -86,22 +87,38 @@ pub fn read_observed_state(
     })
 }
 
-pub fn build_observed_snapshot(observed: &ObservedState, scope_id: &str) -> NormalizedSnapshot {
+pub fn build_observed_snapshot(
+    observed: &ObservedState,
+    desired: Option<&DesiredState>,
+    scope_id: &str,
+) -> NormalizedSnapshot {
     let mut objects: Vec<NormalizedManagedObject> = observed
         .workloads
         .iter()
         .map(|workload| {
             let mut material_fields = std::collections::BTreeMap::new();
+            material_fields.insert("name".to_string(), workload.name.clone());
             material_fields.insert("unit_name".to_string(), workload.systemd_unit_name.clone());
             material_fields.insert(
                 "quadlet_type".to_string(),
                 format!("{:?}", workload.quadlet_type).to_lowercase(),
             );
+            material_fields.insert("contents".to_string(), workload.quadlet_contents.clone());
+            material_fields.insert(
+                "enabled_state".to_string(),
+                format!("{:?}", workload.enabled_state).to_lowercase(),
+            );
+            material_fields.insert(
+                "restart_policy".to_string(),
+                format!("{:?}", workload.restart_policy).to_lowercase(),
+            );
             NormalizedManagedObject {
                 object_id: workload.systemd_unit_name.clone(),
                 object_kind: kind_for_quadlet_type(&workload.quadlet_type),
                 material_fields,
-                dependency_refs: Vec::new(),
+                dependency_refs: desired
+                    .map(|desired| dependency_refs_for_workload_state(desired, workload))
+                    .unwrap_or_default(),
             }
         })
         .collect();

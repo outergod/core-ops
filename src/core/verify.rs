@@ -84,6 +84,8 @@ pub fn evaluate_convergence(
             .host_info
             .as_ref()
             .map(|host| format!("host:{}", host.hostname))
+            .or_else(|| std::env::var(crate::io::repo::HOST_OVERRIDE_ENV).ok().filter(|host| !host.is_empty()).map(|host| format!("host:{host}")))
+            .or_else(default_host_scope_id)
             .unwrap_or_else(|| "scope:default".to_string()),
         status,
         attempt_count: attempt,
@@ -96,6 +98,17 @@ pub fn evaluate_convergence(
         failed_actions,
         can_continue,
     }
+}
+
+fn default_host_scope_id() -> Option<String> {
+    let mut buf = [0u8; 256];
+    let result = unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) };
+    if result != 0 {
+        return None;
+    }
+    let len = buf.iter().position(|b| *b == 0).unwrap_or(buf.len());
+    let hostname = String::from_utf8_lossy(&buf[..len]).trim().to_string();
+    (!hostname.is_empty()).then(|| format!("host:{hostname}"))
 }
 
 fn verify_workload(

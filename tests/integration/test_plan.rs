@@ -2,13 +2,19 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::integration::env_lock::path_lock;
+use core_ops::cli::plan as plan_cmd;
+use core_ops::cli::report::inspect_plan_dependencies;
+use core_ops::core::evaluate::build_desired_snapshot_from_state;
 use core_ops::core::errors::CoreError;
+use core_ops::core::planner::direct_and_transitive_prerequisite_refs;
 use core_ops::core::reconcile::{reconcile_plan, ReconcileDependencies};
 use core_ops::core::reconcile::reconcile_deterministic_plan;
-use core_ops::core::types::{DriftCategory, ManagedObjectKind, NormalizedManagedObject, NormalizedSnapshot};
+use core_ops::core::types::{Boundaries, DriftCategory, EnabledState, ManagedObjectKind, NormalizedManagedObject, NormalizedSnapshot, QuadletType, RestartPolicy, Workload};
 use core_ops::io::apply::apply_plan;
-use core_ops::io::observed::read_observed_state;
+use core_ops::io::observed::{build_observed_snapshot, read_observed_state};
 use core_ops::io::repo::load_desired_state;
+use core_ops::io::state::{persist_success_state, STATE_FILE_ENV};
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -18,6 +24,24 @@ fn temp_dir(prefix: &str) -> PathBuf {
         .as_nanos();
     path.push(format!("{}_{}", prefix, nanos));
     path
+}
+
+fn strip_ansi(value: &str) -> String {
+    let mut output = String::new();
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            while let Some(next) = chars.next() {
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            output.push(ch);
+        }
+    }
+    output
 }
 
 fn init_git_repo(repo: &PathBuf) -> String {
@@ -89,6 +113,253 @@ fn plan_does_not_apply_changes() {
     assert_eq!(result.run.summary, "planned");
     assert!(result.plan.actions.len() >= 1);
     assert!(std::fs::read_dir(&host_quadlets).unwrap().next().is_none());
+}
+
+#[test]
+fn cli_plan_summary_uses_deterministic_reconciliation_view() {
+    let repo = temp_dir("core_ops_repo_plan_summary");
+    let rev = init_git_repo(&repo);
+
+    let host_quadlets = temp_dir("core_ops_host_plan_summary");
+    fs::create_dir_all(&host_quadlets).expect("create host quadlets");
+
+    let deps = ReconcileDependencies {
+        load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
+        read_observed: &|desired| {
+            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string()))
+                .map_err(map_io_error)
+        },
+        apply_plan: &|plan, desired| {
+            apply_plan(plan, &desired.workloads, &host_quadlets, false)
+                .map(|_| ())
+                .map_err(map_io_error)
+        },
+    };
+
+    let output = plan_cmd::plan(&deps, false).expect("cli plan output");
+    let summary = strip_ansi(&output.summary);
+
+    assert!(summary.contains("Plan for host "));
+    assert!(summary.contains(" @ "));
+    assert!(!summary.contains("scope:default"));
+    assert!(summary.contains("Summary"));
+    assert!(!summary.contains("\n    metadata\n"));
+}
+
+#[test]
+fn cli_plan_exposes_machine_readable_plan_output() {
+    let repo = temp_dir("core_ops_repo_plan_machine");
+    let rev = init_git_repo(&repo);
+
+    let host_quadlets = temp_dir("core_ops_host_plan_machine");
+    fs::create_dir_all(&host_quadlets).expect("create host quadlets");
+
+    let deps = ReconcileDependencies {
+        load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
+        read_observed: &|desired| {
+            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string()))
+                .map_err(map_io_error)
+        },
+        apply_plan: &|plan, desired| {
+            apply_plan(plan, &desired.workloads, &host_quadlets, false)
+                .map(|_| ())
+                .map_err(map_io_error)
+        },
+    };
+
+    let output = plan_cmd::plan(&deps, false).expect("cli plan output");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&output.machine).expect("parse machine plan");
+
+    assert_eq!(parsed["view_kind"].as_str(), Some("plan"));
+    assert!(parsed["entries"].is_array());
+    assert_eq!(parsed["revision_context"]["target_revision"].as_str(), Some(rev.as_str()));
+}
+
+#[test]
+fn cli_plan_uses_host_override_for_scope_when_observed_host_info_is_absent() {
+    let _lock = path_lock().lock().expect("path lock");
+    let previous = std::env::var_os("CORE_OPS_HOST");
+    std::env::set_var("CORE_OPS_HOST", "kadath");
+    let _guard = EnvGuard {
+        key: "CORE_OPS_HOST".to_string(),
+        previous,
+    };
+
+    let repo = temp_dir("core_ops_repo_plan_host_scope");
+    let rev = init_git_repo(&repo);
+
+    let host_quadlets = temp_dir("core_ops_host_plan_host_scope");
+    fs::create_dir_all(&host_quadlets).expect("create host quadlets");
+
+    let deps = ReconcileDependencies {
+        load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
+        read_observed: &|desired| {
+            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string()))
+                .map_err(map_io_error)
+        },
+        apply_plan: &|plan, desired| {
+            apply_plan(plan, &desired.workloads, &host_quadlets, false)
+                .map(|_| ())
+                .map_err(map_io_error)
+        },
+    };
+
+    let output = plan_cmd::plan(&deps, false).expect("cli plan output");
+    let summary = strip_ansi(&output.summary);
+
+    assert!(summary.contains("Plan for host kadath @ "));
+}
+
+#[test]
+fn cli_plan_header_uses_persisted_last_applied_revision_when_available() {
+    let repo = temp_dir("core_ops_repo_plan_previous_revision");
+    let rev = init_git_repo(&repo);
+
+    let host_quadlets = temp_dir("core_ops_host_plan_previous_revision");
+    fs::create_dir_all(&host_quadlets).expect("create host quadlets");
+
+    let state_dir = temp_dir("core_ops_state_plan_previous_revision");
+    fs::create_dir_all(&state_dir).expect("create state dir");
+    let state_file = state_dir.join("status.json");
+    persist_success_state(&state_file, repo.to_str().unwrap(), "main", "a1b2c3d")
+        .expect("persist state");
+    let _guard = EnvGuard {
+        key: STATE_FILE_ENV.to_string(),
+        previous: std::env::var_os(STATE_FILE_ENV),
+    };
+    std::env::set_var(STATE_FILE_ENV, &state_file);
+
+    let deps = ReconcileDependencies {
+        load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
+        read_observed: &|desired| {
+            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string()))
+                .map_err(map_io_error)
+        },
+        apply_plan: &|plan, desired| {
+            apply_plan(plan, &desired.workloads, &host_quadlets, false)
+                .map(|_| ())
+                .map_err(map_io_error)
+        },
+    };
+
+    let output = plan_cmd::plan(&deps, false).expect("cli plan output");
+    let summary = strip_ansi(&output.summary);
+
+    assert!(summary.contains("Plan for host "));
+    assert!(summary.contains("a1b2c3d → "));
+}
+
+#[test]
+fn desired_snapshot_extracts_config_and_runtime_dependency_refs() {
+    let desired = core_ops::core::types::DesiredState {
+        repository_ref: "repo".to_string(),
+        revision_id: "rev-1".to_string(),
+        workloads: vec![
+            Workload {
+                name: "/etc/app.env".to_string(),
+                quadlet_type: QuadletType::ConfigFile,
+                quadlet_contents: "A=B".to_string(),
+                systemd_unit_name: "/etc/app.env".to_string(),
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            },
+            Workload {
+                name: "app-data".to_string(),
+                quadlet_type: QuadletType::Volume,
+                quadlet_contents: "[Volume]\nVolumeName=app-data\n".to_string(),
+                systemd_unit_name: "app-data.volume".to_string(),
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            },
+            Workload {
+                name: "app".to_string(),
+                quadlet_type: QuadletType::Network,
+                quadlet_contents: "[Network]\nNetworkName=app\n".to_string(),
+                systemd_unit_name: "app.network".to_string(),
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            },
+            Workload {
+                name: "app-http".to_string(),
+                quadlet_type: QuadletType::Socket,
+                quadlet_contents: "[Socket]\nListenStream=8080\n".to_string(),
+                systemd_unit_name: "app-http.socket".to_string(),
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            },
+            Workload {
+                name: "app".to_string(),
+                quadlet_type: QuadletType::Container,
+                quadlet_contents: "[Container]\nEnvironmentFile=/etc/app.env\nVolume=app-data.volume:/var/lib/app\nNetwork=app\n\n[Service]\nSockets=app-http.socket\n".to_string(),
+                systemd_unit_name: "app.container".to_string(),
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            },
+        ],
+        mount_declarations: Vec::new(),
+        mount_dependencies: Vec::new(),
+        managed_config_paths: vec!["/etc/app.env".to_string()],
+        managed_config_roots: vec!["/etc".to_string()],
+        invariants: Vec::new(),
+        boundaries: Boundaries { scopes: Vec::new() },
+    };
+
+    let snapshot = build_desired_snapshot_from_state(&desired, "host:alpha");
+    let container = snapshot
+        .objects
+        .iter()
+        .find(|object| object.object_id == "app.container")
+        .expect("container object");
+
+    assert_eq!(
+        container.dependency_refs,
+        vec![
+            "/etc/app.env".to_string(),
+            "app-data.volume".to_string(),
+            "app-http.socket".to_string(),
+            "app.network".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn observed_snapshot_matches_desired_snapshot_when_contents_match() {
+    let repo = temp_dir("core_ops_repo_snapshot_match");
+    let rev = init_git_repo(&repo);
+    let desired = load_desired_state(repo.to_str().unwrap(), &rev).expect("desired state");
+
+    let host_quadlets = temp_dir("core_ops_host_snapshot_match");
+    fs::create_dir_all(&host_quadlets).expect("create host quadlets");
+    for workload in &desired.workloads {
+        fs::write(
+            host_quadlets.join(&workload.systemd_unit_name),
+            &workload.quadlet_contents,
+        )
+        .expect("write observed workload");
+    }
+
+    let observed = read_observed_state(&host_quadlets, Some(&desired), Some("obs".to_string()))
+        .expect("observed state");
+    let desired_snapshot = build_desired_snapshot_from_state(&desired, "host:alpha");
+    let observed_snapshot = build_observed_snapshot(&observed, Some(&desired), "host:alpha");
+
+    assert_eq!(desired_snapshot.objects, observed_snapshot.objects);
+}
+
+struct EnvGuard {
+    key: String,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        if let Some(value) = &self.previous {
+            std::env::set_var(&self.key, value);
+        } else {
+            std::env::remove_var(&self.key);
+        }
+    }
 }
 
 fn map_io_error<E: std::fmt::Display>(err: E) -> CoreError {
@@ -167,4 +438,63 @@ fn external_drift_is_classified_and_ordering_is_dependency_aware() {
         .get("image")
         .expect("image diff")
         .contains("ghcr.io/example:debug"));
+}
+
+#[test]
+fn dependency_inspection_exposes_prerequisites_dependents_blockers_and_transitive_context() {
+    let desired = NormalizedSnapshot {
+        revision_id: Some("rev-3".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            object(
+                "config:/etc/alpha/base",
+                ManagedObjectKind::RenderedArtifact,
+                &[("path", "/etc/alpha/base")],
+                &[],
+            ),
+            object(
+                "config:/etc/alpha/env",
+                ManagedObjectKind::RenderedArtifact,
+                &[("path", "/etc/alpha/env"), ("sha", "abc123")],
+                &["config:/etc/alpha/base"],
+            ),
+            object(
+                "alpha.service",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "alpha.service"), ("image", "ghcr.io/example:1")],
+                &["config:/etc/alpha/env", "missing.mount"],
+            ),
+            object(
+                "alpha.timer",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "alpha.timer")],
+                &["alpha.service"],
+            ),
+        ],
+    };
+    let actual = desired.clone();
+    let result = reconcile_deterministic_plan(&desired, Some(&desired), &actual)
+        .expect("deterministic plan");
+
+    let inspected = inspect_plan_dependencies(&result.plan, "alpha.service");
+    let (direct, transitive) =
+        direct_and_transitive_prerequisite_refs(&result.plan.graph, "alpha.service");
+
+    let labels = inspected
+        .iter()
+        .map(|edge| format!("{:?}:{}", edge.relation, edge.object.display_id))
+        .collect::<Vec<_>>();
+    assert_eq!(direct[0].display_id, "config/etc/alpha/env");
+    assert_eq!(transitive[0].display_id, "config/etc/alpha/base");
+    assert!(labels.contains(&"Prerequisite:config/etc/alpha/env".to_string()));
+    assert!(labels.contains(&"Dependent:service/alpha.timer".to_string()));
+    assert!(labels.contains(&"Blocker:mount/missing.mount".to_string()));
+
+    let blocked = result
+        .plan
+        .actions
+        .iter()
+        .find(|action| action.object_id == "alpha.service")
+        .expect("alpha.service action");
+    assert!(blocked.dependency_context.contains(&"missing.mount".to_string()));
 }

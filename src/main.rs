@@ -34,6 +34,8 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let rev = args.rev;
             let quadlet_dir = args.quadlet_dir;
             let audit_dir = args.audit_dir;
+            let json = args.json;
+            let verbose = args.verbose;
             set_systemd_unit_dir(&args.systemd_unit_dir);
             set_host_override(&args.host);
 
@@ -46,7 +48,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                 apply_plan: &|_, _| Ok(()),
             };
 
-            let output = plan_cmd::plan(&deps)?;
+            let output = plan_cmd::plan(&deps, verbose)?;
             audit_io::emit_journal_event(&output.audit_event).map_err(map_plan_error)?;
             if let Some(dir) = audit_dir {
                 let audit_path = audit_io::write_audit_record(&dir, &output.audit_record)
@@ -54,7 +56,11 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                 println!("audit {}", audit_path);
             }
 
-            println!("{}", output.summary);
+            if json {
+                println!("{}", output.machine);
+            } else {
+                println!("{}", output.summary);
+            }
             Ok(())
         }
         Commands::Apply(args) => {

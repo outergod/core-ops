@@ -2,11 +2,12 @@ use crate::core::boundaries::enforce_plan_boundaries;
 use crate::core::diff::{diff_normalized_snapshots, diff_workloads};
 use crate::core::errors::{CoreError, ValidationError};
 use crate::core::types::{
-    DependencyEdgeKind, DesiredState, DeterministicActionClass, DeterministicPlannedAction,
-    DeterministicReconciliationPlan, DiffItem, DiffKind, FailureClass, GeneratedUnitSet,
+    DependencyEdgeKind, DependencyEdgeView, DependencyRelation, DesiredState,
+    DeterministicActionClass, DeterministicPlannedAction, DeterministicReconciliationPlan,
+    DiffItem, DiffKind, FailureClass, GeneratedUnitSet, ManagedObjectKind, ManagedObjectRef,
     MountDeclaration, MountDependency, NormalizedSnapshot, PlanAction, PlanActionType,
-    QuadletType, ReconciliationPlan, SafetyCheck, SemanticDependencyEdge, SemanticDependencyGraph,
-    SemanticDependencyNode, ServiceDependencyEdit, ObservedState,
+    QuadletType, ReconciliationPlan, SafetyCheck, SemanticDependencyEdge,
+    SemanticDependencyGraph, SemanticDependencyNode, ServiceDependencyEdit, ObservedState,
 };
 use crate::core::validation::{detect_semantic_dependency_cycle, validate_desired_state};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -106,6 +107,146 @@ pub fn build_semantic_dependency_graph(snapshot: &NormalizedSnapshot) -> Semanti
     SemanticDependencyGraph { nodes, edges }
 }
 
+pub fn managed_object_ref(object_id: &str, object_kind: &ManagedObjectKind) -> ManagedObjectRef {
+    let name = object_id.to_string();
+    let resource_type = resource_type_for_object(object_id, object_kind).to_string();
+    let display_name = if let Some(path) = object_id.strip_prefix("config:") {
+        path.trim_start_matches('/').to_string()
+    } else if object_id.starts_with('/') {
+        object_id.trim_start_matches('/').to_string()
+    } else {
+        object_id.to_string()
+    };
+    ManagedObjectRef {
+        display_id: format!("{resource_type}/{display_name}"),
+        resource_type,
+        name,
+    }
+}
+
+fn resource_type_for_object(object_id: &str, object_kind: &ManagedObjectKind) -> &'static str {
+    match object_kind {
+        ManagedObjectKind::RenderedArtifact => "config",
+        ManagedObjectKind::Mount => "mount",
+        ManagedObjectKind::Automount => "automount",
+        ManagedObjectKind::GeneratedUnit => "service",
+        ManagedObjectKind::QuadletResource => {
+            if object_id.ends_with(".container") {
+                "container"
+            } else if object_id.ends_with(".volume") {
+                "volume"
+            } else if object_id.ends_with(".network") {
+                "network"
+            } else if object_id.ends_with(".socket") {
+                "socket"
+            } else if object_id.ends_with(".mount") {
+                "mount"
+            } else if object_id.ends_with(".automount") {
+                "automount"
+            } else if object_id.ends_with(".service") {
+                "service"
+            } else if object_id.starts_with('/') {
+                "config"
+            } else {
+                "resource"
+            }
+        }
+    }
+}
+
+pub fn object_kind_by_id(graph: &SemanticDependencyGraph) -> BTreeMap<&str, &ManagedObjectKind> {
+    graph.nodes
+        .iter()
+        .map(|node| (node.object_id.as_str(), &node.object_kind))
+        .collect()
+}
+
+pub fn direct_prerequisite_refs(
+    graph: &SemanticDependencyGraph,
+    object_id: &str,
+) -> Vec<ManagedObjectRef> {
+    let object_kinds = object_kind_by_id(graph);
+    let mut refs = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.to_object_id == object_id)
+        .filter_map(|edge| {
+            object_kinds
+                .get(edge.from_object_id.as_str())
+                .map(|kind| managed_object_ref(&edge.from_object_id, kind))
+        })
+        .collect::<Vec<_>>();
+    refs.sort_by(|a, b| a.display_id.cmp(&b.display_id));
+    refs
+}
+
+pub fn dependent_refs(
+    graph: &SemanticDependencyGraph,
+    object_id: &str,
+) -> Vec<ManagedObjectRef> {
+    let object_kinds = object_kind_by_id(graph);
+    let mut refs = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.from_object_id == object_id)
+        .filter_map(|edge| {
+            object_kinds
+                .get(edge.to_object_id.as_str())
+                .map(|kind| managed_object_ref(&edge.to_object_id, kind))
+        })
+        .collect::<Vec<_>>();
+    refs.sort_by(|a, b| a.display_id.cmp(&b.display_id));
+    refs
+}
+
+pub fn direct_and_transitive_prerequisite_refs(
+    graph: &SemanticDependencyGraph,
+    object_id: &str,
+) -> (Vec<ManagedObjectRef>, Vec<ManagedObjectRef>) {
+    let direct = direct_prerequisite_refs(graph, object_id);
+    let object_kinds = object_kind_by_id(graph);
+    let mut seen = BTreeSet::new();
+    let mut pending = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.to_object_id == object_id)
+        .map(|edge| edge.from_object_id.clone())
+        .collect::<Vec<_>>();
+    let direct_ids = direct
+        .iter()
+        .map(|item| item.name.clone())
+        .collect::<BTreeSet<_>>();
+    let mut transitive = Vec::new();
+
+    while let Some(current) = pending.pop() {
+        for edge in graph.edges.iter().filter(|edge| edge.to_object_id == current) {
+            if seen.insert(edge.from_object_id.clone()) && !direct_ids.contains(&edge.from_object_id)
+            {
+                if let Some(kind) = object_kinds.get(edge.from_object_id.as_str()) {
+                    transitive.push(managed_object_ref(&edge.from_object_id, kind));
+                }
+                pending.push(edge.from_object_id.clone());
+            }
+        }
+    }
+
+    transitive.sort_by(|a, b| a.display_id.cmp(&b.display_id));
+    (direct, transitive)
+}
+
+pub fn dependency_edges_for_object(
+    graph: &SemanticDependencyGraph,
+    object_id: &str,
+) -> Vec<DependencyEdgeView> {
+    direct_prerequisite_refs(graph, object_id)
+        .into_iter()
+        .map(|object| DependencyEdgeView {
+            relation: DependencyRelation::Prerequisite,
+            object,
+        })
+        .collect()
+}
+
 pub fn plan_deterministic_reconciliation(
     desired: &NormalizedSnapshot,
     last_applied: Option<&NormalizedSnapshot>,
@@ -159,6 +300,21 @@ pub fn plan_deterministic_reconciliation(
         });
     }
 
+    let mut changed_by_object = actions
+        .iter()
+        .map(|action| (action.object_id.clone(), action.classification.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for action in &mut actions {
+        if action.classification != DeterministicActionClass::NoOp {
+            continue;
+        }
+        if let Some(trigger) = restart_trigger_dependency(&action.dependency_context, &changed_by_object) {
+            action.classification = DeterministicActionClass::Restart;
+            action.reason = format!("restart required because {} changed", trigger);
+            changed_by_object.insert(action.object_id.clone(), DeterministicActionClass::Restart);
+        }
+    }
+
     for object_id in ordered_delete_ids(actual, desired).map_err(map_validation_error)? {
         actions.push(DeterministicPlannedAction {
             object_id,
@@ -176,6 +332,24 @@ pub fn plan_deterministic_reconciliation(
         actions,
         drift_records,
         graph,
+    })
+}
+
+fn restart_trigger_dependency(
+    dependency_context: &[String],
+    changed_by_object: &BTreeMap<String, DeterministicActionClass>,
+) -> Option<String> {
+    dependency_context.iter().find_map(|dependency| {
+        changed_by_object.get(dependency).and_then(|classification| {
+            matches!(
+                classification,
+                DeterministicActionClass::Create
+                    | DeterministicActionClass::Update
+                    | DeterministicActionClass::Replace
+                    | DeterministicActionClass::Restart
+            )
+            .then(|| dependency.clone())
+        })
     })
 }
 
@@ -330,6 +504,9 @@ fn semantic_diff(
     actual: Option<&&crate::core::types::NormalizedManagedObject>,
     applied: Option<&&crate::core::types::NormalizedManagedObject>,
 ) -> BTreeMap<String, String> {
+    if actual == Some(&desired) && applied.is_none() {
+        return BTreeMap::new();
+    }
     let mut diff = BTreeMap::new();
     for (key, desired_value) in &desired.material_fields {
         let actual_value = actual.and_then(|object| object.material_fields.get(key));
@@ -495,6 +672,7 @@ fn action_class_label(action: &DeterministicActionClass) -> &'static str {
         DeterministicActionClass::Update => "update",
         DeterministicActionClass::Delete => "delete",
         DeterministicActionClass::Replace => "replace",
+        DeterministicActionClass::Restart => "restart",
         DeterministicActionClass::NoOp => "no_op",
         DeterministicActionClass::Blocked => "blocked",
     }

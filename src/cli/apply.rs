@@ -178,7 +178,7 @@ pub fn execute_rollback_with_report(
     let desired = load_desired_state(repo_source, target_revision_id).map_err(map_plan_error)?;
     let observed =
         read_observed_state(quadlet_dir, Some(&desired), None).map_err(map_plan_error)?;
-    let actual = build_observed_snapshot(&observed, &scope_id_for_observed(&observed));
+    let actual = build_observed_snapshot(&observed, Some(&desired), &scope_id_for_observed(&observed));
     let preview = rollback_with_report(&deterministic_state_path, target_revision_id, &actual)?;
 
     if plan_only {
@@ -254,7 +254,7 @@ fn load_or_init_deterministic_state(
         || {
             Ok(DeterministicPersistedState {
                 schema_version: 1,
-                current_scope: "scope:default".to_string(),
+                current_scope: default_host_scope_id().unwrap_or_else(|| "scope:default".to_string()),
                 retained_snapshots: Vec::new(),
                 latest_convergence: None,
                 latest_rollback_target: None,
@@ -269,7 +269,20 @@ fn scope_id_for_observed(observed: &crate::core::types::ObservedState) -> String
         .host_info
         .as_ref()
         .map(|host| format!("host:{}", host.hostname))
+        .or_else(|| std::env::var(crate::io::repo::HOST_OVERRIDE_ENV).ok().filter(|host| !host.is_empty()).map(|host| format!("host:{host}")))
+        .or_else(default_host_scope_id)
         .unwrap_or_else(|| "scope:default".to_string())
+}
+
+fn default_host_scope_id() -> Option<String> {
+    let mut buf = [0u8; 256];
+    let result = unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) };
+    if result != 0 {
+        return None;
+    }
+    let len = buf.iter().position(|b| *b == 0).unwrap_or(buf.len());
+    let hostname = String::from_utf8_lossy(&buf[..len]).trim().to_string();
+    (!hostname.is_empty()).then(|| format!("host:{hostname}"))
 }
 
 fn map_plan_error<E: std::fmt::Display>(err: E) -> CoreError {

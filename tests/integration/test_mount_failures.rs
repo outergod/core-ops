@@ -26,7 +26,6 @@ fn desired_state() -> DesiredState {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: None,
         }],
         mount_dependencies: vec![MountDependency {

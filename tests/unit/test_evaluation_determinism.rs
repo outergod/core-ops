@@ -9,7 +9,6 @@ use core_ops::core::types::{
 };
 use core_ops::core::reconcile::ReconcileDependencies;
 use std::collections::BTreeMap;
-
 #[test]
 fn evaluation_is_deterministic_for_same_input() {
     let service = ServiceDefinition {
@@ -34,8 +33,6 @@ fn evaluation_is_deterministic_for_same_input() {
             source_path: "/services/alpha/alpha.container.d/10-x.conf".to_string(),
         }],
         config_files: Vec::new(),
-        mount_declarations: Vec::new(),
-        service_mounts: Vec::new(),
     };
 
     let mut services = BTreeMap::new();
@@ -55,8 +52,6 @@ fn evaluation_is_deterministic_for_same_input() {
                 source_path: "/hosts/ulthar/overrides/alpha.container.d/20-y.conf".to_string(),
             }],
             config_overrides: Vec::new(),
-            mount_overrides: Vec::new(),
-            service_mount_overrides: BTreeMap::new(),
         },
     };
 
@@ -90,7 +85,6 @@ fn degraded_mount_failure_is_deterministic() {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: None,
         }],
         mount_dependencies: vec![MountDependency {

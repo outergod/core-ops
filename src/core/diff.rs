@@ -120,6 +120,11 @@ pub fn diff_normalized_snapshots(
             {
                 Some(DriftCategory::RuntimeVariance)
             }
+            (Some(desired_object), None, Some(actual_object))
+                if desired_object == actual_object =>
+            {
+                None
+            }
             (Some(_), None, _) => Some(DriftCategory::ExpectedChange),
             (None, Some(_), Some(_)) | (None, None, Some(_)) => Some(DriftCategory::StaleResidue),
             _ => None,

@@ -149,10 +149,9 @@ reasoning.
 
 - Author managed mounts as native `.mount` and optional `.automount` artifacts
   and embed only reconciliation-specific metadata in an `[X-CoreOps]` section.
-- Reference managed mounts from `services/<service>/service.yaml` by native
-  `.mount` unit stem.
-- Use `requires_mounts` on the consuming service so CoreOps can materialize
-  native dependency semantics directly into the generated unit configuration.
+- Express service-to-mount relationships in consuming unit content itself using
+  native systemd directives such as `RequiresMountsFor=`, `After=`, and
+  `Requires=` against managed `.mount` / `.automount` units.
 - Keep ordinary `.mount` behavior as the default. Set `automount: true` only
   for explicitly network-backed mounts such as NFS.
 - Keep `[X-CoreOps]` minimal in this iteration. `CreateMountpoint=true` is the
@@ -170,16 +169,22 @@ reasoning.
 ```text
 services/immich/
   immich.container
-  service.yaml
   var-lib-immich-media.mount
   var-lib-immich-media.automount
 ```
 
-`services/immich/service.yaml`
+`services/immich/immich.container`
 
-```yaml
-requires_mounts:
-  - var-lib-immich-media
+```ini
+[Container]
+Image=ghcr.io/immich-app/immich-server:release
+
+[Service]
+RequiresMountsFor=/var/lib/immich/media
+
+[Unit]
+After=var-lib-immich-media.automount var-lib-immich-media.mount
+Requires=var-lib-immich-media.automount var-lib-immich-media.mount
 ```
 
 `services/immich/var-lib-immich-media.mount`

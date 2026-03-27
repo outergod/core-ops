@@ -127,3 +127,9 @@ fn apply_report_includes_diffs_and_actions() {
     assert!(parsed["verification_results"].is_array());
     assert!(parsed["convergence"]["status"].is_string());
 }
+
+#[test]
+#[ignore = "apply/result public contract lands in later phases"]
+fn apply_result_parity_contract_scaffolding_is_reserved() {
+    assert!(true);
+}

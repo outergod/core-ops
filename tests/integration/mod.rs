@@ -27,6 +27,7 @@ mod test_verification;
 mod test_journald_audit;
 mod test_socket_dropins;
 mod test_reconcile_provenance;
+// Reconciliation output contract coverage spans plan scaffolding first, then apply/result.
 mod test_status_contract;
 mod test_status_state;
 mod test_mount_contracts;
@@ -34,6 +35,7 @@ mod test_mount_failures;
 mod test_mount_removal;
 mod test_mount_reconcile;
 mod test_mount_reuse;
+// Deterministic planning assertions also cover the authoritative public plan view.
 mod test_deterministic_planning;
 mod test_rollback;
 mod test_convergence;

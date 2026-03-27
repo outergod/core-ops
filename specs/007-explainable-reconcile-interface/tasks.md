@@ -21,11 +21,11 @@ description: "Task list for explainable reconciliation interface"
 
 **Purpose**: Prepare contract fixtures, test scaffolding, and documentation targets for the new reconciliation output model
 
-- [ ] T001 Create feature contract and scenario scaffolding references in `specs/007-explainable-reconcile-interface/contracts/reconciliation-output.md`
-- [ ] T002 [P] Add explainable-interface integration test scaffolding in `tests/integration/test_status_contract.rs`
-- [ ] T003 [P] Add plan/apply/result parity integration test scaffolding in `tests/integration/test_apply_report.rs`
-- [ ] T004 [P] Add deterministic plan rendering regression scaffolding in `tests/integration/test_deterministic_planning.rs`
-- [ ] T005 Register any new or expanded integration test coverage in `tests/integration/mod.rs`
+- [X] T001 Create feature contract and scenario scaffolding references in `specs/007-explainable-reconcile-interface/contracts/reconciliation-output.md`
+- [X] T002 [P] Add explainable-interface integration test scaffolding in `tests/integration/test_status_contract.rs`
+- [X] T003 [P] Add plan/apply/result parity integration test scaffolding in `tests/integration/test_apply_report.rs`
+- [X] T004 [P] Add deterministic plan rendering regression scaffolding in `tests/integration/test_deterministic_planning.rs`
+- [X] T005 Register any new or expanded integration test coverage in `tests/integration/mod.rs`
 
 ---
 
@@ -35,13 +35,13 @@ description: "Task list for explainable reconciliation interface"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 Define operator-facing machine-readable view types and enums in `src/core/types.rs`
-- [ ] T007 [P] Add canonical managed-object identity builders and mapping helpers in `src/core/planner.rs`
-- [ ] T008 [P] Add public-view construction helpers for causes, dependency edges, and semantic diffs in `src/cli/report.rs`
-- [ ] T009 Add reconciliation output validation helpers for stable ordering and required fields in `src/core/validation.rs`
-- [ ] T010 Preserve existing persisted provenance and deterministic state schema behavior while wiring new output-model inputs in `src/io/state.rs`
-- [ ] T011 [P] Add unit tests for new public output types and ordering invariants in `tests/unit/test_types.rs`
-- [ ] T012 [P] Add unit tests for canonical object identity and public-output validation rules in `tests/unit/test_validation.rs`
+- [X] T006 Define operator-facing machine-readable view types and enums in `src/core/types.rs`
+- [X] T007 [P] Add canonical managed-object identity builders and mapping helpers in `src/core/planner.rs`
+- [X] T008 [P] Add public-view construction helpers for causes, dependency edges, and semantic diffs in `src/cli/report.rs`
+- [X] T009 Add reconciliation output validation helpers for stable ordering and required fields in `src/core/validation.rs`
+- [X] T010 Preserve existing persisted provenance and deterministic state schema behavior while wiring new output-model inputs in `src/io/state.rs`
+- [X] T011 [P] Add unit tests for new public output types and ordering invariants in `tests/unit/test_types.rs`
+- [X] T012 [P] Add unit tests for canonical object identity and public-output validation rules in `tests/unit/test_validation.rs`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -55,19 +55,22 @@ description: "Task list for explainable reconciliation interface"
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T013 [P] [US1] Add contract test for `PlanOutput` shape and field stability in `tests/integration/test_status_contract.rs`
-- [ ] T014 [P] [US1] Add integration test for changed-first plan grouping and unchanged-object summary behavior in `tests/integration/test_deterministic_planning.rs`
-- [ ] T015 [P] [US1] Add integration test for prerequisite, dependent, and blocker dependency inspection with deterministic order in `tests/integration/test_plan.rs`
-- [ ] T016 [P] [US1] Add unit tests for plan-entry cause, diff derivation, and direct-versus-transitive dependency relations in `tests/unit/test_planner.rs`
+- [X] T013 [P] [US1] Add contract test for `PlanOutput` shape and field stability in `tests/integration/test_status_contract.rs`
+- [X] T014 [P] [US1] Add integration test for changed-first plan grouping and unchanged-object summary behavior in `tests/integration/test_deterministic_planning.rs`
+- [X] T015 [P] [US1] Add integration test for prerequisite, dependent, and blocker dependency inspection with deterministic order in `tests/integration/test_plan.rs`
+- [X] T016 [P] [US1] Add unit tests for plan-entry cause, diff derivation, and direct-versus-transitive dependency relations in `tests/unit/test_planner.rs`
+- [X] T016a [P] [US1] Add tests for `update` versus `restart` action semantics and readable `object [action]` / `because` rendering in `tests/integration/test_deterministic_planning.rs`
 
 ### Implementation for User Story 1
 
-- [ ] T017 [US1] Refactor deterministic planning output to build full-scope plan entries in `src/core/planner.rs`
-- [ ] T018 [US1] Replace the legacy plan JSON renderer with the new `PlanOutput` contract in `src/cli/report.rs`
-- [ ] T019 [US1] Update plan command output wiring to emit the new machine-readable plan payload in `src/cli/plan.rs`
-- [ ] T020 [US1] Update human-readable plan rendering to be a deterministic projection of the new plan model in `src/cli/report.rs`
-- [ ] T021 [US1] Update plan/status summaries to reflect changed, unchanged, blocked, and skipped plan semantics in `src/cli/status.rs`
-- [ ] T022 [US1] Supersede the legacy structured diff contract with the new plan contract in `specs/006-deterministic-reconcile/contracts/structured-diff.md`
+- [X] T017 [US1] Refactor deterministic planning output to build full-scope plan entries in `src/core/planner.rs`
+- [X] T018 [US1] Replace the legacy plan JSON renderer with the new `PlanOutput` contract in `src/cli/report.rs`
+- [X] T019 [US1] Update plan command output wiring to emit the new machine-readable plan payload in `src/cli/plan.rs`
+- [X] T019a [US1] Add `core-ops plan --json` support so the authoritative `PlanOutput` payload is user-selectable from `src/cli/args.rs`, `src/main.rs`, and `src/cli/plan.rs`
+- [X] T020 [US1] Update human-readable plan rendering to be a deterministic projection of the new plan model in `src/cli/report.rs`
+- [X] T021 [US1] Update plan/status summaries to reflect changed, unchanged, blocked, and skipped plan semantics in `src/cli/status.rs`
+- [X] T022 [US1] Supersede the legacy structured diff contract with the new plan contract in `specs/006-deterministic-reconcile/contracts/structured-diff.md`
+- [X] T022a [US1] Refine deterministic plan action derivation so dependency-driven runtime reactivation is classified as `restart` while direct object definition changes remain `update` in `src/core/planner.rs`
 
 **Checkpoint**: User Story 1 should be fully functional and testable independently
 
@@ -108,15 +111,15 @@ description: "Task list for explainable reconciliation interface"
 
 - [ ] T032 [P] [US3] Add contract test for full-scope `ResultOutput` and `ExplainOutput` shapes in `tests/integration/test_status_contract.rs`
 - [ ] T033 [P] [US3] Add integration test for result-view continuity across plan, apply, and final outcome in `tests/integration/test_apply_report.rs`
-- [ ] T034 [P] [US3] Add integration test for explain output and single-object inspection behavior in `tests/integration/test_reconcile_provenance.rs`
+- [ ] T034 [P] [US3] Add integration test for explain output and single-object inspection behavior, including mount and automount metadata blocks, in `tests/integration/test_reconcile_provenance.rs`
 - [ ] T035 [P] [US3] Add unit tests for convergence outcome mapping and explain-view derivation in `tests/unit/test_invariants.rs`
 
 ### Implementation for User Story 3
 
-- [ ] T036 [US3] Add full-scope result and explain view builders from convergence, verification, and plan data in `src/cli/report.rs`
+- [ ] T036 [US3] Add full-scope result and explain view builders from convergence, verification, and plan data, with object-specific metadata available to explain views, in `src/cli/report.rs`
 - [ ] T037 [US3] Replace legacy convergence JSON emission with the new `ResultOutput` contract in `src/cli/report.rs`
 - [ ] T038 [US3] Update apply/report orchestration to emit result-view data after terminal completion in `src/cli/apply.rs`
-- [ ] T039 [US3] Add single-object explain rendering and object-selection helpers in `src/cli/report.rs`
+- [ ] T039 [US3] Add single-object explain rendering and object-selection helpers, including mount and automount metadata sections, in `src/cli/report.rs`
 - [ ] T040 [US3] Preserve revision context and outcome continuity across plan/apply/result surfaces in `src/core/reconcile.rs`
 
 **Checkpoint**: All user stories should now be independently functional

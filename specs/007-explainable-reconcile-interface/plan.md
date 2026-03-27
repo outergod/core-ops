@@ -93,8 +93,9 @@ tests/
 - Add operator-facing machine-readable types for `ManagedObjectRef`, `RevisionContext`, `Cause`, `DependencyEdge`, `SemanticDiff`, and the plan/apply/result/explain view shapes.
 - Keep `DeterministicReconciliationPlan`, `SemanticDependencyGraph`, `StructuredDriftRecord`, and persisted state records as internal planning/provenance types.
 - Introduce view-building logic that converts deterministic planner and convergence outputs into full-scope entries, structured causes, dependency relations, direct-versus-transitive dependency distinctions, and layered summaries.
+- Refine plan-entry action semantics so `update` represents an object's own material desired-state change while `restart` represents runtime reactivation driven by changed prerequisites or inputs, with separate entries and explanations for the changer and the restarted dependent.
 - Replace the current plan JSON renderer with the target `PlanOutput` shape and extend apply/result/explain rendering to use the same authoritative model, including full-scope `ResultOutput` entries.
-- Update human-readable rendering so it is a deterministic projection of the new machine-readable data rather than an independently shaped report.
+- Update human-readable rendering so it is a deterministic projection of the new machine-readable data rather than an independently shaped report, using an `object [action]` primary line, `because ...` explanation line, readable dependency tree, and diff evidence as supporting detail.
 - Replace old contract assertions and supersede the legacy structured diff contract document with the new reconciliation output contract.
 - Pin compatibility-sensitive serializer behavior with contract tests covering field names, enum values, deterministic array ordering, and absent-versus-null optional-field semantics.
 

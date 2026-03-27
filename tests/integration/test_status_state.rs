@@ -303,8 +303,8 @@ fn plan_does_not_create_state_snapshot_from_implicit_path() {
         },
     };
 
-    let output = plan_cmd::plan(&deps).expect("plan");
-    assert!(output.summary.contains("plan "));
+    let output = plan_cmd::plan(&deps, false).expect("plan");
+    assert!(output.summary.contains("Plan for host "));
     assert!(!state_path.exists());
 }
 
@@ -406,7 +406,6 @@ fn mount_status_summary_reports_dependency_counts_and_failures() {
             network_backed: true,
             automount: true,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: None,
         }],
         mount_dependencies: vec![MountDependency {

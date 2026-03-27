@@ -78,6 +78,9 @@ As an operator or automation agent, I want the same reconciliation information a
 - **FR-002a**: The default plan view MUST emphasize changed objects and summarize unchanged or no-op objects separately while preserving access to the full ordered object list.
 - **FR-003**: Each object in the plan view MUST use a stable identity composed of a consistent resource type and object name representation.
 - **FR-004**: The plan view MUST classify each object as one of: create, update, replace, delete, restart, no-op, blocked, or skipped when applicable to that stage of reconciliation.
+- **FR-004a**: `restart` MUST be used only when the managed object itself remains materially the same desired object but requires runtime reactivation because one or more direct prerequisites or runtime-affecting inputs changed.
+- **FR-004b**: `update` MUST be used when the managed object's own desired definition or serialized desired state changes materially, even if execution of that update later implies a restart side effect.
+- **FR-004c**: When an object is classified as `restart`, the explanation MUST identify the triggering changed prerequisite or input object by stable object identity.
 - **FR-005**: For every object with a non-no-op classification, the system MUST provide a concise explanation of why that action is required.
 - **FR-006**: Explanations MUST distinguish direct causes from dependency-propagated causes when both are present.
 - **FR-007**: For every object with a material change, the system MUST provide a normalized, deterministic representation of the semantic difference.
@@ -87,6 +90,7 @@ As an operator or automation agent, I want the same reconciliation information a
 - **FR-010**: The system MUST provide a dependency-oriented view that allows operators to inspect prerequisites, dependents, and blockers for a managed object.
 - **FR-011**: Dependency views MUST reflect the same ordering and relationship model used by the planner.
 - **FR-011a**: The default dependency presentation in plan and apply output MUST be a prerequisite-oriented explanation rooted at each changed object, while dependent and blocker projections remain available through targeted inspection and failure reporting.
+- **FR-011b**: The default human-readable dependency presentation for a changed object SHOULD render as a readable tree rooted at that object, with direct prerequisites nested before any deeper prerequisite expansion and blockers labeled inline when present.
 - **FR-012**: During apply, the system MUST visibly expose the phases of reconciliation from desired-state resolution through final summary.
 - **FR-013**: During apply, each object MUST transition through explicit progress states from pending to running to a terminal result state.
 - **FR-014**: Apply output MUST stream object progress using a deterministic presentation model consistent with the corresponding plan, except where blocked or skipped states prevent execution.
@@ -112,6 +116,9 @@ As an operator or automation agent, I want the same reconciliation information a
 - **FR-028**: The feature MUST apply to the single-node CoreOps reconciliation scope defined by the current managed resources and revision model.
 - **FR-029**: Semantic differences MUST align with the normalization rules defined in deterministic reconciliation.
 - **FR-030**: Restart explanations MUST identify the triggering change or dependency.
+- **FR-030a**: When both an object update and a dependent object restart are present in the same plan, the updated object and the restarted dependent MUST appear as separate plan entries with distinct action classifications and explanations.
+- **FR-030b**: Human-readable plan output SHOULD present each changed object in the form `object [action]`, followed by an indented `because ...` explanation and then any supporting dependency or diff evidence.
+- **FR-030c**: Human-readable output SHOULD use a combination of compact action markers and concise cause labels to enable rapid visual scanning, while retaining full explanatory detail where necessary.
 - **FR-031**: The machine-readable output constitutes the authoritative representation of reconciliation state. Human-readable output MUST be a deterministic rendering of this representation.
 
 ### Key Entities *(include if feature involves data)*
@@ -335,6 +342,12 @@ Optional fields:
 * `diff`: `SemanticDiff` for materially changed objects
 * `unchanged`: boolean convenience field, if retained consistently
 * `notes`: array of strings or structured notes
+
+Contract rules:
+
+* `restart` entries MUST include at least one cause with kind `dependency_change`, `restart_required`, or another equally specific runtime-reactivation cause.
+* `restart` entries MUST NOT be used as a substitute for an object's own material desired-state change; if the object definition itself changed, the entry action is `update` or `replace` as appropriate.
+* Human-readable rendering SHOULD present the action label and explanation before any diff evidence so operators can understand intent without parsing raw field-by-field output.
 
 Allowed `action` values:
 

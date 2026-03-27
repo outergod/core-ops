@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use core_ops::cli::report::{build_plan_output, format_convergence_report_json};
 use core_ops::cli::plan::render_deterministic_plan;
-use core_ops::cli::report::format_convergence_report_json;
 use core_ops::cli::status::render_deterministic_plan_summary;
 use core_ops::core::types::{
     ConvergenceStatus, DeterministicActionClass, DeterministicConvergenceRecord,
@@ -146,35 +146,103 @@ fn structured_diff_output_exposes_required_fields() {
 
     let rendered = render_deterministic_plan(&plan);
     let parsed: Value = serde_json::from_str(&rendered.machine).expect("parse machine plan");
+    let built = build_plan_output(&plan);
     let status = render_deterministic_plan_summary(&plan);
 
-    assert_eq!(parsed["scope_id"].as_str(), Some("host:alpha"));
-    assert_eq!(parsed["desired_revision_id"].as_str(), Some("rev-2"));
-    assert_eq!(parsed["baseline_revision_id"].as_str(), Some("rev-1"));
-    assert_eq!(parsed["actions"][0]["object_id"].as_str(), Some("alpha.service"));
-    assert_eq!(parsed["actions"][0]["classification"].as_str(), Some("update"));
+    assert_eq!(parsed["view_kind"].as_str(), Some("plan"));
     assert_eq!(
-        parsed["actions"][0]["dependency_context"][0].as_str(),
-        Some("config:/etc/alpha/env")
+        parsed["revision_context"]["target_revision"].as_str(),
+        Some("rev-2")
     );
     assert_eq!(
-        parsed["drift"][0]["category"].as_str(),
-        Some("external_drift")
+        parsed["revision_context"]["last_applied_revision"].as_str(),
+        Some("rev-1")
     );
     assert_eq!(
-        parsed["graph"]["nodes"][0]["object_kind"].as_str(),
-        Some("rendered_artifact")
+        parsed["summary"]["changed_count"].as_u64(),
+        Some(1)
     );
     assert_eq!(
-        parsed["graph"]["edges"][0]["to_object_id"].as_str(),
-        Some("alpha.service")
+        parsed["summary"]["unchanged_count"].as_u64(),
+        Some(0)
     );
     assert_eq!(
-        parsed["graph"]["edges"][0]["edge_kind"].as_str(),
-        Some("explicit")
+        parsed["entries"][0]["object"]["display_id"].as_str(),
+        Some("service/alpha.service")
     );
-    assert!(rendered.summary.contains("deterministic plan scope=host:alpha"));
-    assert!(status.contains("baseline_revision=rev-1"));
+    assert_eq!(
+        parsed["entries"][0]["action"].as_str(),
+        Some("update")
+    );
+    assert_eq!(
+        parsed["entries"][0]["dependencies"][0]["relation"].as_str(),
+        Some("prerequisite")
+    );
+    assert_eq!(
+        parsed["entries"][0]["causes"][0]["kind"].as_str(),
+        Some("drift")
+    );
+    assert!(parsed["entries"][0]["diff"]["details"]["image"].is_string());
+    assert_eq!(built.entries[0].order_index, 0);
+    assert!(rendered.summary.contains("Summary"));
+    assert!(rendered.summary.contains("service/alpha.service"));
+    assert!(status.contains("changed=1"));
+}
+
+#[test]
+fn delete_entries_preserve_specific_resource_types_when_missing_from_desired_graph() {
+    let plan = DeterministicReconciliationPlan {
+        desired_revision_id: Some("rev-2".to_string()),
+        baseline_revision_id: Some("rev-1".to_string()),
+        scope_id: "host:alpha".to_string(),
+        actions: vec![
+            DeterministicPlannedAction {
+                object_id: "alpha.container".to_string(),
+                classification: DeterministicActionClass::Delete,
+                reason: "actual object is outside desired snapshot".to_string(),
+                dependency_context: Vec::new(),
+                semantic_diff: Default::default(),
+            },
+            DeterministicPlannedAction {
+                object_id: "alpha.volume".to_string(),
+                classification: DeterministicActionClass::Delete,
+                reason: "actual object is outside desired snapshot".to_string(),
+                dependency_context: Vec::new(),
+                semantic_diff: Default::default(),
+            },
+            DeterministicPlannedAction {
+                object_id: "alpha.socket".to_string(),
+                classification: DeterministicActionClass::Delete,
+                reason: "actual object is outside desired snapshot".to_string(),
+                dependency_context: Vec::new(),
+                semantic_diff: Default::default(),
+            },
+            DeterministicPlannedAction {
+                object_id: "alpha.network".to_string(),
+                classification: DeterministicActionClass::Delete,
+                reason: "actual object is outside desired snapshot".to_string(),
+                dependency_context: Vec::new(),
+                semantic_diff: Default::default(),
+            },
+        ],
+        drift_records: Vec::new(),
+        graph: SemanticDependencyGraph {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        },
+    };
+
+    let built = build_plan_output(&plan);
+    let ids = built
+        .entries
+        .iter()
+        .map(|entry| entry.object.display_id.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(ids.contains(&"container/alpha.container"));
+    assert!(ids.contains(&"volume/alpha.volume"));
+    assert!(ids.contains(&"socket/alpha.socket"));
+    assert!(ids.contains(&"network/alpha.network"));
 }
 
 #[test]
@@ -185,12 +253,12 @@ fn structured_diff_contract_document_matches_implemented_plan_fields() {
     )
     .expect("read structured diff contract");
 
-    assert!(contract.contains("scope_id"));
-    assert!(contract.contains("actions"));
-    assert!(contract.contains("drift"));
-    assert!(contract.contains("graph"));
-    assert!(contract.contains("verification_results[]"));
-    assert!(contract.contains("convergence"));
+    assert!(contract.contains("view_kind"));
+    assert!(contract.contains("revision_context"));
+    assert!(contract.contains("entries"));
+    assert!(contract.contains("ManagedObjectRef"));
+    assert!(contract.contains("DependencyEdge"));
+    assert!(contract.contains("SemanticDiff"));
 }
 
 #[test]

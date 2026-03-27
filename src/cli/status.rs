@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::cli::report::build_plan_output;
 use crate::core::types::{
     DesiredState, DeterministicPersistedState, DeterministicReconciliationPlan,
     VerificationResult, VerificationStatus,
@@ -60,13 +61,15 @@ pub fn render_mount_dependency_summary(
 }
 
 pub fn render_deterministic_plan_summary(plan: &DeterministicReconciliationPlan) -> String {
+    let view = build_plan_output(plan);
     format!(
-        "deterministic_plan scope={} desired_revision={} baseline_revision={} actions={} drift={}",
+        "deterministic_plan scope={} target_revision={} changed={} unchanged={} blocked={} skipped={}",
         plan.scope_id,
-        plan.desired_revision_id.as_deref().unwrap_or("none"),
-        plan.baseline_revision_id.as_deref().unwrap_or("none"),
-        plan.actions.len(),
-        plan.drift_records.len()
+        view.revision_context.target_revision,
+        view.summary.changed_count,
+        view.summary.unchanged_count,
+        view.summary.blocked_count,
+        view.summary.skipped_count
     )
 }
 

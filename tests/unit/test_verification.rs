@@ -103,7 +103,6 @@ fn verify_mount_requires_active_unit_and_mounted_target() {
         network_backed: true,
         automount: false,
         verification_mode: MountVerificationMode::UnitAndPath,
-        ownership_scope: vec!["immich".to_string()],
         prepared_path: None,
     };
     let mount_workload = workload(
@@ -170,7 +169,6 @@ fn render_automount_unit_and_verify_active_automount() {
         network_backed: true,
         automount: true,
         verification_mode: MountVerificationMode::UnitAndPath,
-        ownership_scope: vec!["immich".to_string()],
         prepared_path: None,
     };
     let automount_workload = workload(
@@ -236,7 +234,6 @@ fn verify_automount_backed_mount_accepts_inactive_mount_when_automount_is_active
         network_backed: true,
         automount: true,
         verification_mode: MountVerificationMode::UnitAndPath,
-        ownership_scope: vec!["immich".to_string()],
         prepared_path: None,
     };
     let desired = DesiredState {
@@ -292,7 +289,6 @@ fn verify_automount_backed_mount_accepts_missing_mount_unit_when_automount_is_ac
         network_backed: true,
         automount: true,
         verification_mode: MountVerificationMode::UnitAndPath,
-        ownership_scope: vec!["immich".to_string()],
         prepared_path: None,
     };
     let desired = DesiredState {

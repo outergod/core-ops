@@ -87,14 +87,9 @@ fn plan_includes_mount_units_dependency_semantics_and_prepare_path_actions() {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: Some(core_ops::core::types::PreparedTargetPath {
                 path: "/var/lib/immich/media".to_string(),
                 create_if_missing: true,
-                owner: None,
-                group: None,
-                mode: None,
-                service_consumed: true,
             }),
         }],
         mount_dependencies: vec![MountDependency {
@@ -168,7 +163,6 @@ fn plan_includes_automount_units_and_explicit_dependency_semantics() {
             network_backed: true,
             automount: true,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: None,
         }],
         mount_dependencies: vec![MountDependency {
@@ -218,7 +212,6 @@ fn mount_contract_examples_match_generated_dependency_and_removal_behavior() {
         network_backed: true,
         automount: true,
         verification_mode: MountVerificationMode::UnitAndPath,
-        ownership_scope: vec!["immich".to_string()],
         prepared_path: None,
     };
     let dependency = MountDependency {
