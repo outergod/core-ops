@@ -250,3 +250,99 @@ Where=/var/lib/immich/media
 - `mountpoint missing and CreateMountpoint=false`
   - CoreOps is configured not to create the mountpoint.
   - Provision the directory out of band, or set `CreateMountpoint=true`.
+
+## VM Host Preparation (CoreOS)
+
+On the dev host:
+
+```sh
+just render-ignition minimal
+scp infra/ignition/minimal.ign core@$VM_HOST:/var/lib/libvirt/images/
+```
+
+On remote:
+
+```sh
+sudo rpm-ostree override remove nfs-utils-coreos \
+  --install nfs-utils \
+  --install qemu-kvm \
+  --install libvirt \
+  --install virt-install
+  
+sudo systemctl restart
+
+sudo systemctl enable --now libvirtd
+
+coreos-installer download \
+  --stream stable \
+  --platform qemu \
+  --format qcow2.xz
+  
+unxz fedora-coreos-*.qcow2.xz
+mv fedora-coreos-*.qcow2 /var/lib/libvirt/images/fcos-base.qcow2
+
+cat <<'EOF' | sudo tee /etc/polkit-1/rules.d/50-libvirt.rules
+polkit.addRule(function(action, subject) {
+  if (action.id == "org.libvirt.unix.manage" &&
+      subject.user == "core") {
+    return polkit.Result.YES;
+  }
+});
+EOF
+
+sudo nmcli connection add type bridge ifname br0
+sudo nmcli connection add type bridge-slave ifname eth0 master br0
+sudo nmcli connection modify bridge-br0 ipv4.method auto
+sudo nmcli connection up bridge-br0
+
+sudo mkdir -p /var/lib/libvirt/ignition
+sudo chmod 0755 /var/lib/libvirt/ignition
+sudo install -m 0644 minimal.ign /var/lib/libvirt/ignition/minimal.ign
+```
+
+On the dev host:
+
+```sh
+virsh -c qemu+ssh://core@$VM_HOST/system pool-define-as default dir --target /var/lib/libvirt/images
+virsh -c qemu+ssh://core@$VM_HOST/system pool-start default
+virsh -c qemu+ssh://core@$VM_HOST/system pool-autostart default
+
+virsh -c qemu+ssh://core@$VM_HOST/system pool-list --all
+
+virsh -c qemu+ssh://core@$VM_HOST/system vol-create-as default core-ops-uat.qcow2 10G \
+  --format qcow2 \
+  --backing-vol /var/lib/libvirt/images/fcos-base.qcow2 \
+  --backing-vol-format qcow2
+
+virt-install \
+  --connect qemu+ssh://core@$VM_HOST/system \
+  --name core-ops-uat \
+  --osinfo fedora-coreos-stable \
+  --memory 4096 \
+  --vcpus 2 \
+  --import \
+  --disk vol=default/core-ops-uat.qcow2,format=qcow2 \
+  --network bridge=br0,model=virtio \
+  --graphics none \
+  --noautoconsole \
+  --qemu-commandline="-fw_cfg name=opt/com.coreos/config,file=/var/lib/libvirt/ignition/minimal.ign"
+```
+
+Remove:
+
+```sh
+virsh -c qemu+ssh://core@$VM_HOST/system destroy core-ops-uat
+virsh -c qemu+ssh://core@$VM_HOST/system undefine core-ops-uat
+virsh -c qemu+ssh://core@$VM_HOST/system vol-delete --pool default core-ops-uat
+```
+
+### UAT VM Reset
+
+```sh
+virsh -c qemu+ssh://core@$VM_HOST/system destroy core-ops-uat
+sudo rm /var/lib/libvirt/images/core-ops-uat.qcow2
+sudo qemu-img create -f qcow2 \
+  -b /var/lib/libvirt/images/fcos-base.qcow2 \
+  /var/lib/libvirt/images/core-ops-uat.qcow2
+virsh -c qemu+ssh://core@$VM_HOST/system start core-ops-uat
+```

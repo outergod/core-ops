@@ -25,6 +25,11 @@
           podman
           systemd
           jq
+          just
+          butane
+          envsubst
+          libvirt
+          virt-manager
         ];
 
         RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
