@@ -22,11 +22,7 @@ pub fn build_audit_record(
 }
 
 fn summarize_plan(plan: &ReconciliationPlan) -> String {
-    format!(
-        "plan {} with {} actions",
-        plan.plan_id,
-        plan.actions.len()
-    )
+    format!("plan {} with {} actions", plan.plan_id, plan.actions.len())
 }
 
 pub fn summarize_actions(actions: &[PlanAction]) -> String {
@@ -38,14 +34,8 @@ pub fn format_audit_record(record: &AuditRecord) -> String {
     output.push_str(&format!("record {}\n", record.record_id));
     output.push_str(&format!("run {}\n", record.run_id));
     output.push_str(&format!("{}\n", record.plan_summary));
-    output.push_str(&format!(
-        "diffs {}\n",
-        record.diffs.len()
-    ));
-    output.push_str(&format!(
-        "actions {}\n",
-        record.actions_applied.len()
-    ));
+    output.push_str(&format!("diffs {}\n", record.diffs.len()));
+    output.push_str(&format!("actions {}\n", record.actions_applied.len()));
     output.push_str(&format!(
         "verification {}\n",
         record.verification_results.len()
@@ -190,8 +180,7 @@ pub fn format_audit_event_json(event: &AuditEvent) -> String {
         .reconciliation_generation
         .map(|value| value.to_string())
         .unwrap_or_else(|| "null".to_string());
-    let reconciliation_status =
-        format_optional_string(event.reconciliation_status.as_deref());
+    let reconciliation_status = format_optional_string(event.reconciliation_status.as_deref());
     let attempted_revision = format_optional_string(event.attempted_revision.as_deref());
     let applied_revision = format_optional_string(event.applied_revision.as_deref());
     format!(

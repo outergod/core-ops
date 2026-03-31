@@ -120,7 +120,17 @@ pub fn diff_normalized_snapshots(
             {
                 Some(DriftCategory::RuntimeVariance)
             }
+            (Some(desired_object), None, Some(actual_object))
+                if desired_object == actual_object =>
+            {
+                None
+            }
             (Some(_), None, _) => Some(DriftCategory::ExpectedChange),
+            (None, Some(applied_object), Some(actual_object))
+                if applied_object == actual_object =>
+            {
+                Some(DriftCategory::ExpectedChange)
+            }
             (None, Some(_), Some(_)) | (None, None, Some(_)) => Some(DriftCategory::StaleResidue),
             _ => None,
         };
@@ -150,9 +160,15 @@ fn drift_details(
     applied: Option<&NormalizedManagedObject>,
     actual: Option<&NormalizedManagedObject>,
 ) -> String {
-    let desired_fields = desired.map(|object| object.material_fields.len()).unwrap_or(0);
-    let applied_fields = applied.map(|object| object.material_fields.len()).unwrap_or(0);
-    let actual_fields = actual.map(|object| object.material_fields.len()).unwrap_or(0);
+    let desired_fields = desired
+        .map(|object| object.material_fields.len())
+        .unwrap_or(0);
+    let applied_fields = applied
+        .map(|object| object.material_fields.len())
+        .unwrap_or(0);
+    let actual_fields = actual
+        .map(|object| object.material_fields.len())
+        .unwrap_or(0);
     format!(
         "desired_fields={} applied_fields={} actual_fields={}",
         desired_fields, applied_fields, actual_fields

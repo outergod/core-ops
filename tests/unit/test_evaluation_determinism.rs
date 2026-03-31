@@ -1,15 +1,14 @@
 use core_ops::core::evaluate::evaluate_desired_state;
 use core_ops::core::reconcile::reconcile_apply;
+use core_ops::core::reconcile::ReconcileDependencies;
 use core_ops::core::types::{
     ArtifactSource, Boundaries, BoundaryScope, DesiredState, DropInSource, EnabledState,
-    EvaluationInput, HostDeclaration, HostOverlaySet, Invariant, MountDeclaration,
-    MountDependency, MountVerificationMode, ObservedState, ObservedUnit, PathDependencyMode,
-    QuadletType, RestartPolicy, ServiceCatalog, ServiceDefinition, UnitActiveState,
-    UnitDependencyMode, Workload,
+    EvaluationInput, HostDeclaration, HostOverlaySet, Invariant, MountDeclaration, MountDependency,
+    MountVerificationMode, ObservedState, ObservedUnit, PathDependencyMode, QuadletType,
+    RestartPolicy, ServiceCatalog, ServiceDefinition, UnitActiveState, UnitDependencyMode,
+    Workload,
 };
-use core_ops::core::reconcile::ReconcileDependencies;
 use std::collections::BTreeMap;
-
 #[test]
 fn evaluation_is_deterministic_for_same_input() {
     let service = ServiceDefinition {
@@ -34,8 +33,6 @@ fn evaluation_is_deterministic_for_same_input() {
             source_path: "/services/alpha/alpha.container.d/10-x.conf".to_string(),
         }],
         config_files: Vec::new(),
-        mount_declarations: Vec::new(),
-        service_mounts: Vec::new(),
     };
 
     let mut services = BTreeMap::new();
@@ -55,8 +52,6 @@ fn evaluation_is_deterministic_for_same_input() {
                 source_path: "/hosts/ulthar/overrides/alpha.container.d/20-y.conf".to_string(),
             }],
             config_overrides: Vec::new(),
-            mount_overrides: Vec::new(),
-            service_mount_overrides: BTreeMap::new(),
         },
     };
 
@@ -73,6 +68,8 @@ fn degraded_mount_failure_is_deterministic() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![Workload {
             name: "var-lib-immich-media".to_string(),
             quadlet_type: QuadletType::Mount,
@@ -90,7 +87,6 @@ fn degraded_mount_failure_is_deterministic() {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: None,
         }],
         mount_dependencies: vec![MountDependency {

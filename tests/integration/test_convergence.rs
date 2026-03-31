@@ -10,6 +10,8 @@ fn desired_state() -> DesiredState {
     DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev-1".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![Workload {
             name: "alpha".to_string(),
             quadlet_type: QuadletType::Container,
@@ -63,7 +65,10 @@ fn repeated_failure_detection_stops_after_bounded_retry_budget() {
         Some(&core_ops::core::types::ConvergenceStatus::RepeatedFailure)
     );
     assert_eq!(
-        result.convergence.as_ref().map(|record| record.attempt_count),
+        result
+            .convergence
+            .as_ref()
+            .map(|record| record.attempt_count),
         Some(3)
     );
     assert!(observations.get() >= 3);

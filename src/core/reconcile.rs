@@ -1,14 +1,18 @@
 use crate::core::diff::{diff_contains_mount_workloads, diff_workloads};
 use crate::core::errors::CoreError;
-use crate::core::planner::{plan, plan_deterministic_reconciliation, plan_rollback_reconciliation};
+use crate::core::planner::{
+    plan, plan_deterministic_reconciliation_with_runtime, plan_rollback_reconciliation,
+};
 use crate::core::retry::{build_retry_observation, RetryObservation};
 use crate::core::types::{
     ConvergenceStatus, DesiredState, DeterministicConvergenceRecord,
     DeterministicReconciliationPlan, DiffItem, FailureClass, NormalizedSnapshot,
-    PersistedProvenanceState, ReconcileMode, ReconcileRun, ReconciliationPlan,
-    ReconciliationProvenance, ReconciliationStatus, RevisionDivergence, RollbackEligibility,
-    RollbackTargetCandidate, RunStatus, VerificationResult, VerificationStatus,
+    PersistedProvenanceState, PlanAction, PlanActionType, QuadletType, ReconcileMode, ReconcileRun,
+    ReconciliationPlan, ReconciliationProvenance, ReconciliationStatus, RevisionDivergence,
+    RollbackEligibility, RollbackTargetCandidate, RunStatus, VerificationResult,
+    VerificationStatus,
 };
+use crate::core::unit::systemd_unit_for_quadlet_file;
 use crate::core::verify::{evaluate_convergence, verify_state};
 use crate::io::state::{
     latest_retained_snapshot_for_scope, resolve_rollback_target, retained_snapshot_for_target,
@@ -19,9 +23,10 @@ pub struct ReconcileDependencies<'a> {
     pub read_observed: &'a dyn Fn(
         &crate::core::types::DesiredState,
     ) -> Result<crate::core::types::ObservedState, CoreError>,
-    pub apply_plan:
-        &'a dyn Fn(&crate::core::types::ReconciliationPlan, &crate::core::types::DesiredState)
-            -> Result<(), CoreError>,
+    pub apply_plan: &'a dyn Fn(
+        &crate::core::types::ReconciliationPlan,
+        &crate::core::types::DesiredState,
+    ) -> Result<(), CoreError>,
 }
 
 pub struct PlanResult {
@@ -36,6 +41,7 @@ pub struct ApplyResult {
     pub verification_results: Vec<VerificationResult>,
     pub desired: DesiredState,
     pub convergence: Option<DeterministicConvergenceRecord>,
+    pub plan: ReconciliationPlan,
 }
 
 pub struct DeterministicPlanResult {
@@ -153,7 +159,13 @@ pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, 
     let desired = (deps.load_desired)()?;
     let observed = (deps.read_observed)(&desired)?;
 
-    let plan = plan(&desired, &observed)?;
+    let verification_results_before =
+        normalize_verification_results_for_desired(&desired, verify_state(&desired, &observed));
+    let plan = augment_plan_with_recovery_actions(
+        plan(&desired, &observed)?,
+        &desired,
+        &verification_results_before,
+    );
 
     if !plan.actions.is_empty() {
         (deps.apply_plan)(&plan, &desired)?;
@@ -161,7 +173,10 @@ pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, 
 
     let observed_after = (deps.read_observed)(&desired)?;
     let diffs = diff_workloads(&desired.workloads, &observed_after.workloads);
-    let verification_results = verify_state(&desired, &observed_after);
+    let verification_results = normalize_verification_results_for_desired(
+        &desired,
+        verify_state(&desired, &observed_after),
+    );
     let has_failures = verification_results
         .iter()
         .any(|result| result.status == VerificationStatus::Failure);
@@ -221,7 +236,67 @@ pub fn reconcile_apply(deps: &ReconcileDependencies<'_>) -> Result<ApplyResult, 
         verification_results,
         desired,
         convergence: None,
+        plan,
     })
+}
+
+fn augment_plan_with_recovery_actions(
+    mut plan: ReconciliationPlan,
+    desired: &DesiredState,
+    verification_results: &[VerificationResult],
+) -> ReconciliationPlan {
+    let recoverable_targets = desired
+        .workloads
+        .iter()
+        .filter(|workload| workload_supports_runtime_recovery(workload.quadlet_type.clone()))
+        .map(|workload| workload.systemd_unit_name.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    let scheduled_targets = plan
+        .actions
+        .iter()
+        .filter(|action| {
+            matches!(
+                action.action_type,
+                PlanActionType::StartUnit | PlanActionType::RestartUnit | PlanActionType::StopUnit
+            )
+        })
+        .map(|action| action.target.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    let mut recovery_targets = verification_results
+        .iter()
+        .filter(|result| result.status == VerificationStatus::Failure)
+        .map(|result| result.target.as_str())
+        .filter(|target| recoverable_targets.contains(target))
+        .filter(|target| !scheduled_targets.contains(target))
+        .filter(|target| {
+            desired
+                .workloads
+                .iter()
+                .any(|workload| workload.systemd_unit_name == *target)
+        })
+        .collect::<Vec<_>>();
+    recovery_targets.sort_unstable();
+    recovery_targets.dedup();
+
+    for target in recovery_targets {
+        plan.actions.push(PlanAction {
+            action_type: PlanActionType::StartUnit,
+            target: target.to_string(),
+            preconditions: vec!["runtime reconciliation required".to_string()],
+            postconditions: vec!["unit active".to_string()],
+        });
+    }
+
+    plan
+}
+
+fn workload_supports_runtime_recovery(quadlet_type: QuadletType) -> bool {
+    !matches!(
+        quadlet_type,
+        QuadletType::ConfigFile | QuadletType::SocketDropIn
+    )
 }
 
 pub fn reconcile_deterministic_plan(
@@ -229,7 +304,21 @@ pub fn reconcile_deterministic_plan(
     last_applied: Option<&NormalizedSnapshot>,
     actual: &NormalizedSnapshot,
 ) -> Result<DeterministicPlanResult, CoreError> {
-    let plan = plan_deterministic_reconciliation(desired, last_applied, actual)?;
+    reconcile_deterministic_plan_with_runtime(desired, last_applied, actual, &[])
+}
+
+pub fn reconcile_deterministic_plan_with_runtime(
+    desired: &NormalizedSnapshot,
+    last_applied: Option<&NormalizedSnapshot>,
+    actual: &NormalizedSnapshot,
+    verification_results: &[VerificationResult],
+) -> Result<DeterministicPlanResult, CoreError> {
+    let plan = plan_deterministic_reconciliation_with_runtime(
+        desired,
+        last_applied,
+        actual,
+        verification_results,
+    )?;
     let summary = format!(
         "deterministic plan scope={} desired_revision={}",
         plan.scope_id,
@@ -259,11 +348,14 @@ pub fn reconcile_rollback(
         .ok_or_else(|| {
             CoreError::new(
                 FailureClass::Validation,
-                format!("rollback target {} snapshot is unavailable", target_revision_id),
+                format!(
+                    "rollback target {} snapshot is unavailable",
+                    target_revision_id
+                ),
             )
         })?;
-    let current_snapshot = latest_retained_snapshot_for_scope(state, scope_id)
-        .map(|snapshot| &snapshot.snapshot);
+    let current_snapshot =
+        latest_retained_snapshot_for_scope(state, scope_id).map(|snapshot| &snapshot.snapshot);
     let plan = plan_rollback_reconciliation(
         &target_snapshot.snapshot,
         current_snapshot,
@@ -273,22 +365,32 @@ pub fn reconcile_rollback(
     let convergence = Some(DeterministicConvergenceRecord {
         desired_revision_id: target_revision_id.to_string(),
         scope_id: scope_id.to_string(),
-        status: if plan
-            .actions
-            .iter()
-            .any(|action| matches!(action.classification, crate::core::types::DeterministicActionClass::Blocked))
-        {
+        status: if plan.actions.iter().any(|action| {
+            matches!(
+                action.classification,
+                crate::core::types::DeterministicActionClass::Blocked
+            )
+        }) {
             ConvergenceStatus::Blocked
         } else {
             ConvergenceStatus::Partial
         },
         attempt_count: 1,
-        affected_objects: plan.actions.iter().map(|action| action.object_id.clone()).collect(),
+        affected_objects: plan
+            .actions
+            .iter()
+            .map(|action| action.object_id.clone())
+            .collect(),
         completed_actions: Vec::new(),
         failed_actions: plan
             .actions
             .iter()
-            .filter(|action| matches!(action.classification, crate::core::types::DeterministicActionClass::Blocked))
+            .filter(|action| {
+                matches!(
+                    action.classification,
+                    crate::core::types::DeterministicActionClass::Blocked
+                )
+            })
             .map(|action| action.object_id.clone())
             .collect(),
         can_continue: true,
@@ -318,10 +420,15 @@ pub fn reconcile_apply_with_retry(
     for attempt in 1..=retry_budget.max(1) {
         let mut result = reconcile_apply(deps)?;
         let observed = (deps.read_observed)(&result.desired)?;
-        let verification_results = verify_state(&result.desired, &observed);
-        let observation = build_retry_observation(attempt, &verification_results);
+        let raw_verification_results = verify_state(&result.desired, &observed);
+        let observation = build_retry_observation(attempt, &raw_verification_results);
         history.push(observation);
-        let convergence = evaluate_convergence(&result.desired, &observed, &history, retry_budget.max(1));
+        let convergence = normalize_convergence_for_desired(
+            &result.desired,
+            evaluate_convergence(&result.desired, &observed, &history, retry_budget.max(1)),
+        );
+        let verification_results =
+            normalize_verification_results_for_desired(&result.desired, raw_verification_results);
 
         result.verification_results = verification_results;
         result.run.summary = convergence_summary(&convergence);
@@ -350,7 +457,12 @@ pub fn reconcile_apply_with_retry(
         }
     }
 
-    last_result.ok_or_else(|| CoreError::new(FailureClass::Apply, "retry orchestration produced no result"))
+    last_result.ok_or_else(|| {
+        CoreError::new(
+            FailureClass::Apply,
+            "retry orchestration produced no result",
+        )
+    })
 }
 
 fn convergence_summary(convergence: &DeterministicConvergenceRecord) -> String {
@@ -361,5 +473,112 @@ fn convergence_summary(convergence: &DeterministicConvergenceRecord) -> String {
         ConvergenceStatus::RepeatedFailure => "repeated failure detected".to_string(),
         ConvergenceStatus::Oscillation => "oscillation detected".to_string(),
         ConvergenceStatus::Failed => "verification failed".to_string(),
+    }
+}
+
+pub fn normalize_verification_results_for_plan(
+    plan: &ReconciliationPlan,
+    verification_results: Vec<VerificationResult>,
+) -> Vec<VerificationResult> {
+    verification_results
+        .into_iter()
+        .map(|result| VerificationResult {
+            target: normalize_plan_target(&plan.actions, &result.target),
+            status: result.status,
+            details: result.details,
+        })
+        .collect()
+}
+
+pub fn normalize_verification_results_for_desired(
+    desired: &DesiredState,
+    verification_results: Vec<VerificationResult>,
+) -> Vec<VerificationResult> {
+    let aliases = desired_target_aliases(desired);
+
+    verification_results
+        .into_iter()
+        .map(|result| VerificationResult {
+            target: aliases
+                .get(&result.target)
+                .cloned()
+                .unwrap_or(result.target),
+            status: result.status,
+            details: result.details,
+        })
+        .collect()
+}
+
+fn normalize_convergence_for_desired(
+    desired: &DesiredState,
+    convergence: DeterministicConvergenceRecord,
+) -> DeterministicConvergenceRecord {
+    let aliases = desired_target_aliases(desired);
+    let normalize = |value: String| aliases.get(&value).cloned().unwrap_or(value);
+
+    DeterministicConvergenceRecord {
+        desired_revision_id: convergence.desired_revision_id,
+        scope_id: convergence.scope_id,
+        status: convergence.status,
+        attempt_count: convergence.attempt_count,
+        affected_objects: convergence
+            .affected_objects
+            .into_iter()
+            .map(&normalize)
+            .collect(),
+        completed_actions: convergence
+            .completed_actions
+            .into_iter()
+            .map(&normalize)
+            .collect(),
+        failed_actions: convergence
+            .failed_actions
+            .into_iter()
+            .map(normalize)
+            .collect(),
+        can_continue: convergence.can_continue,
+    }
+}
+
+fn desired_target_aliases(desired: &DesiredState) -> std::collections::BTreeMap<String, String> {
+    desired
+        .workloads
+        .iter()
+        .flat_map(|workload| {
+            let managed_id = workload.systemd_unit_name.clone();
+            let runtime_unit = systemd_unit_for_quadlet_file(&workload.systemd_unit_name);
+            [
+                (managed_id.clone(), managed_id.clone()),
+                (runtime_unit, managed_id),
+            ]
+        })
+        .collect::<std::collections::BTreeMap<_, _>>()
+}
+
+fn normalize_plan_target(actions: &[crate::core::types::PlanAction], target: &str) -> String {
+    if actions.iter().any(|action| action.target == target) {
+        return target.to_string();
+    }
+    let target_base = target
+        .rsplit_once('.')
+        .map(|(base, _)| base)
+        .unwrap_or(target);
+    let mut matches = actions
+        .iter()
+        .map(|action| action.target.as_str())
+        .filter(|candidate| {
+            candidate == &target
+                || candidate
+                    .rsplit_once('.')
+                    .map(|(base, _)| base == target_base)
+                    .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    matches.sort();
+    matches.dedup();
+    if matches.len() == 1 {
+        matches[0].to_string()
+    } else {
+        target.to_string()
     }
 }

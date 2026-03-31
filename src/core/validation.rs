@@ -3,8 +3,9 @@ use std::path::Path;
 
 use crate::core::errors::{ValidationError, ValidationErrorKind};
 use crate::core::types::{
-    ArtifactSource, Boundaries, BoundaryScope, DesiredState, DropInSource, HostDeclaration,
-    Invariant, MountDeclaration, MountDependency, PathDependencyMode, PreparedTargetPath,
+    ApplyOutputView, ArtifactSource, Boundaries, BoundaryScope, DesiredState, DropInSource,
+    ExplainOutputView, HostDeclaration, Invariant, MountDeclaration, MountDependency,
+    PathDependencyMode, PlanEntry, PlanOutputView, PreparedTargetPath, ResultOutputView,
     ServiceCatalog, UnitDependencyMode, Workload,
 };
 
@@ -12,7 +13,11 @@ pub fn validate_desired_state(desired: &DesiredState) -> Result<(), ValidationEr
     validate_invariants(&desired.invariants)?;
     validate_boundaries(&desired.boundaries)?;
     validate_workloads(&desired.workloads)?;
-    validate_mount_model(&desired.mount_declarations, &desired.mount_dependencies, None)?;
+    validate_mount_model(
+        &desired.mount_declarations,
+        &desired.mount_dependencies,
+        None,
+    )?;
     Ok(())
 }
 
@@ -134,8 +139,10 @@ pub fn validate_mount_model(
         validate_mount_declaration(declaration, &selected)?;
     }
 
-    let declaration_map: HashMap<&str, &MountDeclaration> =
-        declarations.iter().map(|decl| (decl.id.as_str(), decl)).collect();
+    let declaration_map: HashMap<&str, &MountDeclaration> = declarations
+        .iter()
+        .map(|decl| (decl.id.as_str(), decl))
+        .collect();
 
     for dependency in dependencies {
         validate_mount_dependency(dependency, &declaration_map, &selected)?;
@@ -160,9 +167,7 @@ pub fn validate_canonical_object_identity(object_id: &str) -> Result<(), Validat
     Ok(())
 }
 
-pub fn detect_semantic_dependency_cycle(
-    edges: &[(String, String)],
-) -> Result<(), ValidationError> {
+pub fn detect_semantic_dependency_cycle(edges: &[(String, String)]) -> Result<(), ValidationError> {
     let mut incoming: HashMap<&str, usize> = HashMap::new();
     let mut outgoing: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut nodes = HashSet::new();
@@ -222,7 +227,11 @@ pub fn validate_rollback_candidate(
             ),
         ));
     }
-    if !retained || !available_revisions.iter().any(|rev| rev == candidate_revision) {
+    if !retained
+        || !available_revisions
+            .iter()
+            .any(|rev| rev == candidate_revision)
+    {
         return Err(ValidationError::new(
             ValidationErrorKind::RollbackIneligible,
             format!("rollback target is not retained: {}", candidate_revision),
@@ -241,9 +250,133 @@ pub fn validate_retry_signature(signature: &str) -> Result<(), ValidationError> 
     Ok(())
 }
 
+pub fn validate_order_indices(entries: &[PlanEntry]) -> Result<(), ValidationError> {
+    for (index, entry) in entries.iter().enumerate() {
+        if entry.order_index != index {
+            return Err(ValidationError::new(
+                ValidationErrorKind::InvalidObjectIdentity,
+                format!(
+                    "plan entries must have sequential order indices: expected {} but got {}",
+                    index, entry.order_index
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_plan_output_view(plan: &PlanOutputView) -> Result<(), ValidationError> {
+    if plan.view_kind != "plan" {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidObjectIdentity,
+            format!("unexpected view kind: {}", plan.view_kind),
+        ));
+    }
+    validate_order_indices(&plan.entries)?;
+    for entry in &plan.entries {
+        validate_canonical_object_identity(&entry.object.display_id)?;
+        if entry.object.name.trim().is_empty() || entry.object.resource_type.trim().is_empty() {
+            return Err(ValidationError::new(
+                ValidationErrorKind::InvalidObjectIdentity,
+                "managed object references must include resource_type and name",
+            ));
+        }
+        if !matches!(entry.unchanged, Some(true))
+            && entry.action != crate::core::types::PlanEntryAction::NoOp
+            && entry.causes.is_empty()
+        {
+            return Err(ValidationError::new(
+                ValidationErrorKind::InvalidObjectIdentity,
+                format!(
+                    "non-no-op plan entries must include a cause: {}",
+                    entry.object.display_id
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_apply_output_view(apply: &ApplyOutputView) -> Result<(), ValidationError> {
+    if apply.view_kind != "apply" {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidObjectIdentity,
+            format!("unexpected view kind: {}", apply.view_kind),
+        ));
+    }
+    for (index, phase) in apply.phases.iter().enumerate() {
+        if phase.sequence != index {
+            return Err(ValidationError::new(
+                ValidationErrorKind::InvalidObjectIdentity,
+                format!(
+                    "apply phases must have sequential order indices: expected {} but got {}",
+                    index, phase.sequence
+                ),
+            ));
+        }
+    }
+    let event_offset = apply.phases.len();
+    for (index, event) in apply.events.iter().enumerate() {
+        let expected = event_offset + index;
+        if event.sequence != expected {
+            return Err(ValidationError::new(
+                ValidationErrorKind::InvalidObjectIdentity,
+                format!(
+                    "apply events must continue phase sequence ordering: expected {} but got {}",
+                    expected, event.sequence
+                ),
+            ));
+        }
+        validate_canonical_object_identity(&event.object.display_id)?;
+        if event.object.name.trim().is_empty() || event.object.resource_type.trim().is_empty() {
+            return Err(ValidationError::new(
+                ValidationErrorKind::InvalidObjectIdentity,
+                "apply event objects must include resource_type and name",
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_result_output_view(result: &ResultOutputView) -> Result<(), ValidationError> {
+    if result.view_kind != "result" {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidObjectIdentity,
+            format!("unexpected view kind: {}", result.view_kind),
+        ));
+    }
+    for entry in &result.entries {
+        validate_canonical_object_identity(&entry.object.display_id)?;
+        if entry.object.name.trim().is_empty() || entry.object.resource_type.trim().is_empty() {
+            return Err(ValidationError::new(
+                ValidationErrorKind::InvalidObjectIdentity,
+                "result entry objects must include resource_type and name",
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_explain_output_view(explain: &ExplainOutputView) -> Result<(), ValidationError> {
+    if explain.view_kind != "explain" {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidObjectIdentity,
+            format!("unexpected view kind: {}", explain.view_kind),
+        ));
+    }
+    validate_canonical_object_identity(&explain.object.display_id)?;
+    if explain.object.name.trim().is_empty() || explain.object.resource_type.trim().is_empty() {
+        return Err(ValidationError::new(
+            ValidationErrorKind::InvalidObjectIdentity,
+            "explain object must include resource_type and name",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_mount_declaration(
     declaration: &MountDeclaration,
-    selected_services: &HashSet<&str>,
+    _selected_services: &HashSet<&str>,
 ) -> Result<(), ValidationError> {
     if !declaration.target_path.starts_with('/') || declaration.target_path.contains("..") {
         return Err(ValidationError::new(
@@ -258,23 +391,6 @@ fn validate_mount_declaration(
                 "automount requires network-backed mount declaration: {}",
                 declaration.id
             ),
-        ));
-    }
-    if declaration.ownership_scope.is_empty() {
-        return Err(ValidationError::new(
-            ValidationErrorKind::InvalidMountOwnershipScope,
-            format!("mount declaration has empty ownership scope: {}", declaration.id),
-        ));
-    }
-    if !selected_services.is_empty()
-        && declaration
-            .ownership_scope
-            .iter()
-            .any(|service| !selected_services.contains(service.as_str()))
-    {
-        return Err(ValidationError::new(
-            ValidationErrorKind::InvalidMountOwnershipScope,
-            format!("mount declaration scope outside selected services: {}", declaration.id),
         ));
     }
     if let Some(prepared) = &declaration.prepared_path {
@@ -302,17 +418,6 @@ fn validate_prepared_target(
             ),
         ));
     }
-    if (prepared.owner.is_some() || prepared.group.is_some() || prepared.mode.is_some())
-        && !prepared.service_consumed
-    {
-        return Err(ValidationError::new(
-            ValidationErrorKind::InvalidPreparedOwnership,
-            format!(
-                "prepared target ownership requires service-consumed path: {}",
-                prepared.path
-            ),
-        ));
-    }
     Ok(())
 }
 
@@ -321,7 +426,9 @@ fn validate_mount_dependency(
     declarations: &HashMap<&str, &MountDeclaration>,
     selected_services: &HashSet<&str>,
 ) -> Result<(), ValidationError> {
-    if !selected_services.is_empty() && !selected_services.contains(dependency.service_name.as_str()) {
+    if !selected_services.is_empty()
+        && !selected_services.contains(dependency.service_name.as_str())
+    {
         return Err(ValidationError::new(
             ValidationErrorKind::InvalidMountOwnershipScope,
             format!(
@@ -355,7 +462,7 @@ fn validate_mount_dependency(
         ));
     }
     for mount_id in &dependency.mount_ids {
-        let declaration = declarations.get(mount_id.as_str()).ok_or_else(|| {
+        declarations.get(mount_id.as_str()).ok_or_else(|| {
             ValidationError::new(
                 ValidationErrorKind::MissingMountReference,
                 format!(
@@ -364,19 +471,6 @@ fn validate_mount_dependency(
                 ),
             )
         })?;
-        if !declaration
-            .ownership_scope
-            .iter()
-            .any(|service| service == &dependency.service_name)
-        {
-            return Err(ValidationError::new(
-                ValidationErrorKind::InvalidMountOwnershipScope,
-                format!(
-                    "service {} is outside ownership scope for mount {}",
-                    dependency.service_name, mount_id
-                ),
-            ));
-        }
     }
     for path in &dependency.consumed_paths {
         if !path.starts_with('/') {

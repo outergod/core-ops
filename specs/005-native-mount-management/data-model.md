@@ -3,7 +3,7 @@
 ## Entities
 
 ### Mount Declaration
-- **Purpose**: Define one managed host mount as named desired state.
+- **Purpose**: Define one managed host mount from native `.mount` and optional `.automount` artifacts.
 - **Fields**:
   - `id` (string, stable declaration identity)
   - `target_path` (absolute path)
@@ -13,7 +13,6 @@
   - `network_backed` (boolean)
   - `automount` (boolean, only valid when `network_backed = true`)
   - `verification_mode` (`unit_and_path` by default)
-  - `ownership_scope` (selected service identities allowed to reference it)
   - `prepared_directory` (optional Prepared Target Path)
 - **Rules**:
   - `id` must be unique within the evaluated host desired state.
@@ -30,22 +29,18 @@
   - `path_dependency_mode` (`requires_mounts_for`)
   - `unit_dependency_mode` (`after_and_requires` when explicit unit references are needed)
 - **Rules**:
-  - Every `mount_id` must resolve to a selected, owned Mount Declaration.
+  - Every `mount_id` must resolve to a selected Mount Declaration.
   - Consumed paths must be consistent with the referenced mount target paths.
-  - Generated service units must include both path-based and explicit unit dependencies where required by the mount or automount configuration.
+  - Dependencies are derived from native service unit content, especially `RequiresMountsFor=` and explicit `After=` / `Requires=` references to managed mount or automount units.
 
 ### Prepared Target Path
-- **Purpose**: Constrain host path creation or metadata enforcement needed before mount activation.
+- **Purpose**: Constrain bounded mountpoint creation before mount activation.
 - **Fields**:
   - `path` (absolute path)
   - `create_if_missing` (boolean)
-  - `owner` (optional string)
-  - `group` (optional string)
-  - `mode` (optional string)
-  - `service_consumed` (boolean)
 - **Rules**:
   - Applies only to the declared mount target path and required parent directories.
-  - Owner, group, and mode may only be enforced when the directory is explicitly service-consumed.
+  - Controls only whether CoreOps may create the missing mountpoint using default host permissions.
   - Must not expand into general directory management beyond bounded mount preparation.
 
 ### Generated Native Unit Set
@@ -105,7 +100,7 @@
 
 - Mount declaration identities must be unique.
 - Two mount declarations must not claim the same target path with conflicting definitions.
-- Service references to mount ids outside selected-service ownership boundaries are invalid.
+- Service references to unknown mount ids are invalid.
 - Automount declarations without a corresponding network-backed mount declaration are invalid.
 - Prepared target paths must remain within the bounded mount target path contract.
 - Removal may proceed only after dependent managed services are stopped and the mount is no longer active.

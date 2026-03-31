@@ -55,17 +55,15 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         .release(guard)
         .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()));
 
-    let (result, report, plan) = result?;
-    let run = result.run;
-    if let Err(err) = release_result {
-        return Err(err);
-    }
+    let output = result?;
+    let run = output.result.run.clone();
+    release_result?;
 
     let provenance = read_persisted_state(&state_path).ok().flatten();
     let event = build_audit_event(
         &run,
-        Some(&plan),
-        &result.verification_results,
+        Some(&output.plan),
+        &output.result.verification_results,
         provenance.as_ref(),
     );
     audit_io::emit_journal_event(&event)
@@ -75,16 +73,19 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         let record = crate::core::audit::build_audit_record(
             &run.run_id,
             Vec::new(),
-            &plan,
-            result.verification_results,
+            &output.plan,
+            output.result.verification_results.clone(),
         );
         let _ = audit_io::write_audit_record(dir, &record)
             .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
-        if let Some(convergence) = result.convergence.as_ref() {
+        if let Some(convergence) = output.result.convergence.as_ref() {
             let _ = audit_io::write_convergence_summary(dir, convergence)
                 .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
         }
     }
 
-    Ok(AgentOutput { run, report })
+    Ok(AgentOutput {
+        run,
+        report: output.human_report,
+    })
 }

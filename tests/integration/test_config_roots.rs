@@ -46,6 +46,8 @@ fn does_not_manage_files_outside_config_roots() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![config_workload(
             keep_path.to_string_lossy().as_ref(),
             "keep",

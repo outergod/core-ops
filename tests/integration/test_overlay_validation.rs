@@ -45,8 +45,11 @@ fn init_layered_repo(repo: &PathBuf) -> String {
         .join("overrides")
         .join("missing.container.d");
     std::fs::create_dir_all(&invalid_dir).expect("invalid dir");
-    std::fs::write(invalid_dir.join("10-invalid.conf"), "[Container]\nImage=bad")
-        .expect("write invalid drop-in");
+    std::fs::write(
+        invalid_dir.join("10-invalid.conf"),
+        "[Container]\nImage=bad",
+    )
+    .expect("write invalid drop-in");
 
     std::process::Command::new("git")
         .arg("-C")

@@ -1,13 +1,13 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use crate::integration::env_lock::path_lock;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::{reconcile_apply, ReconcileDependencies};
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::read_observed_state;
 use core_ops::io::repo::load_desired_state;
 use core_ops::io::systemd::SYSTEMD_UNIT_DIR_ENV;
-use crate::integration::env_lock::path_lock;
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -28,12 +28,13 @@ fn init_git_repo(repo: &PathBuf) -> String {
 
     let quadlets = repo.join("quadlets");
     fs::create_dir_all(&quadlets).expect("create quadlets");
-    fs::write(quadlets.join("alpha.container"), "[Container]\nImage=alpine")
-        .expect("write container");
-    fs::write(quadlets.join("beta.socket"), "[Socket]\nListenStream=8080")
-        .expect("write socket");
-    fs::write(quadlets.join("gamma.volume"), "[Volume]\nDriver=local")
-        .expect("write volume");
+    fs::write(
+        quadlets.join("alpha.container"),
+        "[Container]\nImage=alpine",
+    )
+    .expect("write container");
+    fs::write(quadlets.join("beta.socket"), "[Socket]\nListenStream=8080").expect("write socket");
+    fs::write(quadlets.join("gamma.volume"), "[Volume]\nDriver=local").expect("write volume");
 
     std::process::Command::new("git")
         .arg("-C")
@@ -66,7 +67,7 @@ fn init_git_repo(repo: &PathBuf) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn write_systemctl_stub(dir: &PathBuf) {
+fn write_systemctl_stub(dir: &Path) {
     let bin_path = dir.join("systemctl");
     let script = r#"#!/bin/sh
 case "$1" in
@@ -118,7 +119,8 @@ fn reconcile_apply_supports_socket_and_volume_quadlets() {
     let deps = ReconcileDependencies {
         load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
         read_observed: &|desired| {
-            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string())).map_err(map_io_error)
+            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string()))
+                .map_err(map_io_error)
         },
         apply_plan: &|plan, desired| {
             apply_plan(plan, &desired.workloads, &host_quadlets, true)

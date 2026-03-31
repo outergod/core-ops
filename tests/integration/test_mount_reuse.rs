@@ -27,20 +27,14 @@ fn init_repo(repo: &PathBuf) -> String {
         .expect("beta mount overrides");
     std::fs::create_dir_all(repo.join("hosts/beta/overrides/var-lib-immich-media.automount.d"))
         .expect("beta automount overrides");
-    std::fs::create_dir_all(repo.join("hosts/gamma/overrides")).expect("host gamma");
     std::fs::create_dir_all(repo.join("hosts/invalid/overrides/var-lib-immich-media.mount.d"))
         .expect("host invalid");
 
     std::fs::write(
         repo.join("services/immich/immich.container"),
-        "[Container]\nImage=immich\n",
+        "[Container]\nImage=immich\n[Service]\nRequiresMountsFor=/var/lib/immich/media\n[Unit]\nAfter=var-lib-immich-media.automount var-lib-immich-media.mount\nRequires=var-lib-immich-media.automount var-lib-immich-media.mount\n",
     )
     .expect("write artifact");
-    std::fs::write(
-        repo.join("services/immich/service.yaml"),
-        "requires_mounts:\n  - var-lib-immich-media\n",
-    )
-    .expect("write service yaml");
     std::fs::write(
         repo.join("services/immich/var-lib-immich-media.mount"),
         r#"[Unit]
@@ -77,7 +71,7 @@ Options=bind
     )
     .expect("write cache mount");
 
-    for host in ["alpha", "beta", "gamma", "invalid"] {
+    for host in ["alpha", "beta", "invalid"] {
         std::fs::write(
             repo.join(format!("hosts/{host}/host.yaml")),
             format!("host: {host}\nservices:\n  - immich\n"),
@@ -98,16 +92,6 @@ Options=rw,hard,noatime
         "[Automount]\nWhere=/var/lib/immich/media\n",
     )
     .expect("write beta automount drop-in");
-
-    std::fs::write(
-        repo.join("hosts/gamma/overrides/mounts.yaml"),
-        r#"
-service_mounts:
-  immich:
-    - var-lib-immich-cache
-"#,
-    )
-    .expect("write gamma overrides");
 
     std::fs::write(
         repo.join("hosts/invalid/overrides/var-lib-immich-media.mount.d/20-host.conf"),
@@ -174,6 +158,9 @@ fn reusable_mount_declarations_support_layered_native_overrides_and_service_depe
     assert!(alpha_service
         .quadlet_contents
         .contains("RequiresMountsFor=/var/lib/immich/media"));
+    assert!(alpha_service
+        .quadlet_contents
+        .contains("After=var-lib-immich-media.automount var-lib-immich-media.mount"));
 
     std::env::set_var("CORE_OPS_HOST", "beta");
     let beta = load_desired_state(repo.to_str().expect("repo str"), &rev).expect("load beta");
@@ -196,35 +183,9 @@ fn reusable_mount_declarations_support_layered_native_overrides_and_service_depe
         .quadlet_contents
         .contains("After=var-lib-immich-media.automount var-lib-immich-media.mount"));
 
-    std::env::set_var("CORE_OPS_HOST", "gamma");
-    let gamma = load_desired_state(repo.to_str().expect("repo str"), &rev).expect("load gamma");
-    let gamma_mount = gamma
-        .mount_declarations
-        .iter()
-        .find(|mount| mount.id == "var-lib-immich-cache")
-        .expect("gamma cache mount");
-    assert_eq!(
-        gamma_mount
-            .prepared_path
-            .as_ref()
-            .expect("default mountpoint policy")
-            .create_if_missing,
-        true
-    );
-    let gamma_service = gamma
-        .workloads
-        .iter()
-        .find(|workload| workload.systemd_unit_name == "immich.container")
-        .expect("gamma service");
-    assert!(gamma_service
-        .quadlet_contents
-        .contains("RequiresMountsFor=/var/lib/immich/cache"));
-    assert!(!gamma_service
-        .quadlet_contents
-        .contains("RequiresMountsFor=/var/lib/immich/media"));
-
     std::env::set_var("CORE_OPS_HOST", "invalid");
-    let err = load_desired_state(repo.to_str().expect("repo str"), &rev).expect_err("invalid override");
+    let err =
+        load_desired_state(repo.to_str().expect("repo str"), &rev).expect_err("invalid override");
     assert!(err
         .to_string()
         .contains("mount unit name does not match Mount Where"));
@@ -244,14 +205,9 @@ fn managed_mount_artifacts_reject_removed_x_coreops_fields() {
     std::fs::create_dir_all(repo.join("hosts/alpha")).expect("host dir");
     std::fs::write(
         repo.join("services/immich/immich.container"),
-        "[Container]\nImage=immich\n",
+        "[Container]\nImage=immich\n[Service]\nRequiresMountsFor=/var/lib/immich/media\n",
     )
     .expect("write artifact");
-    std::fs::write(
-        repo.join("services/immich/service.yaml"),
-        "requires_mounts:\n  - var-lib-immich-media\n",
-    )
-    .expect("write service yaml");
     std::fs::write(
         repo.join("services/immich/var-lib-immich-media.mount"),
         r#"[Mount]
@@ -303,7 +259,8 @@ Id=immich-media
     let _guard = HostGuard(previous);
     std::env::set_var("CORE_OPS_HOST", "alpha");
 
-    let err = load_desired_state(repo.to_str().expect("repo str"), &rev).expect_err("invalid field");
+    let err =
+        load_desired_state(repo.to_str().expect("repo str"), &rev).expect_err("invalid field");
     assert!(err.to_string().contains("unsupported X-CoreOps field"));
 }
 

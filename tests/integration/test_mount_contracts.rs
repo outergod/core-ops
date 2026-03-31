@@ -1,13 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use core_ops::cli::report::format_plan_report;
 use core_ops::core::planner::{plan, plan_mount_units};
 use core_ops::core::types::{
     Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, MountDeclaration,
     MountDependency, MountVerificationMode, ObservedState, PathDependencyMode, QuadletType,
     RestartPolicy, UnitDependencyMode, Workload,
 };
-use core_ops::cli::report::format_plan_report;
 
 fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mount_management")
@@ -25,8 +25,12 @@ fn mount_management_fixture_scenarios_exist() {
     assert!(dir.join("normal-nfs/scenario.yaml").exists());
     assert!(dir.join("normal-nfs/var-lib-immich-media.mount").exists());
     assert!(dir.join("network-automount/scenario.yaml").exists());
-    assert!(dir.join("network-automount/srv-immich-media.mount").exists());
-    assert!(dir.join("network-automount/srv-immich-media.automount").exists());
+    assert!(dir
+        .join("network-automount/srv-immich-media.mount")
+        .exists());
+    assert!(dir
+        .join("network-automount/srv-immich-media.automount")
+        .exists());
     assert!(dir.join("invalid-definition/scenario.yaml").exists());
     assert!(dir.join("busy-removal/scenario.yaml").exists());
 }
@@ -35,14 +39,15 @@ fn mount_management_fixture_scenarios_exist() {
 fn contract_fixture_covers_normal_and_automount_dependency_semantics() {
     let normal = read_scenario("normal-nfs");
     let automount = read_scenario("network-automount");
-    let normal_mount = fs::read_to_string(fixture_dir().join("normal-nfs/var-lib-immich-media.mount"))
-        .expect("read normal mount fixture");
-    let automount_mount = fs::read_to_string(fixture_dir().join("network-automount/srv-immich-media.mount"))
-        .expect("read automount mount fixture");
-    let automount_unit = fs::read_to_string(
-        fixture_dir().join("network-automount/srv-immich-media.automount"),
-    )
-    .expect("read automount fixture");
+    let normal_mount =
+        fs::read_to_string(fixture_dir().join("normal-nfs/var-lib-immich-media.mount"))
+            .expect("read normal mount fixture");
+    let automount_mount =
+        fs::read_to_string(fixture_dir().join("network-automount/srv-immich-media.mount"))
+            .expect("read automount mount fixture");
+    let automount_unit =
+        fs::read_to_string(fixture_dir().join("network-automount/srv-immich-media.automount"))
+            .expect("read automount fixture");
 
     assert!(normal.contains("named-mount-declaration"));
     assert!(normal.contains("requires-mounts-for"));
@@ -60,6 +65,8 @@ fn plan_includes_mount_units_dependency_semantics_and_prepare_path_actions() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![
             Workload {
                 name: "immich".to_string(),
@@ -87,14 +94,9 @@ fn plan_includes_mount_units_dependency_semantics_and_prepare_path_actions() {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: Some(core_ops::core::types::PreparedTargetPath {
                 path: "/var/lib/immich/media".to_string(),
                 create_if_missing: true,
-                owner: None,
-                group: None,
-                mode: None,
-                service_consumed: true,
             }),
         }],
         mount_dependencies: vec![MountDependency {
@@ -120,10 +122,17 @@ fn plan_includes_mount_units_dependency_semantics_and_prepare_path_actions() {
     };
 
     let plan = plan(&desired, &observed).expect("plan");
-    let report = format_plan_report(&plan, &core_ops::core::diff::diff_workloads(&desired.workloads, &observed.workloads));
+    let report = format_plan_report(
+        &plan,
+        &core_ops::core::diff::diff_workloads(&desired.workloads, &observed.workloads),
+    );
 
-    assert!(desired.workloads[0].quadlet_contents.contains("RequiresMountsFor=/var/lib/immich/media"));
-    assert!(desired.workloads[0].quadlet_contents.contains("After=var-lib-immich-media.mount"));
+    assert!(desired.workloads[0]
+        .quadlet_contents
+        .contains("RequiresMountsFor=/var/lib/immich/media"));
+    assert!(desired.workloads[0]
+        .quadlet_contents
+        .contains("After=var-lib-immich-media.mount"));
     assert!(report.contains("PreparePath: /var/lib/immich/media"));
     assert!(report.contains("WriteUnit: var-lib-immich-media.mount"));
 }
@@ -133,6 +142,8 @@ fn plan_includes_automount_units_and_explicit_dependency_semantics() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![
             Workload {
                 name: "immich".to_string(),
@@ -168,7 +179,6 @@ fn plan_includes_automount_units_and_explicit_dependency_semantics() {
             network_backed: true,
             automount: true,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: None,
         }],
         mount_dependencies: vec![MountDependency {
@@ -194,7 +204,10 @@ fn plan_includes_automount_units_and_explicit_dependency_semantics() {
     };
 
     let plan = plan(&desired, &observed).expect("plan");
-    let report = format_plan_report(&plan, &core_ops::core::diff::diff_workloads(&desired.workloads, &observed.workloads));
+    let report = format_plan_report(
+        &plan,
+        &core_ops::core::diff::diff_workloads(&desired.workloads, &observed.workloads),
+    );
 
     assert!(desired.workloads[0]
         .quadlet_contents
@@ -218,7 +231,6 @@ fn mount_contract_examples_match_generated_dependency_and_removal_behavior() {
         network_backed: true,
         automount: true,
         verification_mode: MountVerificationMode::UnitAndPath,
-        ownership_scope: vec!["immich".to_string()],
         prepared_path: None,
     };
     let dependency = MountDependency {

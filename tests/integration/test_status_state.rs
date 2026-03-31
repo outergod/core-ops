@@ -47,8 +47,11 @@ fn init_git_repo(repo: &PathBuf) -> String {
 
     let quadlets = repo.join("quadlets");
     fs::create_dir_all(&quadlets).expect("create quadlets");
-    fs::write(quadlets.join("alpha.container"), "[Container]\nImage=alpine")
-        .expect("write quadlet");
+    fs::write(
+        quadlets.join("alpha.container"),
+        "[Container]\nImage=alpine",
+    )
+    .expect("write quadlet");
 
     std::process::Command::new("git")
         .arg("-C")
@@ -81,7 +84,7 @@ fn init_git_repo(repo: &PathBuf) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn write_systemctl_stub(dir: &PathBuf) {
+fn write_systemctl_stub(dir: &Path) {
     let bin_path = dir.join("systemctl");
     let script = r#"#!/bin/sh
 case "$1" in
@@ -258,7 +261,7 @@ fn apply_creates_state_snapshot_on_first_run_from_implicit_path() {
     fs::create_dir_all(&host_quadlets).expect("host quadlets");
 
     let implicit_state_path = resolve_state_file(None);
-    let (_result, _report, _plan) = apply_with_report(
+    let _output = apply_with_report(
         repo.to_str().unwrap(),
         &rev,
         &host_quadlets,
@@ -303,8 +306,8 @@ fn plan_does_not_create_state_snapshot_from_implicit_path() {
         },
     };
 
-    let output = plan_cmd::plan(&deps).expect("plan");
-    assert!(output.summary.contains("plan "));
+    let output = plan_cmd::plan(&deps, false).expect("plan");
+    assert!(output.summary.contains("Plan for host "));
     assert!(!state_path.exists());
 }
 
@@ -326,12 +329,11 @@ fn apply_can_explicitly_opt_out_of_state_persistence() {
     let host_quadlets = temp.join("host_quadlets");
     fs::create_dir_all(&host_quadlets).expect("host quadlets");
 
-    let (_result, report, _plan) =
-        apply_with_report(repo.to_str().unwrap(), &rev, &host_quadlets, false, None)
-            .expect("apply");
+    let output = apply_with_report(repo.to_str().unwrap(), &rev, &host_quadlets, false, None)
+        .expect("apply");
 
     assert!(!state_path.exists());
-    assert!(!report.contains("\"status\": \"success\""));
+    assert!(!output.human_report.contains("\"status\": \"success\""));
 }
 
 #[test]
@@ -396,6 +398,8 @@ fn mount_status_summary_reports_dependency_counts_and_failures() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: Vec::new(),
         mount_declarations: vec![MountDeclaration {
             id: "immich-media".to_string(),
@@ -406,7 +410,6 @@ fn mount_status_summary_reports_dependency_counts_and_failures() {
             network_backed: true,
             automount: true,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: None,
         }],
         mount_dependencies: vec![MountDependency {
@@ -439,7 +442,10 @@ fn mount_status_summary_reports_dependency_counts_and_failures() {
     let summary =
         render_mount_dependency_summary(&desired, &verification_results).expect("mount summary");
 
-    assert_eq!(summary, "mounts refs=1 dependencies=1 verification_failures=1");
+    assert_eq!(
+        summary,
+        "mounts refs=1 dependencies=1 verification_failures=1"
+    );
 }
 
 struct PathGuard {

@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use core_ops::core::types::{
-    ControllerProvenance, ConvergenceStatus, DesiredStateProvenance, DeterministicConvergenceRecord,
-    DeterministicPersistedState, ManagedObjectKind, NormalizedManagedObject, NormalizedSnapshot,
-    PersistedProvenanceState, ReconciliationProvenance, ReconciliationStatus, RetainedAppliedSnapshot,
-    RollbackEligibility, RollbackTargetCandidate, TreeState, PERSISTED_PROVENANCE_SCHEMA_VERSION,
+    ControllerProvenance, ConvergenceStatus, DesiredStateProvenance,
+    DeterministicConvergenceRecord, DeterministicPersistedState, ManagedObjectKind,
+    NormalizedManagedObject, NormalizedSnapshot, PersistedProvenanceState,
+    ReconciliationProvenance, ReconciliationStatus, RetainedAppliedSnapshot, RollbackEligibility,
+    RollbackTargetCandidate, TreeState, PERSISTED_PROVENANCE_SCHEMA_VERSION,
 };
 use core_ops::io::state::{
     default_deterministic_state_path, default_state_file_path, persist_finished_state,
@@ -99,7 +100,10 @@ fn reconciliation_generation_and_transitions_remain_monotonic() {
     let in_progress = read_persisted_state(&path)
         .expect("read in-progress")
         .expect("snapshot exists");
-    assert_eq!(in_progress.reconciliation.status, ReconciliationStatus::InProgress);
+    assert_eq!(
+        in_progress.reconciliation.status,
+        ReconciliationStatus::InProgress
+    );
     assert_eq!(in_progress.reconciliation.generation, 2);
     assert_eq!(
         in_progress.reconciliation.last_applied_revision.as_deref(),
@@ -203,6 +207,8 @@ fn deterministic_state_round_trips_with_retained_snapshots() {
         retained_snapshots: vec![RetainedAppliedSnapshot {
             revision_id: "rev-1".to_string(),
             scope_id: "host:alpha".to_string(),
+            requested_repository: None,
+            requested_ref: None,
             snapshot: NormalizedSnapshot {
                 revision_id: Some("rev-1".to_string()),
                 scope_id: "host:alpha".to_string(),

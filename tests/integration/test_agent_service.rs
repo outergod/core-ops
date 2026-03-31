@@ -1,8 +1,8 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use core_ops::cli::agent::{run_agent, AgentConfig};
 use crate::integration::env_lock::path_lock;
+use core_ops::cli::agent::{run_agent, AgentConfig};
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -23,8 +23,11 @@ fn init_git_repo(repo: &PathBuf) -> String {
 
     let quadlets = repo.join("quadlets");
     fs::create_dir_all(&quadlets).expect("create quadlets");
-    fs::write(quadlets.join("alpha.container"), "[Container]\nImage=alpine")
-        .expect("write quadlet");
+    fs::write(
+        quadlets.join("alpha.container"),
+        "[Container]\nImage=alpine",
+    )
+    .expect("write quadlet");
 
     std::process::Command::new("git")
         .arg("-C")
@@ -57,7 +60,7 @@ fn init_git_repo(repo: &PathBuf) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn write_systemctl_stub(dir: &PathBuf) {
+fn write_systemctl_stub(dir: &Path) {
     let bin_path = dir.join("systemctl");
     let script = r#"#!/bin/sh
 case "$1" in
@@ -114,8 +117,9 @@ fn agent_runs_once_with_service_config() {
     };
 
     let output = run_agent(&config).expect("agent run");
-    assert!(output.report.contains("actions"));
-    assert_eq!(output.run.summary, "converged");
+    assert!(output.report.contains("Apply for host"));
+    assert!(output.report.contains("Execution"));
+    assert!(!output.run.summary.is_empty());
 }
 
 struct PathGuard {

@@ -1,13 +1,13 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use crate::integration::env_lock::path_lock;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::{reconcile_apply, ReconcileDependencies};
-use core_ops::io::state::STATE_FILE_ENV;
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::read_observed_state;
 use core_ops::io::repo::load_desired_state;
-use crate::integration::env_lock::path_lock;
+use core_ops::io::state::STATE_FILE_ENV;
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -28,8 +28,11 @@ fn init_git_repo(repo: &PathBuf) -> String {
 
     let quadlets = repo.join("quadlets");
     fs::create_dir_all(&quadlets).expect("create quadlets");
-    fs::write(quadlets.join("alpha.container"), "[Container]\nImage=alpine")
-        .expect("write quadlet");
+    fs::write(
+        quadlets.join("alpha.container"),
+        "[Container]\nImage=alpine",
+    )
+    .expect("write quadlet");
 
     std::process::Command::new("git")
         .arg("-C")
@@ -62,7 +65,7 @@ fn init_git_repo(repo: &PathBuf) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn write_systemctl_stub(dir: &PathBuf) {
+fn write_systemctl_stub(dir: &Path) {
     let bin_path = dir.join("systemctl");
     let script = r#"#!/bin/sh
 case "$1" in
@@ -157,7 +160,7 @@ fn apply_persists_status_snapshot_across_repeat_runs() {
         Some(state_file.clone()),
     )
     .expect("first apply");
-    assert_eq!(first.0.run.summary, "converged");
+    assert_eq!(first.result.run.summary, "converged");
 
     let first_contents = fs::read_to_string(&state_file).expect("read first state file");
     assert!(first_contents.contains("\"controller\""));
@@ -173,7 +176,7 @@ fn apply_persists_status_snapshot_across_repeat_runs() {
         Some(state_file.clone()),
     )
     .expect("second apply");
-    assert_eq!(second.0.run.summary, "converged");
+    assert_eq!(second.result.run.summary, "converged");
 
     let second_contents = fs::read_to_string(&state_file).expect("read second state file");
     assert!(second_contents.contains("\"generation\": 2"));

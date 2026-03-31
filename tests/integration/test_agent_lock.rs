@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use core_ops::core::errors::RunLockError;
-use core_ops::io::lock::FileRunLock;
 use core_ops::core::types::RunLock;
+use core_ops::io::lock::FileRunLock;
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();

@@ -106,8 +106,12 @@ fn applies_host_overrides_after_base_dropins() {
         .find(|w| w.systemd_unit_name == "traefik.socket")
         .expect("traefik socket");
 
-    assert!(traefik_socket.quadlet_contents.contains("ListenStream=127.0.0.1:8080"));
-    assert!(!traefik_socket.quadlet_contents.contains("ListenStream=127.0.0.1:8081"));
+    assert!(traefik_socket
+        .quadlet_contents
+        .contains("ListenStream=127.0.0.1:8080"));
+    assert!(!traefik_socket
+        .quadlet_contents
+        .contains("ListenStream=127.0.0.1:8081"));
 
     let socket_base_dropin = desired
         .workloads
@@ -121,7 +125,9 @@ fn applies_host_overrides_after_base_dropins() {
         .iter()
         .find(|w| w.systemd_unit_name == "traefik.socket.d/20-host.conf")
         .expect("socket host drop-in");
-    assert!(socket_host_dropin.quadlet_contents.contains("ListenStream=127.0.0.1:8081"));
+    assert!(socket_host_dropin
+        .quadlet_contents
+        .contains("ListenStream=127.0.0.1:8081"));
 }
 
 struct HostGuard(Option<std::ffi::OsString>);

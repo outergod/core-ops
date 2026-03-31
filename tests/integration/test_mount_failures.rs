@@ -9,6 +9,8 @@ fn desired_state() -> DesiredState {
     DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![Workload {
             name: "var-lib-immich-media".to_string(),
             quadlet_type: QuadletType::Mount,
@@ -26,7 +28,6 @@ fn desired_state() -> DesiredState {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: None,
         }],
         mount_dependencies: vec![MountDependency {
@@ -68,10 +69,11 @@ fn invalid_mount_is_reported_as_blocked() {
     let result = reconcile_apply(&deps).expect("reconcile apply");
 
     assert_eq!(result.run.summary, "mount blocked");
-    assert!(result
-        .verification_results
-        .iter()
-        .any(|result| result.details.as_deref().unwrap_or("").starts_with("blocked:")));
+    assert!(result.verification_results.iter().any(|result| result
+        .details
+        .as_deref()
+        .unwrap_or("")
+        .starts_with("blocked:")));
 }
 
 #[test]

@@ -1,11 +1,11 @@
 use std::fs;
 
+use crate::integration::env_lock::path_lock;
 use core_ops::core::types::{
     Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, PlanAction, PlanActionType,
     QuadletType, ReconciliationPlan, RestartPolicy, Workload,
 };
 use core_ops::io::apply::apply_plan;
-use crate::integration::env_lock::path_lock;
 
 #[test]
 fn managed_mount_removal_fails_when_target_is_still_busy() {
@@ -48,6 +48,8 @@ fn managed_mount_removal_fails_when_target_is_still_busy() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![Workload {
             name: "immich".to_string(),
             quadlet_type: QuadletType::Container,
@@ -89,7 +91,10 @@ fn managed_mount_removal_fails_when_target_is_still_busy() {
 }
 
 fn write_systemctl_stub(dir: &std::path::Path, log_path: &std::path::Path) {
-    let script = format!("#!/bin/sh\necho \"$@\" >> \"{}\"\nexit 0\n", log_path.display());
+    let script = format!(
+        "#!/bin/sh\necho \"$@\" >> \"{}\"\nexit 0\n",
+        log_path.display()
+    );
     let path = dir.join("systemctl");
     fs::write(&path, script).expect("write systemctl stub");
     #[cfg(unix)]

@@ -11,10 +11,14 @@ Do not assume Rust tooling is installed globally.
 ## Common Commands
 
 - Format: `cargo fmt` (or `make fmt`)
-- Lint: `cargo clippy --all-targets --all-features -- -D warnings` (or `make lint`)
+- Lint: `cargo clippy --all-targets -- -D warnings` (or `make lint`)
 - Test: `cargo test` (or `make test`)
 
 Assume the nix shell is already active, and do not run commands via `direnv exec`.
+
+Rust changes are not considered complete until both `cargo test` and
+`cargo clippy --all-targets -- -D warnings` pass, unless a temporary exception
+is explicitly documented with follow-up work.
 
 ## Systemd Agent Configuration
 
@@ -107,6 +111,28 @@ package version in `Cargo.toml`.
   set stops automatic progress and records structured convergence diagnostics for
   operator review.
 
+## Explainable Reconciliation Interface
+
+- Machine-readable `plan`, `apply`, `result`, and `explain` outputs are the
+  authoritative operator contract. Human-readable output must remain a
+  deterministic rendering of those same view models.
+- Human revision context keeps the immutable resolved revision primary and shows
+  a meaningful requested ref secondarily, for example
+  `454ac5f1 (demo-uat-v1)`.
+- Persisted reconciliation and rollback semantics stay anchored to immutable
+  revisions. Requested repository/ref values are operator-facing provenance
+  only.
+- Prior requested-ref context is only available after a successful apply has
+  retained that revision with a build that knows how to store selector context.
+- Default human output should stay concise:
+  - `plan` emphasizes changed or recovery-relevant objects and collapses
+    unchanged dependency trees unless they explain the outcome.
+  - `apply` summaries contain only counts and overall outcome.
+  - verbose `apply` may show translated phase progression and expanded
+    diagnostics.
+- `core-ops explain <object>` defaults to the currently deployed target from
+  persisted state when `--repo` and `--rev` are omitted.
+
 ### Normalization Rules and Tolerated Runtime Variance
 
 Supported managed resource kinds in this iteration are generated systemd units,
@@ -149,10 +175,9 @@ reasoning.
 
 - Author managed mounts as native `.mount` and optional `.automount` artifacts
   and embed only reconciliation-specific metadata in an `[X-CoreOps]` section.
-- Reference managed mounts from `services/<service>/service.yaml` by native
-  `.mount` unit stem.
-- Use `requires_mounts` on the consuming service so CoreOps can materialize
-  native dependency semantics directly into the generated unit configuration.
+- Express service-to-mount relationships in consuming unit content itself using
+  native systemd directives such as `RequiresMountsFor=`, `After=`, and
+  `Requires=` against managed `.mount` / `.automount` units.
 - Keep ordinary `.mount` behavior as the default. Set `automount: true` only
   for explicitly network-backed mounts such as NFS.
 - Keep `[X-CoreOps]` minimal in this iteration. `CreateMountpoint=true` is the
@@ -170,16 +195,22 @@ reasoning.
 ```text
 services/immich/
   immich.container
-  service.yaml
   var-lib-immich-media.mount
   var-lib-immich-media.automount
 ```
 
-`services/immich/service.yaml`
+`services/immich/immich.container`
 
-```yaml
-requires_mounts:
-  - var-lib-immich-media
+```ini
+[Container]
+Image=ghcr.io/immich-app/immich-server:release
+
+[Service]
+RequiresMountsFor=/var/lib/immich/media
+
+[Unit]
+After=var-lib-immich-media.automount var-lib-immich-media.mount
+Requires=var-lib-immich-media.automount var-lib-immich-media.mount
 ```
 
 `services/immich/var-lib-immich-media.mount`
@@ -245,3 +276,99 @@ Where=/var/lib/immich/media
 - `mountpoint missing and CreateMountpoint=false`
   - CoreOps is configured not to create the mountpoint.
   - Provision the directory out of band, or set `CreateMountpoint=true`.
+
+## VM Host Preparation (CoreOS)
+
+On the dev host:
+
+```sh
+just render-ignition minimal
+scp infra/ignition/minimal.ign core@$VM_HOST:/var/lib/libvirt/images/
+```
+
+On remote:
+
+```sh
+sudo rpm-ostree override remove nfs-utils-coreos \
+  --install nfs-utils \
+  --install qemu-kvm \
+  --install libvirt \
+  --install virt-install
+  
+sudo systemctl restart
+
+sudo systemctl enable --now libvirtd
+
+coreos-installer download \
+  --stream stable \
+  --platform qemu \
+  --format qcow2.xz
+  
+unxz fedora-coreos-*.qcow2.xz
+mv fedora-coreos-*.qcow2 /var/lib/libvirt/images/fcos-base.qcow2
+
+cat <<'EOF' | sudo tee /etc/polkit-1/rules.d/50-libvirt.rules
+polkit.addRule(function(action, subject) {
+  if (action.id == "org.libvirt.unix.manage" &&
+      subject.user == "core") {
+    return polkit.Result.YES;
+  }
+});
+EOF
+
+sudo nmcli connection add type bridge ifname br0
+sudo nmcli connection add type bridge-slave ifname eth0 master br0
+sudo nmcli connection modify bridge-br0 ipv4.method auto
+sudo nmcli connection up bridge-br0
+
+sudo mkdir -p /var/lib/libvirt/ignition
+sudo chmod 0755 /var/lib/libvirt/ignition
+sudo install -m 0644 minimal.ign /var/lib/libvirt/ignition/minimal.ign
+```
+
+On the dev host:
+
+```sh
+virsh -c qemu+ssh://core@$VM_HOST/system pool-define-as default dir --target /var/lib/libvirt/images
+virsh -c qemu+ssh://core@$VM_HOST/system pool-start default
+virsh -c qemu+ssh://core@$VM_HOST/system pool-autostart default
+
+virsh -c qemu+ssh://core@$VM_HOST/system pool-list --all
+
+virsh -c qemu+ssh://core@$VM_HOST/system vol-create-as default core-ops-uat.qcow2 10G \
+  --format qcow2 \
+  --backing-vol /var/lib/libvirt/images/fcos-base.qcow2 \
+  --backing-vol-format qcow2
+
+virt-install \
+  --connect qemu+ssh://core@$VM_HOST/system \
+  --name core-ops-uat \
+  --osinfo fedora-coreos-stable \
+  --memory 4096 \
+  --vcpus 2 \
+  --import \
+  --disk vol=default/core-ops-uat.qcow2,format=qcow2 \
+  --network bridge=br0,model=virtio \
+  --graphics none \
+  --noautoconsole \
+  --qemu-commandline="-fw_cfg name=opt/com.coreos/config,file=/var/lib/libvirt/ignition/minimal.ign"
+```
+
+Remove:
+
+```sh
+virsh -c qemu+ssh://core@$VM_HOST/system destroy core-ops-uat
+virsh -c qemu+ssh://core@$VM_HOST/system undefine core-ops-uat
+virsh -c qemu+ssh://core@$VM_HOST/system vol-delete --pool default core-ops-uat
+```
+
+### UAT VM Reset
+
+```sh
+virsh -c qemu+ssh://core@$VM_HOST/system destroy core-ops-uat
+sudo rm /var/lib/libvirt/images/core-ops-uat.qcow2
+sudo qemu-img create -f qcow2 \
+  -b /var/lib/libvirt/images/fcos-base.qcow2 \
+  /var/lib/libvirt/images/core-ops-uat.qcow2
+virsh -c qemu+ssh://core@$VM_HOST/system start core-ops-uat
+```

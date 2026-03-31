@@ -59,6 +59,8 @@ fn apply_prepares_target_path_and_starts_mount_before_service() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![
             Workload {
                 name: "var-lib-immich-media".to_string(),
@@ -86,14 +88,9 @@ fn apply_prepares_target_path_and_starts_mount_before_service() {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: Some(core_ops::core::types::PreparedTargetPath {
                 path: target_path.to_string_lossy().to_string(),
                 create_if_missing: true,
-                owner: None,
-                group: None,
-                mode: Some("0755".to_string()),
-                service_consumed: true,
             }),
         }],
         mount_dependencies: vec![MountDependency {
@@ -115,7 +112,10 @@ fn apply_prepares_target_path_and_starts_mount_before_service() {
         desired_revision_id: "rev".to_string(),
         observed_revision_id: None,
         actions: vec![
-            action(PlanActionType::PreparePath, target_path.to_string_lossy().as_ref()),
+            action(
+                PlanActionType::PreparePath,
+                target_path.to_string_lossy().as_ref(),
+            ),
             action(PlanActionType::WriteQuadlet, "var-lib-immich-media.mount"),
             action(PlanActionType::WriteQuadlet, "immich.container"),
             action(PlanActionType::ReloadSystemd, "var-lib-immich-media.mount"),
@@ -134,7 +134,9 @@ fn apply_prepares_target_path_and_starts_mount_before_service() {
     let mount_start = log_contents
         .find("start var-lib-immich-media.mount")
         .expect("mount start");
-    let service_start = log_contents.find("start immich.service").expect("service start");
+    let service_start = log_contents
+        .find("start immich.service")
+        .expect("service start");
     assert!(mount_start < service_start);
 }
 
@@ -166,6 +168,8 @@ fn apply_starts_automount_before_service_without_starting_mount_unit() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![
             Workload {
                 name: "srv-immich-media".to_string(),
@@ -201,7 +205,6 @@ fn apply_starts_automount_before_service_without_starting_mount_unit() {
             network_backed: true,
             automount: true,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: None,
         }],
         mount_dependencies: vec![MountDependency {
@@ -272,6 +275,8 @@ fn apply_accepts_existing_symlink_mountpoint() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![Workload {
             name: "var-lib-immich".to_string(),
             quadlet_type: QuadletType::Mount,
@@ -289,14 +294,9 @@ fn apply_accepts_existing_symlink_mountpoint() {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: Vec::new(),
             prepared_path: Some(core_ops::core::types::PreparedTargetPath {
                 path: link_path.to_string_lossy().to_string(),
                 create_if_missing: true,
-                owner: None,
-                group: None,
-                mode: None,
-                service_consumed: false,
             }),
         }],
         mount_dependencies: Vec::new(),
@@ -312,7 +312,10 @@ fn apply_accepts_existing_symlink_mountpoint() {
         desired_revision_id: "rev".to_string(),
         observed_revision_id: None,
         actions: vec![
-            action(PlanActionType::PreparePath, link_path.to_string_lossy().as_ref()),
+            action(
+                PlanActionType::PreparePath,
+                link_path.to_string_lossy().as_ref(),
+            ),
             action(PlanActionType::WriteQuadlet, "var-lib-immich.mount"),
         ],
         safety_checks: Vec::new(),
@@ -349,6 +352,8 @@ fn apply_accepts_existing_directory_mountpoint_without_mutating_it() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![Workload {
             name: "var-lib-immich".to_string(),
             quadlet_type: QuadletType::Mount,
@@ -366,14 +371,9 @@ fn apply_accepts_existing_directory_mountpoint_without_mutating_it() {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: Vec::new(),
             prepared_path: Some(core_ops::core::types::PreparedTargetPath {
                 path: mountpoint.to_string_lossy().to_string(),
                 create_if_missing: true,
-                owner: None,
-                group: None,
-                mode: None,
-                service_consumed: false,
             }),
         }],
         mount_dependencies: Vec::new(),
@@ -389,7 +389,10 @@ fn apply_accepts_existing_directory_mountpoint_without_mutating_it() {
         desired_revision_id: "rev".to_string(),
         observed_revision_id: None,
         actions: vec![
-            action(PlanActionType::PreparePath, mountpoint.to_string_lossy().as_ref()),
+            action(
+                PlanActionType::PreparePath,
+                mountpoint.to_string_lossy().as_ref(),
+            ),
             action(PlanActionType::WriteQuadlet, "var-lib-immich.mount"),
         ],
         safety_checks: Vec::new(),
@@ -428,6 +431,8 @@ fn apply_skips_prepare_for_existing_managed_mount_units() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![Workload {
             name: "var-lib-immich".to_string(),
             quadlet_type: QuadletType::Mount,
@@ -445,14 +450,9 @@ fn apply_skips_prepare_for_existing_managed_mount_units() {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: Vec::new(),
             prepared_path: Some(core_ops::core::types::PreparedTargetPath {
                 path: mountpoint.to_string_lossy().to_string(),
                 create_if_missing: true,
-                owner: None,
-                group: None,
-                mode: None,
-                service_consumed: false,
             }),
         }],
         mount_dependencies: Vec::new(),
@@ -468,7 +468,10 @@ fn apply_skips_prepare_for_existing_managed_mount_units() {
         desired_revision_id: "rev".to_string(),
         observed_revision_id: None,
         actions: vec![
-            action(PlanActionType::PreparePath, mountpoint.to_string_lossy().as_ref()),
+            action(
+                PlanActionType::PreparePath,
+                mountpoint.to_string_lossy().as_ref(),
+            ),
             action(PlanActionType::WriteQuadlet, "var-lib-immich.mount"),
         ],
         safety_checks: Vec::new(),
@@ -493,7 +496,10 @@ fn action(action_type: PlanActionType, target: &str) -> PlanAction {
 }
 
 fn write_systemctl_stub(dir: &Path, log_path: &Path) {
-    let script = format!("#!/bin/sh\necho \"$@\" >> \"{}\"\nexit 0\n", log_path.display());
+    let script = format!(
+        "#!/bin/sh\necho \"$@\" >> \"{}\"\nexit 0\n",
+        log_path.display()
+    );
     let path = dir.join("systemctl");
     fs::write(&path, script).expect("write systemctl stub");
     #[cfg(unix)]

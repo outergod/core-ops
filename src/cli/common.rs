@@ -1,6 +1,6 @@
+use crate::cli::diagnostics::{report_from_error, report_from_retry};
 use crate::core::errors::CoreError;
 use crate::core::retry::{run_with_retry as core_retry, RetryOutcome, RetryPolicy};
-use crate::cli::diagnostics::{report_from_error, report_from_retry};
 use miette::Report;
 
 pub fn report_error(err: CoreError) -> Report {

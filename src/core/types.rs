@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 pub struct DesiredState {
     pub repository_ref: String,
     pub revision_id: String,
+    pub requested_repository: Option<String>,
+    pub requested_ref: Option<String>,
     pub workloads: Vec<Workload>,
     pub mount_declarations: Vec<MountDeclaration>,
     pub mount_dependencies: Vec<MountDependency>,
@@ -26,8 +28,6 @@ pub struct ServiceDefinition {
     pub artifacts: Vec<ArtifactSource>,
     pub base_dropins: Vec<DropInSource>,
     pub config_files: Vec<ConfigFileSource>,
-    pub mount_declarations: Vec<MountDeclaration>,
-    pub service_mounts: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,8 +41,6 @@ pub struct HostOverlaySet {
     pub host: String,
     pub overrides: Vec<DropInSource>,
     pub config_overrides: Vec<ConfigFileSource>,
-    pub mount_overrides: Vec<MountDeclaration>,
-    pub service_mount_overrides: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -107,7 +105,6 @@ pub struct MountDeclaration {
     pub network_backed: bool,
     pub automount: bool,
     pub verification_mode: MountVerificationMode,
-    pub ownership_scope: Vec<String>,
     pub prepared_path: Option<PreparedTargetPath>,
 }
 
@@ -135,10 +132,6 @@ pub struct MountDependency {
 pub struct PreparedTargetPath {
     pub path: String,
     pub create_if_missing: bool,
-    pub owner: Option<String>,
-    pub group: Option<String>,
-    pub mode: Option<String>,
-    pub service_consumed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -599,6 +592,18 @@ pub enum ManagedObjectKind {
     RenderedArtifact,
 }
 
+impl ManagedObjectKind {
+    pub fn resource_type(&self) -> &'static str {
+        match self {
+            ManagedObjectKind::GeneratedUnit => "service",
+            ManagedObjectKind::QuadletResource => "resource",
+            ManagedObjectKind::Mount => "mount",
+            ManagedObjectKind::Automount => "automount",
+            ManagedObjectKind::RenderedArtifact => "config",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NormalizedManagedObject {
     pub object_id: String,
@@ -657,6 +662,8 @@ pub enum DeterministicActionClass {
     Update,
     Delete,
     Replace,
+    Recover,
+    Restart,
     NoOp,
     Blocked,
 }
@@ -693,6 +700,10 @@ pub struct DeterministicPlannedAction {
 pub struct DeterministicReconciliationPlan {
     pub desired_revision_id: Option<String>,
     pub baseline_revision_id: Option<String>,
+    pub requested_repository: Option<String>,
+    pub requested_ref: Option<String>,
+    pub last_applied_requested_repository: Option<String>,
+    pub last_applied_requested_ref: Option<String>,
     pub scope_id: String,
     pub actions: Vec<DeterministicPlannedAction>,
     pub drift_records: Vec<StructuredDriftRecord>,
@@ -712,6 +723,10 @@ pub enum RollbackEligibility {
 pub struct RetainedAppliedSnapshot {
     pub revision_id: String,
     pub scope_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_ref: Option<String>,
     pub snapshot: NormalizedSnapshot,
     pub retained: bool,
 }
@@ -754,4 +769,299 @@ pub struct DeterministicPersistedState {
     pub retained_snapshots: Vec<RetainedAppliedSnapshot>,
     pub latest_convergence: Option<DeterministicConvergenceRecord>,
     pub latest_rollback_target: Option<RollbackTargetCandidate>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedObjectRef {
+    pub resource_type: String,
+    pub name: String,
+    pub display_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RevisionContext {
+    pub target_revision: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_repository: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_applied_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_applied_requested_repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_applied_requested_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_revision: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CauseKind {
+    DesiredChange,
+    Drift,
+    DependencyChange,
+    DependencyFailure,
+    BlockedPrerequisite,
+    RuntimeVariance,
+    RecoveryRequired,
+    ReplacementRequired,
+    RestartRequired,
+    NoChange,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Cause {
+    pub kind: CauseKind,
+    pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_object: Option<ManagedObjectRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<BTreeMap<String, String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DependencyRelation {
+    Prerequisite,
+    Dependent,
+    Blocker,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DependencyEdgeView {
+    pub relation: DependencyRelation,
+    pub object: ManagedObjectRef,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SemanticDiffKind {
+    LineBased,
+    SemanticOnly,
+    Replacement,
+    Deletion,
+    Creation,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticDiffView {
+    pub kind: SemanticDiffKind,
+    pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unified_diff: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<BTreeMap<String, String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanEntryAction {
+    Create,
+    Update,
+    Replace,
+    Delete,
+    Recover,
+    Restart,
+    NoOp,
+    Blocked,
+    Skipped,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanSummaryView {
+    pub changed_count: usize,
+    pub unchanged_count: usize,
+    pub blocked_count: usize,
+    pub skipped_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_count: Option<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanEntry {
+    pub object: ManagedObjectRef,
+    pub action: PlanEntryAction,
+    pub causes: Vec<Cause>,
+    pub dependencies: Vec<DependencyEdgeView>,
+    pub order_index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff: Option<SemanticDiffView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unchanged: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanOutputView {
+    pub view_kind: String,
+    pub revision_context: RevisionContext,
+    pub summary: PlanSummaryView,
+    pub entries: Vec<PlanEntry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPhaseKind {
+    Resolution,
+    GraphConstruction,
+    Planning,
+    Execution,
+    ConvergenceCheck,
+    FinalSummary,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PhaseState {
+    Started,
+    Completed,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApplyPhaseEvent {
+    pub phase: ApplyPhaseKind,
+    pub state: PhaseState,
+    pub sequence: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionEventKind {
+    ObjectProgress,
+    ObjectTerminal,
+    ObjectBlocked,
+    ObjectSkipped,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionState {
+    Pending,
+    Running,
+    Created,
+    Updated,
+    Deleted,
+    Recovered,
+    Restarted,
+    Unchanged,
+    Failed,
+    Blocked,
+    Skipped,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecutionEvent {
+    pub object: ManagedObjectRef,
+    pub event_kind: ExecutionEventKind,
+    pub state: ExecutionState,
+    pub sequence: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<PlanEntryAction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cause: Option<Cause>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<ApplyPhaseKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub impacted_objects: Option<Vec<ManagedObjectRef>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApplyOutputView {
+    pub view_kind: String,
+    pub revision_context: RevisionContext,
+    pub phases: Vec<ApplyPhaseEvent>,
+    pub events: Vec<ExecutionEvent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<PlanSummaryView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResultOutcome {
+    Converged,
+    ConvergedWithToleratedVariance,
+    PartiallyApplied,
+    Failed,
+    NonConverging,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResultSummaryView {
+    pub changed_count: usize,
+    pub failed_count: usize,
+    pub blocked_count: usize,
+    pub skipped_count: usize,
+    pub unchanged_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResultFinalState {
+    Succeeded,
+    Failed,
+    Blocked,
+    Skipped,
+    NoOp,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResultEntry {
+    pub object: ManagedObjectRef,
+    pub final_state: ResultFinalState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<PlanEntryAction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub causes: Option<Vec<Cause>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<Vec<DependencyEdgeView>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff: Option<SemanticDiffView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResultOutputView {
+    pub view_kind: String,
+    pub revision_context: RevisionContext,
+    pub outcome: ResultOutcome,
+    pub summary: ResultSummaryView,
+    pub entries: Vec<ResultEntry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExplainOutputView {
+    pub view_kind: String,
+    pub revision_context: RevisionContext,
+    pub object: ManagedObjectRef,
+    pub action_or_outcome: String,
+    pub causes: Vec<Cause>,
+    pub dependencies: Vec<DependencyEdgeView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dependency_context: Option<Vec<ExplainDependencyView>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff: Option<SemanticDiffView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x_coreops: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub apply_intent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExplainDependencyView {
+    pub relation: DependencyRelation,
+    pub object: ManagedObjectRef,
+    pub state: String,
+    pub reason: String,
 }

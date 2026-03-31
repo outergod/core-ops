@@ -1,10 +1,13 @@
 <!--
 Sync Impact Report:
-- Version change: 1.1.0 -> 1.2.0
+- Version change: 1.2.0 -> 1.3.0
 - Modified principles:
   - 9. Conservative Public Evolution -> 9. Conservative Public Evolution
   - 12. Provenance, Versioning, and Behavioral Traceability ->
     12. Provenance, Versioning, and Behavioral Traceability
+- Modified sections:
+  - Development Workflow
+  - Governance
 - Added sections: None
 - Removed sections: None
 - Templates requiring updates:
@@ -142,6 +145,17 @@ side-effect boundaries, idempotence strategy, observability signals,
 provenance/version surfaces, compatibility impact, release version policy
 impact, and the test plan for each change.
 
+Rust changes MUST pass the project's standard validation gates before a feature
+or fix is considered complete. At minimum, this requires `cargo test` and
+`cargo clippy --all-targets -- -D warnings`. These gates apply to changes that
+modify Rust source, shared test code, or public Rust-facing contracts that can
+affect compiled behavior.
+
+Exceptions MUST be explicitly documented in the relevant plan, task, or
+implementation record. The exception MUST state why the lint gate is
+temporarily waived and what follow-up will restore compliance. Silent waiver of
+lint failures is not permitted.
+
 ## Governance
 
 - This constitution supersedes all other project guidance.
@@ -160,5 +174,8 @@ impact, and the test plan for each change.
   persisted schemas, CLI output, reconciliation semantics, or compatibility
   update the release version policy and continue to derive the canonical
   controller version from `Cargo.toml`.
+- Compliance reviews MUST verify that Rust changes either pass `cargo test` and
+  `cargo clippy --all-targets -- -D warnings` or record an explicit temporary
+  exception with remediation.
 
-**Version**: 1.2.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-03-23
+**Version**: 1.3.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-03-31

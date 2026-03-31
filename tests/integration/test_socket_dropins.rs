@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::integration::env_lock::path_lock;
 use core_ops::core::types::{
     Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, QuadletType, RestartPolicy,
     Workload,
 };
 use core_ops::io::observed::read_observed_state;
-use crate::integration::env_lock::path_lock;
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -56,6 +56,8 @@ fn observed_state_ignores_unmanaged_socket_dropins() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![socket_dropin_workload(
             "alpha.socket.d/10-known.conf",
             "Known=1",

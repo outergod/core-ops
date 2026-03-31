@@ -2,17 +2,22 @@ use crate::core::boundaries::enforce_plan_boundaries;
 use crate::core::diff::{diff_normalized_snapshots, diff_workloads};
 use crate::core::errors::{CoreError, ValidationError};
 use crate::core::types::{
-    DependencyEdgeKind, DesiredState, DeterministicActionClass, DeterministicPlannedAction,
-    DeterministicReconciliationPlan, DiffItem, DiffKind, FailureClass, GeneratedUnitSet,
-    MountDeclaration, MountDependency, NormalizedSnapshot, PlanAction, PlanActionType,
-    QuadletType, ReconciliationPlan, SafetyCheck, SemanticDependencyEdge, SemanticDependencyGraph,
-    SemanticDependencyNode, ServiceDependencyEdit, ObservedState,
+    DependencyEdgeKind, DependencyEdgeView, DependencyRelation, DesiredState,
+    DeterministicActionClass, DeterministicPlannedAction, DeterministicReconciliationPlan,
+    DiffItem, DiffKind, FailureClass, GeneratedUnitSet, ManagedObjectKind, ManagedObjectRef,
+    MountDeclaration, MountDependency, NormalizedSnapshot, ObservedState, PlanAction,
+    PlanActionType, QuadletType, ReconciliationPlan, SafetyCheck, SemanticDependencyEdge,
+    SemanticDependencyGraph, SemanticDependencyNode, ServiceDependencyEdit, VerificationResult,
+    VerificationStatus,
 };
 use crate::core::validation::{detect_semantic_dependency_cycle, validate_desired_state};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
-pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<ReconciliationPlan, CoreError> {
+pub fn plan(
+    desired: &DesiredState,
+    observed: &ObservedState,
+) -> Result<ReconciliationPlan, CoreError> {
     validate_desired_state(desired).map_err(map_validation_error)?;
 
     let mut diffs = diff_workloads(&desired.workloads, &observed.workloads);
@@ -22,9 +27,11 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
         .mount_declarations
         .iter()
         .filter_map(|mount| {
-            mount.prepared_path.as_ref().filter(|prepared| prepared.create_if_missing).map(|prepared| {
-                (mount.mount_unit_name(), prepared.path.clone())
-            })
+            mount
+                .prepared_path
+                .as_ref()
+                .filter(|prepared| prepared.create_if_missing)
+                .map(|prepared| (mount.mount_unit_name(), prepared.path.clone()))
         })
         .collect::<std::collections::BTreeMap<_, _>>();
 
@@ -37,16 +44,15 @@ pub fn plan(desired: &DesiredState, observed: &ObservedState) -> Result<Reconcil
             .as_ref()
             .or(diff.observed.as_ref())
             .map(|workload| workload.quadlet_type.clone());
-        let mut diff_actions =
-            actions_for_diff(
-                diff.kind.clone(),
-                &diff.name,
-                quadlet_type,
-                prepared_paths.get(&diff.name).map(String::as_str),
-                &socket_stems,
-                &container_stems,
-                &automount_stems,
-            );
+        let mut diff_actions = actions_for_diff(
+            diff.kind.clone(),
+            &diff.name,
+            quadlet_type,
+            prepared_paths.get(&diff.name).map(String::as_str),
+            &socket_stems,
+            &container_stems,
+            &automount_stems,
+        );
         actions.append(&mut diff_actions);
     }
 
@@ -100,16 +106,172 @@ pub fn build_semantic_dependency_graph(snapshot: &NormalizedSnapshot) -> Semanti
         }
     }
     edges.sort_by(|a, b| {
-        (&a.from_object_id, &a.to_object_id, &a.reason).cmp(&(&b.from_object_id, &b.to_object_id, &b.reason))
+        (&a.from_object_id, &a.to_object_id, &a.reason).cmp(&(
+            &b.from_object_id,
+            &b.to_object_id,
+            &b.reason,
+        ))
     });
 
     SemanticDependencyGraph { nodes, edges }
+}
+
+pub fn managed_object_ref(object_id: &str, object_kind: &ManagedObjectKind) -> ManagedObjectRef {
+    let name = object_id.to_string();
+    let resource_type = resource_type_for_object(object_id, object_kind).to_string();
+    let display_name = if let Some(path) = object_id.strip_prefix("config:") {
+        path.trim_start_matches('/').to_string()
+    } else if object_id.starts_with('/') {
+        object_id.trim_start_matches('/').to_string()
+    } else {
+        object_id.to_string()
+    };
+    ManagedObjectRef {
+        display_id: format!("{resource_type}/{display_name}"),
+        resource_type,
+        name,
+    }
+}
+
+fn resource_type_for_object(object_id: &str, object_kind: &ManagedObjectKind) -> &'static str {
+    match object_kind {
+        ManagedObjectKind::RenderedArtifact => "config",
+        ManagedObjectKind::Mount => "mount",
+        ManagedObjectKind::Automount => "automount",
+        ManagedObjectKind::GeneratedUnit => "service",
+        ManagedObjectKind::QuadletResource => {
+            if object_id.ends_with(".container") {
+                "container"
+            } else if object_id.ends_with(".volume") {
+                "volume"
+            } else if object_id.ends_with(".network") {
+                "network"
+            } else if object_id.ends_with(".socket") {
+                "socket"
+            } else if object_id.ends_with(".mount") {
+                "mount"
+            } else if object_id.ends_with(".automount") {
+                "automount"
+            } else if object_id.ends_with(".service") {
+                "service"
+            } else if object_id.starts_with('/') {
+                "config"
+            } else {
+                "resource"
+            }
+        }
+    }
+}
+
+pub fn object_kind_by_id(graph: &SemanticDependencyGraph) -> BTreeMap<&str, &ManagedObjectKind> {
+    graph
+        .nodes
+        .iter()
+        .map(|node| (node.object_id.as_str(), &node.object_kind))
+        .collect()
+}
+
+pub fn direct_prerequisite_refs(
+    graph: &SemanticDependencyGraph,
+    object_id: &str,
+) -> Vec<ManagedObjectRef> {
+    let object_kinds = object_kind_by_id(graph);
+    let mut refs = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.to_object_id == object_id)
+        .filter_map(|edge| {
+            object_kinds
+                .get(edge.from_object_id.as_str())
+                .map(|kind| managed_object_ref(&edge.from_object_id, kind))
+        })
+        .collect::<Vec<_>>();
+    refs.sort_by(|a, b| a.display_id.cmp(&b.display_id));
+    refs
+}
+
+pub fn dependent_refs(graph: &SemanticDependencyGraph, object_id: &str) -> Vec<ManagedObjectRef> {
+    let object_kinds = object_kind_by_id(graph);
+    let mut refs = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.from_object_id == object_id)
+        .filter_map(|edge| {
+            object_kinds
+                .get(edge.to_object_id.as_str())
+                .map(|kind| managed_object_ref(&edge.to_object_id, kind))
+        })
+        .collect::<Vec<_>>();
+    refs.sort_by(|a, b| a.display_id.cmp(&b.display_id));
+    refs
+}
+
+pub fn direct_and_transitive_prerequisite_refs(
+    graph: &SemanticDependencyGraph,
+    object_id: &str,
+) -> (Vec<ManagedObjectRef>, Vec<ManagedObjectRef>) {
+    let direct = direct_prerequisite_refs(graph, object_id);
+    let object_kinds = object_kind_by_id(graph);
+    let mut seen = BTreeSet::new();
+    let mut pending = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.to_object_id == object_id)
+        .map(|edge| edge.from_object_id.clone())
+        .collect::<Vec<_>>();
+    let direct_ids = direct
+        .iter()
+        .map(|item| item.name.clone())
+        .collect::<BTreeSet<_>>();
+    let mut transitive = Vec::new();
+
+    while let Some(current) = pending.pop() {
+        for edge in graph
+            .edges
+            .iter()
+            .filter(|edge| edge.to_object_id == current)
+        {
+            if seen.insert(edge.from_object_id.clone())
+                && !direct_ids.contains(&edge.from_object_id)
+            {
+                if let Some(kind) = object_kinds.get(edge.from_object_id.as_str()) {
+                    transitive.push(managed_object_ref(&edge.from_object_id, kind));
+                }
+                pending.push(edge.from_object_id.clone());
+            }
+        }
+    }
+
+    transitive.sort_by(|a, b| a.display_id.cmp(&b.display_id));
+    (direct, transitive)
+}
+
+pub fn dependency_edges_for_object(
+    graph: &SemanticDependencyGraph,
+    object_id: &str,
+) -> Vec<DependencyEdgeView> {
+    direct_prerequisite_refs(graph, object_id)
+        .into_iter()
+        .map(|object| DependencyEdgeView {
+            relation: DependencyRelation::Prerequisite,
+            object,
+        })
+        .collect()
 }
 
 pub fn plan_deterministic_reconciliation(
     desired: &NormalizedSnapshot,
     last_applied: Option<&NormalizedSnapshot>,
     actual: &NormalizedSnapshot,
+) -> Result<DeterministicReconciliationPlan, CoreError> {
+    plan_deterministic_reconciliation_with_runtime(desired, last_applied, actual, &[])
+}
+
+pub fn plan_deterministic_reconciliation_with_runtime(
+    desired: &NormalizedSnapshot,
+    last_applied: Option<&NormalizedSnapshot>,
+    actual: &NormalizedSnapshot,
+    verification_results: &[VerificationResult],
 ) -> Result<DeterministicReconciliationPlan, CoreError> {
     let graph = build_semantic_dependency_graph(desired);
     let graph_edges = graph
@@ -118,12 +280,17 @@ pub fn plan_deterministic_reconciliation(
         .map(|edge| (edge.from_object_id.clone(), edge.to_object_id.clone()))
         .collect::<Vec<_>>();
     detect_semantic_dependency_cycle(&graph_edges).map_err(map_validation_error)?;
-    let drift_records = diff_normalized_snapshots(desired, last_applied, actual);
+    let mut drift_records = diff_normalized_snapshots(desired, last_applied, actual);
     let desired_map = index_normalized_objects(&desired.objects);
     let actual_map = index_normalized_objects(&actual.objects);
     let applied_map = last_applied
         .map(|snapshot| index_normalized_objects(&snapshot.objects))
         .unwrap_or_default();
+    let runtime_variance_by_object = verification_results
+        .iter()
+        .filter(|result| result.status == VerificationStatus::Failure)
+        .map(|result| (result.target.as_str(), result.details.as_deref()))
+        .collect::<BTreeMap<_, _>>();
     let desired_ids = ordered_desired_ids(&graph);
     let mut actions = Vec::new();
     for object_id in desired_ids {
@@ -133,6 +300,10 @@ pub fn plan_deterministic_reconciliation(
         let dependency_context = desired_object.dependency_refs.clone();
         let actual_object = actual_map.get(object_id.as_str());
         let applied_object = applied_map.get(object_id.as_str());
+        let runtime_variance = runtime_variance_by_object
+            .get(object_id.as_str())
+            .copied()
+            .flatten();
         let classification = if dependency_context
             .iter()
             .any(|dependency| !desired_map.contains_key(dependency.as_str()))
@@ -142,6 +313,8 @@ pub fn plan_deterministic_reconciliation(
             DeterministicActionClass::Create
         } else if actual_object != Some(desired_object) {
             DeterministicActionClass::Update
+        } else if runtime_variance.is_some() {
+            DeterministicActionClass::Recover
         } else {
             DeterministicActionClass::NoOp
         };
@@ -153,10 +326,28 @@ pub fn plan_deterministic_reconciliation(
                 applied_object,
                 actual_object,
                 &dependency_context,
+                runtime_variance,
             ),
             dependency_context,
             semantic_diff: semantic_diff(desired_object, actual_object, applied_object),
         });
+    }
+
+    let mut changed_by_object = actions
+        .iter()
+        .map(|action| (action.object_id.clone(), action.classification.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for action in &mut actions {
+        if action.classification != DeterministicActionClass::NoOp {
+            continue;
+        }
+        if let Some(trigger) =
+            restart_trigger_dependency(&action.dependency_context, &changed_by_object)
+        {
+            action.classification = DeterministicActionClass::Restart;
+            action.reason = format!("restart required because {} changed", trigger);
+            changed_by_object.insert(action.object_id.clone(), DeterministicActionClass::Restart);
+        }
     }
 
     for object_id in ordered_delete_ids(actual, desired).map_err(map_validation_error)? {
@@ -169,13 +360,58 @@ pub fn plan_deterministic_reconciliation(
         });
     }
 
+    for action in &actions {
+        if action.classification != DeterministicActionClass::Recover {
+            continue;
+        }
+        if drift_records
+            .iter()
+            .any(|record| record.object_id == action.object_id)
+        {
+            continue;
+        }
+        drift_records.push(crate::core::types::StructuredDriftRecord {
+            object_id: action.object_id.clone(),
+            category: crate::core::types::DriftCategory::RuntimeVariance,
+            comparison_basis: "runtime_verification".to_string(),
+            auto_action: true,
+            attention_required: true,
+            details: action.reason.clone(),
+        });
+    }
+    drift_records.sort_by(|a, b| a.object_id.cmp(&b.object_id));
+
     Ok(DeterministicReconciliationPlan {
         desired_revision_id: desired.revision_id.clone(),
         baseline_revision_id: last_applied.and_then(|snapshot| snapshot.revision_id.clone()),
+        requested_repository: None,
+        requested_ref: None,
+        last_applied_requested_repository: None,
+        last_applied_requested_ref: None,
         scope_id: desired.scope_id.clone(),
         actions,
         drift_records,
         graph,
+    })
+}
+
+fn restart_trigger_dependency(
+    dependency_context: &[String],
+    changed_by_object: &BTreeMap<String, DeterministicActionClass>,
+) -> Option<String> {
+    dependency_context.iter().find_map(|dependency| {
+        changed_by_object
+            .get(dependency)
+            .and_then(|classification| {
+                matches!(
+                    classification,
+                    DeterministicActionClass::Create
+                        | DeterministicActionClass::Update
+                        | DeterministicActionClass::Replace
+                        | DeterministicActionClass::Restart
+                )
+                .then(|| dependency.clone())
+            })
     })
 }
 
@@ -251,7 +487,9 @@ fn ordered_desired_ids(graph: &SemanticDependencyGraph) -> Vec<String> {
         if incoming.contains_key(edge.to_object_id.as_str())
             && outgoing.contains_key(edge.from_object_id.as_str())
         {
-            *incoming.get_mut(edge.to_object_id.as_str()).expect("incoming edge") += 1;
+            *incoming
+                .get_mut(edge.to_object_id.as_str())
+                .expect("incoming edge") += 1;
             outgoing
                 .get_mut(edge.from_object_id.as_str())
                 .expect("outgoing edge")
@@ -269,10 +507,7 @@ fn ordered_desired_ids(graph: &SemanticDependencyGraph) -> Vec<String> {
     let mut ordered = Vec::new();
     while let Some(next) = ready.pop_first() {
         ordered.push(next.clone());
-        let neighbors = outgoing
-            .get(next.as_str())
-            .cloned()
-            .unwrap_or_default();
+        let neighbors = outgoing.get(next.as_str()).cloned().unwrap_or_default();
         for neighbor in neighbors {
             let count = incoming.get_mut(neighbor).expect("neighbor present");
             *count -= 1;
@@ -290,12 +525,15 @@ fn action_reason(
     applied: Option<&&crate::core::types::NormalizedManagedObject>,
     actual: Option<&&crate::core::types::NormalizedManagedObject>,
     dependency_context: &[String],
+    runtime_variance: Option<&str>,
 ) -> String {
     if dependency_context
         .iter()
         .any(|dependency| dependency == &desired.object_id)
     {
         "object declares a self-dependency".to_string()
+    } else if let Some(details) = runtime_variance {
+        format!("runtime reconciliation required: {details}")
     } else if dependency_context.is_empty() {
         action_reason_without_dependencies(desired, applied, actual)
     } else if actual.is_none() {
@@ -305,7 +543,8 @@ fn action_reason(
     } else if applied != Some(&desired) {
         "desired snapshot changed since last applied state but actual already converged".to_string()
     } else {
-        "desired, last applied, and actual state already match after dependency ordering".to_string()
+        "desired, last applied, and actual state already match after dependency ordering"
+            .to_string()
     }
 }
 
@@ -330,6 +569,9 @@ fn semantic_diff(
     actual: Option<&&crate::core::types::NormalizedManagedObject>,
     applied: Option<&&crate::core::types::NormalizedManagedObject>,
 ) -> BTreeMap<String, String> {
+    if actual == Some(&desired) {
+        return BTreeMap::new();
+    }
     let mut diff = BTreeMap::new();
     for (key, desired_value) in &desired.material_fields {
         let actual_value = actual.and_then(|object| object.material_fields.get(key));
@@ -495,6 +737,8 @@ fn action_class_label(action: &DeterministicActionClass) -> &'static str {
         DeterministicActionClass::Update => "update",
         DeterministicActionClass::Delete => "delete",
         DeterministicActionClass::Replace => "replace",
+        DeterministicActionClass::Recover => "recover",
+        DeterministicActionClass::Restart => "restart",
         DeterministicActionClass::NoOp => "no_op",
         DeterministicActionClass::Blocked => "blocked",
     }
@@ -504,7 +748,9 @@ fn desired_socket_stems(workloads: &[crate::core::types::Workload]) -> HashSet<S
     workloads
         .iter()
         .filter(|workload| workload.quadlet_type == QuadletType::Socket)
-        .filter_map(|workload| stem_for_unit_name(&workload.systemd_unit_name).map(|s| s.to_string()))
+        .filter_map(|workload| {
+            stem_for_unit_name(&workload.systemd_unit_name).map(|s| s.to_string())
+        })
         .collect()
 }
 
@@ -512,7 +758,9 @@ fn desired_container_stems(workloads: &[crate::core::types::Workload]) -> HashSe
     workloads
         .iter()
         .filter(|workload| workload.quadlet_type == QuadletType::Container)
-        .filter_map(|workload| stem_for_unit_name(&workload.systemd_unit_name).map(|s| s.to_string()))
+        .filter_map(|workload| {
+            stem_for_unit_name(&workload.systemd_unit_name).map(|s| s.to_string())
+        })
         .collect()
 }
 
@@ -520,7 +768,9 @@ fn desired_automount_stems(workloads: &[crate::core::types::Workload]) -> HashSe
     workloads
         .iter()
         .filter(|workload| workload.quadlet_type == QuadletType::Automount)
-        .filter_map(|workload| stem_for_unit_name(&workload.systemd_unit_name).map(|s| s.to_string()))
+        .filter_map(|workload| {
+            stem_for_unit_name(&workload.systemd_unit_name).map(|s| s.to_string())
+        })
         .collect()
 }
 
@@ -556,17 +806,15 @@ fn should_restart_service_for_container(
     }
 }
 
-fn should_restart_socket_for_dropin(
-    quadlet_type: Option<&QuadletType>,
-    name: &str,
-) -> bool {
+fn should_restart_socket_for_dropin(quadlet_type: Option<&QuadletType>, name: &str) -> bool {
     matches!(quadlet_type, Some(QuadletType::SocketDropIn))
         && socket_unit_from_dropin_name(name).is_some()
 }
 
 fn socket_unit_from_dropin_name(name: &str) -> Option<String> {
     let marker = ".socket.d/";
-    name.find(marker).map(|idx| name[..idx + ".socket".len()].to_string())
+    name.find(marker)
+        .map(|idx| name[..idx + ".socket".len()].to_string())
 }
 
 fn order_diffs(diffs: &mut [DiffItem]) {

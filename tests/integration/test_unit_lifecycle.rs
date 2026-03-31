@@ -1,11 +1,11 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use crate::integration::env_lock::path_lock;
 use core_ops::core::types::{
     EnabledState, PlanAction, PlanActionType, ReconciliationPlan, RestartPolicy, Workload,
 };
 use core_ops::io::apply::apply_plan;
-use crate::integration::env_lock::path_lock;
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -17,7 +17,7 @@ fn temp_dir(prefix: &str) -> PathBuf {
     path
 }
 
-fn write_systemctl_stub(dir: &PathBuf, log_path: &PathBuf) -> PathBuf {
+fn write_systemctl_stub(dir: &Path, log_path: &Path) -> PathBuf {
     let bin_path = dir.join("systemctl");
     let script = format!(
         "#!/bin/sh\n\n\
@@ -201,7 +201,6 @@ fn action(action_type: PlanActionType, target: &str) -> PlanAction {
 struct PathGuard {
     previous: String,
 }
-
 
 impl Drop for PathGuard {
     fn drop(&mut self) {

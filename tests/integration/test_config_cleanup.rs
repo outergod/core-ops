@@ -46,6 +46,8 @@ fn removes_stale_config_files_under_managed_root() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![config_workload(
             keep_path.to_string_lossy().as_ref(),
             "keep",
@@ -88,12 +90,17 @@ fn mount_related_config_reapply_is_idempotent() {
     std::fs::write(&config_path, config_contents).expect("write config");
 
     let mount_unit_contents = "[Mount]\nWhere=/srv/immich/media\nWhat=nas:/media\nType=nfs\n";
-    std::fs::write(systemd_dir.join("srv-immich-media.mount"), mount_unit_contents)
-        .expect("write mount unit");
+    std::fs::write(
+        systemd_dir.join("srv-immich-media.mount"),
+        mount_unit_contents,
+    )
+    .expect("write mount unit");
 
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![
             Workload {
                 name: "srv-immich-media".to_string(),
@@ -114,7 +121,6 @@ fn mount_related_config_reapply_is_idempotent() {
             network_backed: true,
             automount: false,
             verification_mode: MountVerificationMode::UnitAndPath,
-            ownership_scope: vec!["immich".to_string()],
             prepared_path: None,
         }],
         mount_dependencies: Vec::new(),

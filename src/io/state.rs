@@ -9,8 +9,8 @@ use crate::core::reconcile::{
     build_reconciliation_provenance, never_run_provenance, next_reconciliation_generation,
 };
 use crate::core::types::{
-    ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState,
-    DeterministicConvergenceRecord, DeterministicPersistedState, ReconciliationProvenance,
+    ControllerProvenance, DesiredStateProvenance, DeterministicConvergenceRecord,
+    DeterministicPersistedState, PersistedProvenanceState, ReconciliationProvenance,
     ReconciliationStatus, RetainedAppliedSnapshot, RollbackEligibility, RollbackTargetCandidate,
     TreeState,
 };
@@ -21,6 +21,7 @@ pub const CONTROLLER_VERSION_ENV: &str = "CORE_OPS_CONTROLLER_VERSION";
 pub const CONTROLLER_REVISION_ENV: &str = "CORE_OPS_CONTROLLER_REVISION";
 pub const CONTROLLER_BUILD_TIME_ENV: &str = "CORE_OPS_CONTROLLER_BUILD_TIME";
 pub const CONTROLLER_TREE_STATE_ENV: &str = "CORE_OPS_CONTROLLER_TREE_STATE";
+// Operator-facing plan/apply/result views evolve independently from persisted on-disk state.
 pub const DETERMINISTIC_STATE_FILE_NAME: &str = "deterministic-state.json";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,10 +49,9 @@ pub fn write_persisted_state(
         .ok_or_else(|| StateError::Io(format!("state path has no parent: {}", path.display())))?;
     fs::create_dir_all(parent).map_err(|err| StateError::Io(err.to_string()))?;
 
-    let body =
-        serde_json::to_vec_pretty(state).map_err(|err| StateError::Serialization(err.to_string()))?;
-    let mut temp =
-        NamedTempFile::new_in(parent).map_err(|err| StateError::Io(err.to_string()))?;
+    let body = serde_json::to_vec_pretty(state)
+        .map_err(|err| StateError::Serialization(err.to_string()))?;
+    let mut temp = NamedTempFile::new_in(parent).map_err(|err| StateError::Io(err.to_string()))?;
     use std::io::Write;
     temp.write_all(&body)
         .and_then(|_| temp.flush())
@@ -94,7 +94,8 @@ pub fn persist_success_state(
     requested_ref: &str,
     observed_revision: &str,
 ) -> Result<(), StateError> {
-    let attempt = persist_in_progress_state(path, repository, requested_ref, observed_revision, None)?;
+    let attempt =
+        persist_in_progress_state(path, repository, requested_ref, observed_revision, None)?;
     persist_finished_state(
         path,
         repository,
@@ -202,17 +203,15 @@ fn build_state(
         desired_state: DesiredStateProvenance {
             repository: repository.to_string(),
             requested_ref: requested_ref.to_string(),
-            last_observed_revision: observed_revision
-                .map(ToString::to_string)
-                .or_else(|| {
-                    previous.and_then(|state| {
-                        state
-                            .desired_state
-                            .last_observed_revision
-                            .as_ref()
-                            .map(ToString::to_string)
-                    })
-                }),
+            last_observed_revision: observed_revision.map(ToString::to_string).or_else(|| {
+                previous.and_then(|state| {
+                    state
+                        .desired_state
+                        .last_observed_revision
+                        .as_ref()
+                        .map(ToString::to_string)
+                })
+            }),
             last_observed_at: observed_at.or_else(|| {
                 previous.and_then(|state| {
                     state
@@ -256,7 +255,9 @@ pub fn default_deterministic_state_path() -> PathBuf {
         .join(DETERMINISTIC_STATE_FILE_NAME)
 }
 
-pub fn read_deterministic_state(path: &Path) -> Result<Option<DeterministicPersistedState>, StateError> {
+pub fn read_deterministic_state(
+    path: &Path,
+) -> Result<Option<DeterministicPersistedState>, StateError> {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -275,10 +276,9 @@ pub fn write_deterministic_state(
         .parent()
         .ok_or_else(|| StateError::Io(format!("state path has no parent: {}", path.display())))?;
     fs::create_dir_all(parent).map_err(|err| StateError::Io(err.to_string()))?;
-    let body =
-        serde_json::to_vec_pretty(state).map_err(|err| StateError::Serialization(err.to_string()))?;
-    let mut temp =
-        NamedTempFile::new_in(parent).map_err(|err| StateError::Io(err.to_string()))?;
+    let body = serde_json::to_vec_pretty(state)
+        .map_err(|err| StateError::Serialization(err.to_string()))?;
+    let mut temp = NamedTempFile::new_in(parent).map_err(|err| StateError::Io(err.to_string()))?;
     use std::io::Write;
     temp.write_all(&body)
         .and_then(|_| temp.flush())
@@ -334,7 +334,9 @@ pub fn retained_snapshot_for_target<'a>(
     target_revision_id: &str,
 ) -> Option<&'a RetainedAppliedSnapshot> {
     state.retained_snapshots.iter().find(|snapshot| {
-        snapshot.revision_id == target_revision_id && snapshot.scope_id == scope_id && snapshot.retained
+        snapshot.revision_id == target_revision_id
+            && snapshot.scope_id == scope_id
+            && snapshot.retained
     })
 }
 
