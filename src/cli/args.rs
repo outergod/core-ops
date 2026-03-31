@@ -49,7 +49,7 @@ deployed target from persisted state.";
 #[derive(Parser, Debug)]
 #[command(
     name = "core-ops",
-    version,
+    version = long_version(),
     long_version = long_version(),
     about = "GitOps controller for Quadlet, native systemd units, and mount-aware reconciliation"
 )]
@@ -237,10 +237,19 @@ fn short_revision(revision: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::long_version;
+    use super::{long_version, Cli};
+    use clap::CommandFactory;
 
     #[test]
     fn long_version_includes_package_version() {
         assert!(long_version().contains(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn short_and_long_version_flags_share_the_same_rendered_version() {
+        let command = Cli::command();
+
+        assert_eq!(command.get_version(), Some(long_version()));
+        assert_eq!(command.get_long_version(), Some(long_version()));
     }
 }
