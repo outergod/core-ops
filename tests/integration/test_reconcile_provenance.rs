@@ -302,6 +302,64 @@ fn deterministic_apply_persists_convergence_state_next_to_status_snapshot() {
 }
 
 #[test]
+fn apply_report_uses_retained_baseline_for_unchanged_reruns() {
+    let _lock = path_lock().lock().expect("path lock");
+    let repo = temp_dir("core_ops_repo_apply_baseline");
+    let revision = init_git_repo(&repo);
+
+    let temp = temp_dir("core_ops_apply_baseline");
+    fs::create_dir_all(&temp).expect("temp dir");
+    write_systemctl_stub(&temp);
+
+    let old_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{}", temp.display(), old_path);
+    std::env::set_var("PATH", new_path);
+    let _guard = PathGuard { previous: old_path };
+
+    let state_file = temp.join("status.json");
+    std::env::set_var(STATE_FILE_ENV, &state_file);
+    let _state_guard = StateFileGuard;
+
+    let host_quadlets = temp.join("host_quadlets");
+    fs::create_dir_all(&host_quadlets).expect("host quadlets");
+
+    let first = core_ops::cli::apply::apply_with_report(
+        repo.to_str().expect("repo path"),
+        "main",
+        &host_quadlets,
+        true,
+        Some(state_file.clone()),
+    )
+    .expect("first apply");
+    assert_eq!(first.result.run.summary, "converged");
+
+    let second = core_ops::cli::apply::apply_with_report(
+        repo.to_str().expect("repo path"),
+        "main",
+        &host_quadlets,
+        true,
+        Some(state_file),
+    )
+    .expect("second apply");
+
+    assert!(second.human_report.contains("1 unchanged"));
+    assert!(!second.human_report.contains("created"));
+    assert!(!second.human_report.contains("updated"));
+    assert!(!second.human_report.contains("restarted"));
+
+    let parsed: Value =
+        serde_json::from_str(&second.machine_report).expect("parse second apply output");
+    assert_eq!(
+        parsed["revision_context"]["target_revision"].as_str(),
+        Some(revision.as_str())
+    );
+    assert_eq!(parsed["summary"]["changed_count"].as_u64(), Some(0));
+    assert_eq!(parsed["summary"]["unchanged_count"].as_u64(), Some(1));
+    assert_eq!(parsed["events"][0]["state"].as_str(), Some("unchanged"));
+    assert_eq!(parsed["events"][0]["action"].as_str(), Some("no_op"));
+}
+
+#[test]
 fn explain_output_supports_single_object_inspection_with_mount_metadata() {
     let plan = core_ops::core::types::DeterministicReconciliationPlan {
         desired_revision_id: Some("rev-2".to_string()),

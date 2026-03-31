@@ -102,9 +102,10 @@ pub fn apply_with_report(
         &plan_result.desired,
         verify_state(&plan_result.desired, &observed_before),
     );
+    let baseline_snapshot = last_applied_snapshot.as_ref().map(|snapshot| &snapshot.snapshot);
     let mut deterministic = reconcile_deterministic_plan_with_runtime(
         &desired_snapshot,
-        None,
+        baseline_snapshot,
         &observed_snapshot,
         &verification_results_before,
     )?
@@ -257,9 +258,10 @@ where
         &plan_result.desired,
         verify_state(&plan_result.desired, &observed_before),
     );
+    let baseline_snapshot = last_applied_snapshot.as_ref().map(|snapshot| &snapshot.snapshot);
     let mut deterministic = reconcile_deterministic_plan_with_runtime(
         &desired_snapshot,
-        None,
+        baseline_snapshot,
         &observed_snapshot,
         &verification_results_before,
     )?
@@ -464,9 +466,10 @@ where
         &plan_result.desired,
         verify_state(&plan_result.desired, &observed_before),
     );
+    let baseline_snapshot = last_applied_snapshot.as_ref().map(|snapshot| &snapshot.snapshot);
     let mut deterministic = reconcile_deterministic_plan_with_runtime(
         &desired_snapshot,
-        None,
+        baseline_snapshot,
         &observed_snapshot,
         &verification_results_before,
     )?
