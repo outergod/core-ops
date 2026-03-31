@@ -62,7 +62,9 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             if let Some(dir) = audit_dir {
                 let audit_path = audit_io::write_audit_record(&dir, &output.audit_record)
                     .map_err(map_plan_error)?;
-                println!("audit {}", audit_path);
+                if !json {
+                    println!("audit {}", audit_path);
+                }
             }
 
             if json {

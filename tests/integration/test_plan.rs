@@ -243,6 +243,39 @@ fn cli_plan_exposes_machine_readable_plan_output() {
 }
 
 #[test]
+fn cli_plan_json_stdout_remains_machine_parseable_with_audit_dir() {
+    let repo = temp_dir("core_ops_repo_plan_json_audit");
+    let _rev = init_git_repo(&repo);
+
+    let host_quadlets = temp_dir("core_ops_host_plan_json_audit");
+    fs::create_dir_all(&host_quadlets).expect("create host quadlets");
+
+    let audit_dir = temp_dir("core_ops_plan_audit_dir");
+    fs::create_dir_all(&audit_dir).expect("create audit dir");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_core-ops"))
+        .arg("plan")
+        .arg("--repo")
+        .arg(repo.to_str().expect("repo path"))
+        .arg("--rev")
+        .arg("HEAD")
+        .arg("--quadlet-dir")
+        .arg(host_quadlets.to_str().expect("quadlet dir"))
+        .arg("--audit-dir")
+        .arg(audit_dir.to_str().expect("audit dir"))
+        .arg("--json")
+        .output()
+        .expect("run core-ops plan");
+
+    assert!(output.status.success(), "plan failed: {:?}", output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse stdout json");
+
+    assert_eq!(parsed["view_kind"].as_str(), Some("plan"));
+    assert!(!stdout.contains("\naudit "));
+}
+
+#[test]
 fn cli_plan_uses_host_override_for_scope_when_observed_host_info_is_absent() {
     let _lock = path_lock().lock().expect("path lock");
     let previous = std::env::var_os("CORE_OPS_HOST");
