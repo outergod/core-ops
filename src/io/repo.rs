@@ -6,16 +6,15 @@ use tempfile::TempDir;
 use crate::core::evaluate::{evaluate_desired_state, EvaluationOutput};
 use crate::core::types::{
     ArtifactSource, Boundaries, BoundaryScope, ConfigFileSource, DesiredState, DropInSource,
-    EnabledState, EvaluationInput, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn,
+    EnabledState, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn, EvaluationInput,
     HostDeclaration, HostOverlaySet, Invariant, MountDeclaration, QuadletType, RestartPolicy,
     ServiceCatalog, ServiceDefinition, Workload,
 };
-use crate::io::quadlet::{parse_quadlet_name, read_quadlet_dir, QuadletError};
 use crate::core::validation::{
     validate_config_paths, validate_dropin_targets as validate_dropin_targets_fn,
-    validate_mount_model,
-    validate_service_selection,
+    validate_mount_model, validate_service_selection,
 };
+use crate::io::quadlet::{parse_quadlet_name, read_quadlet_dir, QuadletError};
 use serde::Deserialize;
 
 pub const HOST_OVERRIDE_ENV: &str = "CORE_OPS_HOST";
@@ -107,7 +106,7 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
     let repo_path = temp.path().to_path_buf();
     let services_dir = repo_path.join("services");
     if services_dir.exists() {
-        return load_layered_desired_state(&repo_path, revision_id);
+        return load_layered_desired_state(&repo_path, repo_source, revision_id);
     }
     let quadlet_dir = repo_path.join("quadlets");
     if !quadlet_dir.exists() {
@@ -118,6 +117,8 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
     Ok(desired_state_from_workloads(
         &repo_path,
         &resolved_revision,
+        Some(repo_source.to_string()),
+        Some(revision_id.to_string()),
         workloads,
         Vec::new(),
         Vec::new(),
@@ -162,7 +163,8 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
     }
-    overlays.config_overrides = filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
+    overlays.config_overrides =
+        filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
     let all_artifacts = selected_service_artifacts(&host_decl.services, &catalog);
     validate_dropin_targets(&host_decl.services, &catalog, &overlays, &all_artifacts)?;
 
@@ -182,7 +184,8 @@ pub fn load_host_declaration(host_dir: &Path) -> Result<HostDeclaration, RepoErr
 
 fn load_layered_desired_state(
     repo_path: &Path,
-    _revision_id: &str,
+    requested_repository: &str,
+    requested_ref: &str,
 ) -> Result<DesiredState, RepoError> {
     let services_dir = repo_path.join("services");
     let hosts_dir = repo_path.join("hosts");
@@ -200,7 +203,8 @@ fn load_layered_desired_state(
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
     }
-    overlays.config_overrides = filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
+    overlays.config_overrides =
+        filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
     let all_artifacts = selected_service_artifacts(&host_decl.services, &catalog);
     validate_dropin_targets(&host_decl.services, &catalog, &overlays, &all_artifacts)?;
     let mut config_paths = collect_config_paths(&host_decl.services, &catalog, &overlays);
@@ -230,6 +234,8 @@ fn load_layered_desired_state(
     Ok(desired_state_from_workloads(
         repo_path,
         &resolved_revision,
+        Some(requested_repository.to_string()),
+        Some(requested_ref.to_string()),
         workloads,
         output.mount_declarations,
         output.mount_dependencies,
@@ -241,6 +247,8 @@ fn load_layered_desired_state(
 pub fn desired_state_from_workloads(
     repo_path: &Path,
     revision_id: &str,
+    requested_repository: Option<String>,
+    requested_ref: Option<String>,
     workloads: Vec<Workload>,
     mount_declarations: Vec<MountDeclaration>,
     mount_dependencies: Vec<crate::core::types::MountDependency>,
@@ -250,6 +258,8 @@ pub fn desired_state_from_workloads(
     DesiredState {
         repository_ref: repo_path.display().to_string(),
         revision_id: revision_id.to_string(),
+        requested_repository,
+        requested_ref,
         workloads,
         mount_declarations,
         mount_dependencies,
@@ -288,10 +298,10 @@ fn load_host_declaration_inner(host_dir: &Path) -> Result<HostDeclaration, RepoE
     if !host_yaml_path.exists() {
         return Err(RepoError::MissingHostDeclaration(host_yaml_path));
     }
-    let contents = fs::read_to_string(&host_yaml_path)
-        .map_err(|err| RepoError::Io(err.to_string()))?;
-    let parsed: HostYaml =
-        serde_yaml::from_str(&contents).map_err(|err| RepoError::InvalidHostDeclaration(err.to_string()))?;
+    let contents =
+        fs::read_to_string(&host_yaml_path).map_err(|err| RepoError::Io(err.to_string()))?;
+    let parsed: HostYaml = serde_yaml::from_str(&contents)
+        .map_err(|err| RepoError::InvalidHostDeclaration(err.to_string()))?;
     let host_name = host_dir
         .file_name()
         .and_then(|name| name.to_str())
@@ -449,8 +459,7 @@ fn read_dropins(dir: &Path, target: &str) -> Result<Vec<DropInSource>, RepoError
                 file_name
             )));
         }
-        let contents =
-            fs::read_to_string(&path).map_err(|err| RepoError::Io(err.to_string()))?;
+        let contents = fs::read_to_string(&path).map_err(|err| RepoError::Io(err.to_string()))?;
         dropins.push(DropInSource {
             target: target.to_string(),
             contents,
@@ -500,7 +509,12 @@ fn workloads_from_evaluation(output: &EvaluationOutput) -> Vec<Workload> {
         .collect();
     let existing_native_units: std::collections::BTreeSet<String> = workloads
         .iter()
-        .filter(|workload| matches!(workload.quadlet_type, QuadletType::Mount | QuadletType::Automount))
+        .filter(|workload| {
+            matches!(
+                workload.quadlet_type,
+                QuadletType::Mount | QuadletType::Automount
+            )
+        })
         .map(|workload| workload.systemd_unit_name.clone())
         .collect();
     workloads.extend(output.mount_declarations.iter().flat_map(|mount| {
@@ -530,12 +544,7 @@ fn workloads_from_evaluation(output: &EvaluationOutput) -> Vec<Workload> {
             .iter()
             .map(workload_from_socket_dropin),
     );
-    workloads.extend(
-        output
-            .config_files
-            .iter()
-            .map(workload_from_config_file),
-    );
+    workloads.extend(output.config_files.iter().map(workload_from_config_file));
     workloads
 }
 
@@ -644,10 +653,13 @@ fn validate_dropin_targets(
 fn read_config_files(config_root: &Path) -> Result<Vec<ConfigFileSource>, RepoError> {
     let mut files = Vec::new();
     for entry in walk_config_dir(config_root)? {
-        let rel = entry.strip_prefix(config_root).map_err(|err| RepoError::Io(err.to_string()))?;
+        let rel = entry
+            .strip_prefix(config_root)
+            .map_err(|err| RepoError::Io(err.to_string()))?;
         let rel_str = rel.to_string_lossy();
         if rel_str.starts_with("etc/") {
-            let contents = fs::read_to_string(&entry).map_err(|err| RepoError::Io(err.to_string()))?;
+            let contents =
+                fs::read_to_string(&entry).map_err(|err| RepoError::Io(err.to_string()))?;
             let target_path = format!("/{}", rel_str);
             files.push(ConfigFileSource {
                 target_path,
@@ -712,7 +724,8 @@ fn config_prefixes_for_services(
 }
 
 fn config_roots_for_paths(paths: &[String]) -> Vec<String> {
-    paths.iter()
+    paths
+        .iter()
         .filter_map(|path| managed_config_root(path))
         .collect()
 }
@@ -732,7 +745,11 @@ fn validate_config_overrides(
 ) -> Option<String> {
     let invalid: Vec<&ConfigFileSource> = overrides
         .iter()
-        .filter(|cfg| !allowed_prefixes.iter().any(|prefix| cfg.target_path.starts_with(prefix)))
+        .filter(|cfg| {
+            !allowed_prefixes
+                .iter()
+                .any(|prefix| cfg.target_path.starts_with(prefix))
+        })
         .collect();
     if invalid.is_empty() {
         return None;
@@ -753,7 +770,11 @@ fn filter_config_overrides(
 ) -> Vec<ConfigFileSource> {
     overrides
         .iter()
-        .filter(|cfg| allowed_prefixes.iter().any(|prefix| cfg.target_path.starts_with(prefix)))
+        .filter(|cfg| {
+            allowed_prefixes
+                .iter()
+                .any(|prefix| cfg.target_path.starts_with(prefix))
+        })
         .cloned()
         .collect()
 }
@@ -861,7 +882,11 @@ fn parse_revision_expression(revision: &str) -> ParsedRevisionExpression<'_> {
         .find(|ch| matches!(ch, '~' | '^' | ':' | '@'))
         .unwrap_or(revision.len());
     let (fetch_ref, suffix) = revision.split_at(split_at);
-    let fetch_ref = if fetch_ref.is_empty() { revision } else { fetch_ref };
+    let fetch_ref = if fetch_ref.is_empty() {
+        revision
+    } else {
+        fetch_ref
+    };
     let checkout_target = if suffix.is_empty() {
         "FETCH_HEAD".to_string()
     } else {

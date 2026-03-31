@@ -38,7 +38,7 @@ Replace CoreOps' current deterministic plan JSON contract in place with the new 
 - **Observability plan covers diffs, plans, actions, failures, and dry-run/audit needs.**
   Pass. The feature's main purpose is to make those surfaces explicit and contract-tested.
 - **Provenance and status surfaces identify reconciler revision, desired-state revision, and applied outcome in machine-readable form.**
-  Pass. Revision context is part of the new schema; persisted provenance remains stable.
+  Pass. Revision context is part of the new schema and now distinguishes mutable desired-state selection context (`requested_repository`, `requested_ref`) from the resolved immutable reconciliation identity (`target_revision`); persisted provenance remains stable while reconciliation and rollback stay anchored to the immutable revision.
 - **Safe defaults are documented; destructive actions require explicit intent.**
   Pass. The feature is observational/presentational and preserves explicit reporting of blocked, skipped, partial, and failed outcomes.
 - **Compatibility impact is assessed; breaking changes are documented with migration.**
@@ -90,12 +90,16 @@ tests/
 
 ## Phase 1 Design Summary
 
-- Add operator-facing machine-readable types for `ManagedObjectRef`, `RevisionContext`, `Cause`, `DependencyEdge`, `SemanticDiff`, and the plan/apply/result/explain view shapes.
+- Add operator-facing machine-readable types for `ManagedObjectRef`, `RevisionContext`, `Cause`, `DependencyEdge`, `SemanticDiff`, and the plan/apply/result/explain view shapes, with `RevisionContext` explicitly carrying `requested_repository`, `requested_ref`, `target_revision`, `last_applied_revision`, `last_applied_requested_repository`, `last_applied_requested_ref`, and `change_revision` so mutable desired-state selection context remains distinct from immutable reconciliation identity for both current and prior applied revisions.
 - Keep `DeterministicReconciliationPlan`, `SemanticDependencyGraph`, `StructuredDriftRecord`, and persisted state records as internal planning/provenance types.
 - Introduce view-building logic that converts deterministic planner and convergence outputs into full-scope entries, structured causes, dependency relations, direct-versus-transitive dependency distinctions, and layered summaries.
-- Refine plan-entry action semantics so `update` represents an object's own material desired-state change while `restart` represents runtime reactivation driven by changed prerequisites or inputs, with separate entries and explanations for the changer and the restarted dependent.
+- Preserve the human-supplied repository location and requested ref as operator-facing provenance in plan/apply/result/explain views when available, including the selector context associated with the last successfully applied immutable revision, while ensuring comparison, convergence, and rollback semantics continue to use only the resolved immutable revision.
+- Refine plan-entry action semantics so `update` represents an object's own material desired-state change, `restart` represents runtime reactivation driven by changed prerequisites or inputs in the current planned change set, and `recover` represents runtime corrective intent for an object whose declarative definition is unchanged but whose actual runtime state is not converged.
+- Plan building must incorporate runtime verification or equivalent convergence context when deriving `recover` intent so unchanged declarative objects that still require corrective action are not misclassified as `no_op`.
 - Replace the current plan JSON renderer with the target `PlanOutput` shape and extend apply/result/explain rendering to use the same authoritative model, including full-scope `ResultOutput` entries.
 - Update human-readable rendering so it is a deterministic projection of the new machine-readable data rather than an independently shaped report, using an `object [action]` primary line, `because ...` explanation line, readable dependency tree, and diff evidence as supporting detail.
+- Treat the humane-apply amendment as authoritative for User Story 2: default human apply output is concise and operator-oriented, verbose mode adds phases and expanded diagnostics, and structured mode emits only machine-readable events with no human formatting.
+- Encode apply visibility and state semantics so unchanged objects are not misreported as skipped, default human output foregrounds acted-on, failed, and blocked objects, and raw JSON or provenance payloads never appear in human modes.
 - Replace old contract assertions and supersede the legacy structured diff contract document with the new reconciliation output contract.
 - Pin compatibility-sensitive serializer behavior with contract tests covering field names, enum values, deterministic array ordering, and absent-versus-null optional-field semantics.
 
@@ -105,9 +109,18 @@ tests/
 - **Declarative state model**: Improved. The design adds explicit public schema types rather than exposing ad hoc JSON objects.
 - **Observability**: Improved. The design centers plans, phases, object outcomes, causes, dependencies, and provenance as typed contract data.
 - **Compatibility discipline**: Managed. The design treats the schema replacement as an explicit compatibility event and confines stability-sensitive persisted state to existing schemas.
-- **Versioning and provenance**: Preserved. Revision context becomes more explicit in public outputs while existing provenance state remains intact.
+- **Versioning and provenance**: Preserved with an explicit dual-provenance model. Public outputs now need to distinguish mutable repository/ref selection context from immutable resolved reconciliation identity while leaving persisted provenance state structurally stable.
 - **Test contract**: Stronger. The design requires contract tests for new view shapes, parity tests for human/machine rendering, and continuity tests across plan/apply/result.
 
 ## Complexity Tracking
 
 No constitution violations requiring justification.
+
+## Version Review Record
+
+- Compatibility review outcome: minor version review required.
+- Reason: feature 007 replaces the operator-facing plan JSON contract in place,
+  adds authoritative machine-readable apply/result/explain contracts, and
+  changes default human-visible CLI rendering semantics.
+- Package version outcome: bump controller package version from `0.5.0` to
+  `0.6.0`.

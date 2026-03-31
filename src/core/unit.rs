@@ -33,7 +33,10 @@ pub fn render_mount_unit(declaration: &MountDeclaration) -> (String, String) {
     contents.push_str(&format!("Where={}\n", declaration.target_path));
     contents.push_str(&format!("Type={}\n", declaration.fstype));
     if !declaration.mount_options.is_empty() {
-        contents.push_str(&format!("Options={}\n", declaration.mount_options.join(",")));
+        contents.push_str(&format!(
+            "Options={}\n",
+            declaration.mount_options.join(",")
+        ));
     }
     (declaration.mount_unit_name(), contents)
 }
@@ -47,7 +50,10 @@ pub fn render_automount_unit(declaration: &MountDeclaration) -> Option<(String, 
     Some((unit_name, contents))
 }
 
-pub fn apply_service_mount_dependencies(base_contents: &str, edit: &ServiceDependencyEdit) -> String {
+pub fn apply_service_mount_dependencies(
+    base_contents: &str,
+    edit: &ServiceDependencyEdit,
+) -> String {
     let mut result = base_contents.trim_end().to_string();
     if !result.ends_with('\n') {
         result.push('\n');

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::integration::env_lock::path_lock;
 use core_ops::cli::apply::{execute_rollback_with_report, rollback_with_report};
 use core_ops::cli::status::render_rollback_summary;
 use core_ops::core::reconcile::reconcile_rollback;
@@ -12,7 +13,6 @@ use core_ops::core::types::{
     RetainedAppliedSnapshot, RollbackEligibility,
 };
 use core_ops::io::state::write_deterministic_state;
-use crate::integration::env_lock::path_lock;
 
 fn object(
     object_id: &str,
@@ -27,7 +27,10 @@ fn object(
             .iter()
             .map(|(key, value)| (key.to_string(), value.to_string()))
             .collect::<BTreeMap<_, _>>(),
-        dependency_refs: dependency_refs.iter().map(|value| value.to_string()).collect(),
+        dependency_refs: dependency_refs
+            .iter()
+            .map(|value| value.to_string())
+            .collect(),
     }
 }
 
@@ -99,12 +102,16 @@ fn rollback_planning_and_execution_against_retained_successful_revision() {
             RetainedAppliedSnapshot {
                 revision_id: "rev-1".to_string(),
                 scope_id: "host:alpha".to_string(),
+                requested_repository: None,
+                requested_ref: None,
                 snapshot: target_snapshot.clone(),
                 retained: true,
             },
             RetainedAppliedSnapshot {
                 revision_id: "rev-2".to_string(),
                 scope_id: "host:alpha".to_string(),
+                requested_repository: None,
+                requested_ref: None,
                 snapshot: current_snapshot.clone(),
                 retained: true,
             },
@@ -128,8 +135,7 @@ fn rollback_planning_and_execution_against_retained_successful_revision() {
 
     let path = temp_file("deterministic_rollback_state");
     write_deterministic_state(&path, &state).expect("write deterministic state");
-    let report = rollback_with_report(&path, "rev-1", &current_snapshot)
-        .expect("rollback report");
+    let report = rollback_with_report(&path, "rev-1", &current_snapshot).expect("rollback report");
     assert!(report.contains("rollback target=rev-1"));
     assert!(render_rollback_summary(&state).contains("eligibility=none"));
 }
@@ -142,6 +148,8 @@ fn rollback_rejected_when_retained_snapshot_metadata_is_missing_or_expired() {
         retained_snapshots: vec![RetainedAppliedSnapshot {
             revision_id: "rev-1".to_string(),
             scope_id: "host:alpha".to_string(),
+            requested_repository: None,
+            requested_ref: None,
             snapshot: NormalizedSnapshot {
                 revision_id: Some("rev-1".to_string()),
                 scope_id: "host:alpha".to_string(),
@@ -201,12 +209,16 @@ fn rollback_report_includes_target_context_and_embedded_plan_summary() {
             RetainedAppliedSnapshot {
                 revision_id: "rev-1".to_string(),
                 scope_id: "host:alpha".to_string(),
+                requested_repository: None,
+                requested_ref: None,
                 snapshot: target_snapshot.clone(),
                 retained: true,
             },
             RetainedAppliedSnapshot {
                 revision_id: "rev-2".to_string(),
                 scope_id: "host:alpha".to_string(),
+                requested_repository: None,
+                requested_ref: None,
                 snapshot: current_snapshot.clone(),
                 retained: true,
             },
@@ -227,10 +239,9 @@ fn rollback_report_includes_target_context_and_embedded_plan_summary() {
 #[test]
 fn rollback_contract_document_matches_current_report_surface() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let contract = fs::read_to_string(
-        root.join("specs/006-deterministic-reconcile/contracts/rollback.md"),
-    )
-    .expect("read rollback contract");
+    let contract =
+        fs::read_to_string(root.join("specs/006-deterministic-reconcile/contracts/rollback.md"))
+            .expect("read rollback contract");
 
     assert!(contract.contains("rollback target=<target_revision_id>"));
     assert!(contract.contains("eligibility=<eligibility>"));
@@ -333,6 +344,8 @@ fn rollback_plan_only_executes_the_reachable_cli_helper() {
                 RetainedAppliedSnapshot {
                     revision_id: rev1.clone(),
                     scope_id: "host:kadath".to_string(),
+                    requested_repository: None,
+                    requested_ref: None,
                     snapshot: NormalizedSnapshot {
                         revision_id: Some(rev1.clone()),
                         scope_id: "host:kadath".to_string(),
@@ -348,6 +361,8 @@ fn rollback_plan_only_executes_the_reachable_cli_helper() {
                 RetainedAppliedSnapshot {
                     revision_id: rev2.clone(),
                     scope_id: "host:kadath".to_string(),
+                    requested_repository: None,
+                    requested_ref: None,
                     snapshot: NormalizedSnapshot {
                         revision_id: Some(rev2.clone()),
                         scope_id: "host:kadath".to_string(),
@@ -367,7 +382,7 @@ fn rollback_plan_only_executes_the_reachable_cli_helper() {
     )
     .expect("write deterministic state");
 
-    let (result, report, _plan) = execute_rollback_with_report(
+    let output = execute_rollback_with_report(
         repo_dir.to_str().expect("repo path"),
         &rev1,
         &quadlet_dir,
@@ -377,9 +392,12 @@ fn rollback_plan_only_executes_the_reachable_cli_helper() {
     )
     .expect("rollback plan only");
 
-    assert_eq!(result.run.summary, format!("rollback plan ready for {}", rev1));
-    assert!(report.contains("rollback target="));
-    assert!(report.contains("Plan for host kadath @ "));
+    assert_eq!(
+        output.result.run.summary,
+        format!("rollback plan ready for {}", rev1)
+    );
+    assert!(output.human_report.contains("rollback target="));
+    assert!(output.human_report.contains("Plan for host kadath @ "));
 }
 
 #[test]
@@ -481,6 +499,8 @@ fn representative_rollback_plan_and_execution_complete_within_sc003_budget() {
                 RetainedAppliedSnapshot {
                     revision_id: rev1.clone(),
                     scope_id: "host:kadath".to_string(),
+                    requested_repository: None,
+                    requested_ref: None,
                     snapshot: NormalizedSnapshot {
                         revision_id: Some(rev1.clone()),
                         scope_id: "host:kadath".to_string(),
@@ -496,6 +516,8 @@ fn representative_rollback_plan_and_execution_complete_within_sc003_budget() {
                 RetainedAppliedSnapshot {
                     revision_id: rev2.clone(),
                     scope_id: "host:kadath".to_string(),
+                    requested_repository: None,
+                    requested_ref: None,
                     snapshot: NormalizedSnapshot {
                         revision_id: Some(rev2),
                         scope_id: "host:kadath".to_string(),
@@ -516,7 +538,7 @@ fn representative_rollback_plan_and_execution_complete_within_sc003_budget() {
     .expect("write deterministic state");
 
     let started = Instant::now();
-    let (_plan_result, plan_report, _plan) = execute_rollback_with_report(
+    let plan_output = execute_rollback_with_report(
         repo_dir.to_str().expect("repo path"),
         &rev1,
         &quadlet_dir,
@@ -525,7 +547,7 @@ fn representative_rollback_plan_and_execution_complete_within_sc003_budget() {
         true,
     )
     .expect("rollback plan only");
-    let (_apply_result, apply_report, _plan) = execute_rollback_with_report(
+    let apply_output = execute_rollback_with_report(
         repo_dir.to_str().expect("repo path"),
         &rev1,
         &quadlet_dir,
@@ -536,8 +558,8 @@ fn representative_rollback_plan_and_execution_complete_within_sc003_budget() {
     .expect("rollback execute");
     let elapsed = started.elapsed();
 
-    assert!(plan_report.contains("rollback target="));
-    assert!(apply_report.contains("rollback target="));
+    assert!(plan_output.human_report.contains("rollback target="));
+    assert!(apply_output.human_report.contains("rollback target="));
     assert!(
         elapsed.as_secs() < 300,
         "representative rollback exceeded SC-003 budget: {:?}",

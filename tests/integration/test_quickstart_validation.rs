@@ -65,3 +65,15 @@ fn quickstart_mentions_deterministic_reconciliation_flow() {
     assert!(contents.contains("rollback"));
     assert!(contents.contains("oscillation"));
 }
+
+#[test]
+fn quickstart_mentions_explainable_output_and_requested_ref_continuity() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let quickstart = root.join("specs/007-explainable-reconcile-interface/quickstart.md");
+    let contents = fs::read_to_string(&quickstart).expect("read quickstart");
+
+    assert!(contents.contains("core-ops explain"));
+    assert!(contents.contains("requested refs rendered secondarily"));
+    assert!(contents.contains("prior requested-ref continuity"));
+    assert!(contents.contains("Human headers and explain context render"));
+}

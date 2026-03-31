@@ -66,6 +66,15 @@ Run:
 cargo test
 ```
 
+Exercise the human-facing surfaces with a retained prior revision:
+
+```bash
+core-ops apply --repo ./repo --rev demo-uat-v1
+core-ops plan --repo ./repo --rev demo-uat-v2
+core-ops apply --repo ./repo --rev demo-uat-v2
+core-ops explain container/frontend.container
+```
+
 Focus review on:
 
 - deterministic ordering
@@ -73,6 +82,8 @@ Focus review on:
 - parity between human-readable and machine-readable output
 - coverage of changed, unchanged, blocked, skipped, and failed cases
 - convergence classification and revision context
+- immutable short revision primary with meaningful requested refs rendered secondarily in human output
+- prior requested-ref continuity after a revision has been retained by the current build
 
 ## Acceptance checklist
 
@@ -81,3 +92,4 @@ Focus review on:
 - Legacy plan JSON contract is no longer normative in tests or docs
 - Persisted state compatibility remains unchanged unless explicitly versioned
 - Contract tests and scenario tests pass under `cargo test`
+- Human headers and explain context render `<short-hash> (<requested-ref>)` when the ref is meaningful and preserve prior requested-ref context after successful retention

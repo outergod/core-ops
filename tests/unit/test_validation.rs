@@ -1,3 +1,4 @@
+use core_ops::core::boundaries::enforce_plan_boundaries;
 use core_ops::core::types::{
     Boundaries, BoundaryScope, Cause, CauseKind, DependencyEdgeView, DependencyRelation,
     DesiredState, EnabledState, Invariant, ManagedObjectRef, MountDeclaration, MountDependency,
@@ -10,12 +11,13 @@ use core_ops::core::validation::{
     validate_mount_model, validate_plan_output_view, validate_retry_signature,
     validate_rollback_candidate,
 };
-use core_ops::core::boundaries::enforce_plan_boundaries;
 
 fn base_desired() -> DesiredState {
     DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![Workload {
             name: "alpha".to_string(),
             quadlet_type: QuadletType::Container,
@@ -190,12 +192,8 @@ fn rejects_mount_dependency_for_unknown_mount_reference() {
         unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
     }];
 
-    let err = validate_mount_model(
-        &mounts,
-        &dependencies,
-        Some(&["immich".to_string()]),
-    )
-    .unwrap_err();
+    let err =
+        validate_mount_model(&mounts, &dependencies, Some(&["immich".to_string()])).unwrap_err();
     assert!(err.message.contains("unknown mount declaration"));
 }
 
@@ -251,6 +249,11 @@ fn plan_output_validation_rejects_non_sequential_order_indices() {
         view_kind: "plan".to_string(),
         revision_context: RevisionContext {
             target_revision: "rev-2".to_string(),
+            requested_repository: None,
+            requested_ref: None,
+            last_applied_requested_repository: None,
+            last_applied_requested_ref: None,
+            scope_id: None,
             last_applied_revision: None,
             change_revision: None,
         },
@@ -299,6 +302,11 @@ fn plan_output_validation_rejects_non_noop_entries_without_causes() {
         view_kind: "plan".to_string(),
         revision_context: RevisionContext {
             target_revision: "rev-2".to_string(),
+            requested_repository: None,
+            requested_ref: None,
+            last_applied_requested_repository: None,
+            last_applied_requested_ref: None,
+            scope_id: None,
             last_applied_revision: None,
             change_revision: None,
         },

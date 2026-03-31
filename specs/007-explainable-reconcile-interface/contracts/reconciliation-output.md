@@ -43,7 +43,11 @@ Required fields:
 
 Optional fields:
 
+- `requested_repository`
+- `requested_ref`
 - `last_applied_revision`
+- `last_applied_requested_repository`
+- `last_applied_requested_ref`
 - `change_revision`
 
 ### Cause
@@ -66,6 +70,7 @@ Allowed `kind` values:
 - `dependency_failure`
 - `blocked_prerequisite`
 - `runtime_variance`
+- `recovery_required`
 - `replacement_required`
 - `restart_required`
 - `no_change`
@@ -147,6 +152,7 @@ Allowed `action` values:
 - `update`
 - `replace`
 - `delete`
+- `recover`
 - `restart`
 - `no_op`
 - `blocked`
@@ -219,9 +225,14 @@ Allowed `state` values:
 
 - `pending`
 - `running`
-- `succeeded`
+- `created`
+- `updated`
+- `deleted`
+- `recovered`
+- `restarted`
 - `failed`
 - `blocked`
+- `unchanged`
 - `skipped`
 
 Contract rules:
@@ -274,6 +285,7 @@ Optional fields:
 - `causes`
 - `dependencies`
 - `diff`
+- `notes`
 
 Allowed `final_state` values:
 
@@ -297,7 +309,9 @@ Top-level fields:
 Optional fields:
 
 - `diff`
-- `history`
+- `metadata`
+- `x_coreops`
+- `summary`
 
 ## Determinism and Rendering Rules
 

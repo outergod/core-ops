@@ -1,13 +1,13 @@
 use core_ops::core::reconcile::{reconcile_plan, ReconcileDependencies};
-use core_ops::core::types::{
-    Boundaries, DesiredState, FailureClass, Invariant, ObservedState,
-};
+use core_ops::core::types::{Boundaries, DesiredState, FailureClass, Invariant, ObservedState};
 
 #[test]
 fn validation_failure_is_reported_as_validation_class() {
     let desired = DesiredState {
         repository_ref: "fixture".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: Vec::new(),
         mount_declarations: Vec::new(),
         mount_dependencies: Vec::new(),

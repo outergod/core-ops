@@ -89,7 +89,10 @@ pub fn build_retry_observation(
         .map(|result| {
             (
                 result.target.clone(),
-                result.details.clone().unwrap_or_else(|| "failure".to_string()),
+                result
+                    .details
+                    .clone()
+                    .unwrap_or_else(|| "failure".to_string()),
             )
         })
         .collect::<Vec<_>>();

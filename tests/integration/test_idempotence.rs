@@ -1,12 +1,12 @@
 use std::fs;
 use std::path::PathBuf;
 
+use crate::integration::env_lock::path_lock;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::{reconcile_apply, ReconcileDependencies};
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::read_observed_state;
 use core_ops::io::repo::load_desired_state;
-use crate::integration::env_lock::path_lock;
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -27,8 +27,11 @@ fn init_git_repo(repo: &PathBuf) -> String {
 
     let quadlets = repo.join("quadlets");
     fs::create_dir_all(&quadlets).expect("create quadlets");
-    fs::write(quadlets.join("alpha.container"), "[Container]\nImage=alpine")
-        .expect("write quadlet");
+    fs::write(
+        quadlets.join("alpha.container"),
+        "[Container]\nImage=alpine",
+    )
+    .expect("write quadlet");
 
     std::process::Command::new("git")
         .arg("-C")
@@ -110,7 +113,8 @@ fn repeated_runs_remain_converged() {
     let deps = ReconcileDependencies {
         load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
         read_observed: &|desired| {
-            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string())).map_err(map_io_error)
+            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string()))
+                .map_err(map_io_error)
         },
         apply_plan: &|plan, desired| {
             apply_plan(plan, &desired.workloads, &host_quadlets, true)

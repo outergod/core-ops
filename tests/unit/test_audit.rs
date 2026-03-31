@@ -1,14 +1,18 @@
-use core_ops::core::audit::{build_audit_event, build_audit_record, format_audit_event_json, format_audit_record};
-use core_ops::core::types::{
-    Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, ObservedState,
-    QuadletType, RestartPolicy, Workload,
+use core_ops::core::audit::{
+    build_audit_event, build_audit_record, format_audit_event_json, format_audit_record,
 };
 use core_ops::core::planner::plan;
+use core_ops::core::types::{
+    Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, ObservedState, QuadletType,
+    RestartPolicy, Workload,
+};
 
 fn desired_state() -> DesiredState {
     DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![Workload {
             name: "alpha".to_string(),
             quadlet_type: QuadletType::Container,

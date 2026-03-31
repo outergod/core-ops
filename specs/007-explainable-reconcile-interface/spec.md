@@ -11,6 +11,18 @@
 
 - Q: How should the target machine-readable schema replace the currently implemented plan JSON contract? → A: Replace the current plan JSON in place immediately.
 
+### Session 2026-03-30
+
+- Q: How should plan represent runtime recovery intent when actual runtime state is not converged and apply will attempt corrective action? → A: Use a dedicated `recover` action.
+- Q: Can objects with unchanged declarative state still appear with plan actions? → A: They MAY appear with recovery-oriented actions when runtime reconciliation is required.
+- Q: When should default humane plan output render dependency context? → A: Only when it helps explain a non-no-op action or non-trivial outcome; unchanged objects with unchanged prerequisites remain collapsed by default.
+
+### Session 2026-03-31
+
+- Q: How should CoreOps represent mutable repository selectors versus resolved immutable revisions? → A: Preserve both the human-supplied repository reference and the resolved immutable revision, while anchoring reconciliation and rollback semantics to the resolved immutable revision.
+- Q: How should human-readable views present the mutable requested ref alongside the immutable revision? → A: Human-readable views should keep the short immutable revision primary and, when the requested ref is meaningful and not effectively identical, render the requested ref in parentheses after it; the repository source itself should stay out of default headers and appear only in targeted inspection, verbose, or machine-readable views.
+- Q: How should CoreOps represent selector context for the previously applied revision? → A: Preserve the human-supplied repository/ref context associated with the last successfully applied immutable revision when available, so human-readable revision transitions and `Last:` context can render prior requested refs secondarily beside prior immutable revisions.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Readable Reconciliation Plan (Priority: P1)
@@ -19,11 +31,11 @@ As an operator, I want a structured plan view that tells me what CoreOps will ch
 
 **Why this priority**: A legible plan is the minimum useful surface for explainable reconciliation. Without it, operators cannot predict behavior or validate intent before changes are applied.
 
-**Independent Test**: Can be fully tested by generating plans for representative desired-state revisions and verifying that each changed object is listed once with a stable identifier, deterministic ordering, action classification, dependency context, and an explanation of the cause, while unchanged objects remain discoverable without overwhelming the default view.
+**Independent Test**: Can be fully tested by generating plans for representative desired-state revisions and verifying that each changed or recovery-relevant object is listed once with a stable identifier, deterministic ordering, action classification, explanatory dependency context when relevant, and an explanation of the cause, while unchanged objects remain discoverable without overwhelming the default view.
 
 **Acceptance Scenarios**:
 
-1. **Given** a desired revision with creates, updates, restarts, deletes, and unchanged objects, **When** an operator requests a plan, **Then** the default plan view emphasizes changed objects first and exposes unchanged objects through a clearly labeled summary or expandable section using the same deterministic ordering and classifications.
+1. **Given** a desired revision with creates, updates, restarts, recoveries, deletes, and unchanged objects, **When** an operator requests a plan, **Then** the default plan view emphasizes changed or recovery-relevant objects first and exposes unchanged objects through a clearly labeled summary or expandable section using the same deterministic ordering and classifications, including unchanged declarative objects that still require runtime recovery.
 2. **Given** a planned action caused by drift or an upstream dependency change, **When** the plan is rendered, **Then** the affected object includes a plain-language explanation of the direct cause and any dependency-driven cause.
 3. **Given** the same desired revision and materially identical operating conditions, **When** planning is repeated, **Then** the same objects appear in the same order with materially identical classifications and explanations.
 
@@ -31,11 +43,11 @@ As an operator, I want a structured plan view that tells me what CoreOps will ch
 
 ### User Story 2 - Live Apply Visibility (Priority: P2)
 
-As an operator, I want live, phase-aware apply output so that I can follow reconciliation progress, understand where the system is spending time, and identify where failures or blockers occurred.
+As an operator, I want humane live apply output that clearly shows what CoreOps is acting on, what failed, and what needs attention so that I can follow reconciliation progress and respond quickly when something goes wrong.
 
 **Why this priority**: Once operators trust the plan, they still need visibility during execution to confirm that apply behavior matches the plan and to react quickly when something goes wrong.
 
-**Independent Test**: Can be fully tested by running apply against representative revisions and verifying that phase transitions, per-object progress states, and final outcomes are streamed in deterministic order and remain consistent with the previously rendered plan.
+**Independent Test**: Can be fully tested by running apply against representative revisions and verifying that operator-facing progress, failures, blockers, and final outcomes are streamed in deterministic order and remain consistent with the previously rendered plan, while phases remain available as supporting detail in verbose or structured views.
 
 **Acceptance Scenarios**:
 
@@ -68,6 +80,7 @@ As an operator or automation agent, I want the same reconciliation information a
 - What happens when a managed object cannot produce a meaningful line-based diff but still has a material semantic change?
 - How does the interface behave when a reconciliation run ends in tolerated variance rather than full convergence?
 - How does live presentation remain deterministic if independent objects execute concurrently in a future reconciliation run?
+- How does the plan represent runtime recovery intent when on-disk configuration is unchanged but actual runtime state is not converged?
 
 ## Requirements *(mandatory)*
 
@@ -77,11 +90,15 @@ As an operator or automation agent, I want the same reconciliation information a
 - **FR-002**: The plan view MUST present objects in a deterministic order derived from the reconciliation model, especially when explaining dependency trees vs execution order.
 - **FR-002a**: The default plan view MUST emphasize changed objects and summarize unchanged or no-op objects separately while preserving access to the full ordered object list.
 - **FR-003**: Each object in the plan view MUST use a stable identity composed of a consistent resource type and object name representation.
-- **FR-004**: The plan view MUST classify each object as one of: create, update, replace, delete, restart, no-op, blocked, or skipped when applicable to that stage of reconciliation.
-- **FR-004a**: `restart` MUST be used only when the managed object itself remains materially the same desired object but requires runtime reactivation because one or more direct prerequisites or runtime-affecting inputs changed.
+- **FR-004**: The plan view MUST classify each object as one of: create, update, replace, delete, restart, recover, no-op, blocked, or skipped when applicable to that stage of reconciliation.
+- **FR-004a**: `restart` MUST be used only when the managed object itself remains materially the same desired object but requires runtime reactivation because one or more direct prerequisites or runtime-affecting inputs changed as part of the current planned change set.
 - **FR-004b**: `update` MUST be used when the managed object's own desired definition or serialized desired state changes materially, even if execution of that update later implies a restart side effect.
 - **FR-004c**: When an object is classified as `restart`, the explanation MUST identify the triggering changed prerequisite or input object by stable object identity.
+- **FR-004d**: `recover` MUST be used when the desired object definition is materially unchanged but actual runtime state is not converged and apply will attempt corrective action to bring runtime behavior back into the desired state.
+- **FR-004f**: Objects with unchanged declarative state MAY still appear with recovery-oriented plan actions when runtime reconciliation is required.
+- **FR-004e**: When an object is classified as `recover`, the explanation MUST identify the observed runtime variance or verification failure that triggered recovery intent and the corrective action apply is expected to attempt.
 - **FR-005**: For every object with a non-no-op classification, the system MUST provide a concise explanation of why that action is required.
+- **FR-005a**: The plan MUST surface not only configuration changes, but also runtime recovery intent when actual runtime state is not converged and apply will attempt corrective action.
 - **FR-006**: Explanations MUST distinguish direct causes from dependency-propagated causes when both are present.
 - **FR-007**: For every object with a material change, the system MUST provide a normalized, deterministic representation of the semantic difference.
 - **FR-007a**: The rendered action classification and explanation MUST be the primary presentation for a changed object, and any diff output MUST appear as supporting evidence rather than replacing the semantic explanation.
@@ -101,6 +118,13 @@ As an operator or automation agent, I want the same reconciliation information a
 - **FR-018**: The final result MUST summarize the total number of changed objects, failed objects, blocked objects, skipped objects, and unchanged objects for the run.
 - **FR-019**: The same object identities, ordering, and action meanings MUST remain consistent across plan, apply, and final result views for a given reconciliation run.
 - **FR-020**: The interface MUST expose revision provenance sufficient for operators to identify the current target revision, the last applied revision, and the revision associated with the reported changes when such context exists.
+- **FR-020a**: CoreOps MUST preserve both the human-supplied repository reference used to select desired state and the resolved immutable revision used for reconciliation when that provenance is available.
+- **FR-020b**: Reconciliation, comparison, convergence, and rollback semantics MUST remain anchored to the resolved immutable revision rather than to the mutable human-supplied reference.
+- **FR-020c**: Human-readable views SHOULD render the human-supplied requested ref as operator context when available, but MUST NOT use it as the authoritative identifier for applied or rollback-eligible state.
+- **FR-020d**: When both the resolved immutable revision and a meaningful human-supplied requested ref are available in human-readable output, the immutable revision SHOULD remain primary and the requested ref SHOULD appear secondarily in parentheses or an equivalently compact contextual form.
+- **FR-020e**: The human-supplied repository source MAY appear in targeted inspection, verbose, or machine-readable views, but SHOULD NOT appear in default human-readable revision headers unless explicitly requested.
+- **FR-020f**: When a successful applied revision becomes the prior baseline for later plan, apply, result, or explain output, CoreOps MUST preserve the human-supplied repository and requested ref associated with that previously applied immutable revision when available.
+- **FR-020g**: Human-readable revision transitions and `Last:`-style context SHOULD render a meaningful prior requested ref secondarily beside the prior immutable revision when that context is available and not effectively identical to the immutable revision.
 - **FR-021**: The system MUST support layered summaries that allow operators to consume top-level run status, per-object explanations, and detailed change context from the same underlying reconciliation data.
 - **FR-022**: Every human-readable reconciliation view MUST have a machine-readable representation with the same objects, relationships, action meanings, and convergence outcomes.
 - **FR-023**: Machine-readable output MUST include plan structure, semantic differences, execution results, dependency relationships, and final convergence classification.
@@ -129,6 +153,7 @@ As an operator or automation agent, I want the same reconciliation information a
 - **Dependency Relationship**: The declared prerequisite, dependent, or blocking relationship between managed objects used to explain ordering and impact.
 - **Convergence Result**: The final classification and summary of a reconciliation run, including its outcome category and affected object counts.
 - **Revision Context**: The reconciliation revision information that explains what target state was evaluated, what revision was previously applied, and which revision introduced the current change set.
+- **Repository Selection Context**: The human-supplied repository location and mutable requested reference used to select desired state before resolution to an immutable reconciliation revision.
 
 ## Machine-Readable Output Model
 
@@ -188,15 +213,30 @@ Required fields:
 
 Optional fields:
 
+* `requested_repository`: human-supplied repository location used to select desired state
+* `requested_ref`: mutable human-supplied branch, tag, or revision expression used before resolution
 * `last_applied_revision`: most recent successful applied revision for the same scope
+* `last_applied_requested_repository`: human-supplied repository location associated with the most recent successful applied revision when retained
+* `last_applied_requested_ref`: human-supplied branch, tag, or revision expression associated with the most recent successful applied revision when retained
 * `change_revision`: revision primarily associated with the current reported change set, when distinguishable
+
+Rules:
+
+* `target_revision` MUST refer to the resolved immutable revision used for reconciliation semantics.
+* `requested_repository` and `requested_ref`, when present, provide operator-facing selection context and MUST NOT replace `target_revision` as the authoritative identity for reconciliation or rollback.
+* In default human-readable revision context, `target_revision` SHOULD remain visually primary; `requested_ref`, when shown, SHOULD appear as secondary context only when it is meaningful and not effectively identical to `target_revision`.
+* `last_applied_requested_repository` and `last_applied_requested_ref`, when present, provide operator-facing context for the prior successfully applied immutable revision and MUST NOT replace `last_applied_revision` as its authoritative identity.
 
 Example:
 
 ```json
 {
+  "requested_repository": "file:///var/lib/core-ops/repo",
+  "requested_ref": "demo-uat-v2",
   "target_revision": "abc123",
   "last_applied_revision": "def456",
+  "last_applied_requested_repository": "file:///var/lib/core-ops/repo",
+  "last_applied_requested_ref": "demo-uat-v1",
   "change_revision": "abc123"
 }
 ```
@@ -225,6 +265,7 @@ Allowed `kind` values:
 * `runtime_variance`
 * `replacement_required`
 * `restart_required`
+* `recovery_required`
 * `no_change`
 
 Example:
@@ -347,6 +388,8 @@ Contract rules:
 
 * `restart` entries MUST include at least one cause with kind `dependency_change`, `restart_required`, or another equally specific runtime-reactivation cause.
 * `restart` entries MUST NOT be used as a substitute for an object's own material desired-state change; if the object definition itself changed, the entry action is `update` or `replace` as appropriate.
+* `recover` entries MUST include at least one cause with kind `runtime_variance`, `recovery_required`, or another equally specific runtime-recovery cause.
+* `recover` entries MUST NOT be used as a substitute for an object's own material desired-state change or for dependency-driven restart caused by planned prerequisite change; those remain `update`/`replace` or `restart` respectively.
 * Human-readable rendering SHOULD present the action label and explanation before any diff evidence so operators can understand intent without parsing raw field-by-field output.
 
 Allowed `action` values:
@@ -356,6 +399,7 @@ Allowed `action` values:
 * `replace`
 * `delete`
 * `restart`
+* `recover`
 * `no_op`
 * `blocked`
 * `skipped`
@@ -371,11 +415,11 @@ Example:
     "change_revision": "abc123"
   },
   "summary": {
-    "changed_count": 2,
+    "changed_count": 3,
     "unchanged_count": 1,
     "blocked_count": 0,
     "skipped_count": 0,
-    "total_count": 3
+    "total_count": 4
   },
   "entries": [
     {
@@ -447,6 +491,25 @@ Example:
         }
       ],
       "order_index": 2
+    },
+    {
+      "object": {
+        "resource_type": "service",
+        "name": "api.service",
+        "display_id": "service/api.service"
+      },
+      "action": "recover",
+      "causes": [
+        {
+          "kind": "recovery_required",
+          "summary": "Runtime is not converged; apply will attempt corrective restart",
+          "details": {
+            "verification_details": "unit is inactive"
+          }
+        }
+      ],
+      "dependencies": [],
+      "order_index": 3
     }
   ]
 }
@@ -739,16 +802,24 @@ Human-readable output SHOULD remain free to evolve in formatting details, provid
 
 Human-readable output MUST NOT require consumers to infer semantics that are absent from the machine-readable contract.
 
+### Revision Context Rendering
+
+* When human-readable output includes revision context, the resolved immutable revision MUST remain the primary displayed identity.
+* If a meaningful `requested_ref` is available and is not effectively identical to the resolved immutable revision, it SHOULD be rendered as compact secondary context, for example in parentheses after the short immutable revision.
+* If a meaningful `last_applied_requested_ref` is available and is not effectively identical to `last_applied_revision`, it SHOULD be rendered as compact secondary context beside the prior immutable revision in revision transitions and `Last:`-style context.
+* The human-supplied repository source SHOULD remain out of default headers and summary lines, but MAY appear in targeted inspection views, verbose output, or machine-readable output.
+
 ### Plan View Invariants
 
 The default plan view MUST satisfy the following:
 
 #### Ordering and grouping
 
-* Changed objects (create, update, replace, delete, restart) MUST be rendered before unchanged (`no-op`) objects.
+* Changed objects (create, update, replace, delete, restart, recover) MUST be rendered before unchanged (`no-op`) objects.
 * Blocked and skipped objects MUST be rendered in the changed section with their respective classifications.
 * Within each section, objects MUST appear in deterministic plan order consistent with the reconciliation model.
 * The same ordering MUST be preserved across plan, apply, and result views for the same reconciliation run.
+* In the default humane plan view, dependency context MUST be rendered only when it helps explain a non-no-op action or non-trivial outcome.
 
 #### Object block structure
 
@@ -765,6 +836,8 @@ The rendering MUST NOT require users to infer any of these elements from surroun
 #### Unchanged objects
 
 * Unchanged (`no-op`) objects MUST NOT be fully expanded in the default view.
+* An object whose declarative state is unchanged but whose runtime state requires corrective action is not treated as an unchanged (`no-op`) object in that plan; it MUST appear with its recovery-oriented action instead.
+* Unchanged objects whose direct prerequisites are also unchanged MUST remain collapsed by default.
 * The default view MUST include:
 
   * the total count of unchanged objects
@@ -775,7 +848,7 @@ The rendering MUST NOT require users to infer any of these elements from surroun
 
 The rendering MUST clearly distinguish between:
 
-* changed (create/update/replace/delete/restart)
+* changed or recovery-intent (create/update/replace/delete/restart/recover)
 * no-op
 * blocked
 * skipped
@@ -790,6 +863,7 @@ Distinction MUST be visible without requiring diff inspection.
   * apply
   * result
 * Users MUST be able to correlate a plan entry directly with its execution and final outcome without ambiguity.
+* If apply is expected to attempt runtime recovery for an object whose desired definition is unchanged, the plan MUST surface that intent explicitly as `recover` rather than leaving the object as `no_op`.
 
 ### Dependency View Invariants
 
@@ -883,6 +957,7 @@ provided that all rendering invariants and visibility requirements defined above
 - The interface may expose both detailed and summary views, but both must describe the same underlying reconciliation state.
 - The default plan output should optimize for readability on non-trivial hosts by foregrounding changed objects and summarizing unchanged objects without hiding them.
 - The default dependency explanation should center on why each changed object can or cannot act, with other graph projections available on demand.
+- In the default humane plan view, dependency trees for unchanged objects should remain collapsed unless they help explain a non-no-op action or other non-trivial outcome.
 - Raw execution logs may appear as supporting detail, but they do not replace structured explanations, result classifications, or semantic diffs.
 
 ## Success Criteria *(mandatory)*
@@ -890,7 +965,7 @@ provided that all rendering invariants and visibility requirements defined above
 ### Measurable Outcomes
 
 - **SC-001**: In acceptance testing with repeated runs under materially identical conditions, plan output preserves object identity, ordering, and action classification in 100% of runs.
-- **SC-002**: In 100% of changed objects in acceptance scenarios, structured output includes the object's action classification, direct cause, and dependency context.
+- **SC-002**: In 100% of changed or recovery-relevant objects in acceptance scenarios, structured output includes the object's action classification, direct cause, and dependency context; default humane rendering may omit dependency context when it is not needed to explain the action or outcome.
 - **SC-003**: During acceptance runs with at least five ordered actions, every reconciliation phase transition and every object terminal outcome is visible in the live apply view before the final summary is shown.
 - **SC-004**: In 100% of acceptance scenarios involving failure, blockage, skipping, or tolerated variance, the final result correctly distinguishes the run outcome category and names the affected objects.
 - **SC-005**: Human-readable and machine-readable outputs match on object identity, action meaning, dependency relationships, and convergence classification in 100% of contract comparison tests.
@@ -900,3 +975,300 @@ provided that all rendering invariants and visibility requirements defined above
 - **SC-009**: In 100% of acceptance scenarios, each changed object in human-readable plan output includes object identity, action classification, and at least one explicit cause derived from structured data.
 - **SC-010**: In 100% of dependency-view scenarios, the rendered hierarchy preserves prerequisite ordering, stable object identity, and explicitly labels blockers when present.
 - **SC-011**: In repeated runs under materially identical conditions, human-readable plan and dependency views produce materially identical ordering and grouping in 100% of test cases.
+
+# Spec Amendment — Humane Apply & Event Rendering
+
+## 1. Scope
+
+This amendment extends the Humane Interface specification to cover:
+
+* Apply (live) rendering
+* Structured event emission and consumption
+* Output mode separation
+* Failure semantics and diagnostics
+* First-run and recovery semantics
+
+This defines a **single rendering model** for:
+
+* plan (static projection)
+* apply (temporal projection)
+* result (terminal projection)
+
+---
+
+## 2. Output Modes (MUST)
+
+The system MUST support distinct output modes:
+
+### 2.1 Human (default)
+
+* concise, readable, deterministic
+* no raw JSON
+* no raw provenance dumps
+* no internal/debug strings
+
+### 2.2 Human (verbose/debug)
+
+* may include:
+
+  * phases
+  * summarized provenance
+  * extended diagnostics
+* still MUST NOT emit raw JSON blobs
+
+### 2.3 Structured (machine)
+
+* emits structured events only (JSON/JSONL)
+* no human formatting
+* stable schema
+
+---
+
+## 3. Event Model (MUST)
+
+Each object MUST emit:
+
+* `object_progress` (pending → running)
+* `object_terminal` (succeeded | failed | blocked)
+* OR `object_skipped` (only when truly skipped due to dependency or failure)
+
+Each event MUST include:
+
+* object identity (stable display_id)
+* action (create/update/delete/restart/recover/no-op)
+* cause (if applicable)
+* phase (execution, convergence_check, etc.)
+
+---
+
+## 4. Execution State Vocabulary (MUST)
+
+User-facing states MUST map to:
+
+| State     | Meaning                          |
+| --------- | -------------------------------- |
+| pending   | not started                      |
+| running   | executing                        |
+| created   | create succeeded                 |
+| updated   | update succeeded                 |
+| deleted   | delete succeeded                 |
+| restarted | restart succeeded                |
+| recovered | runtime recovery succeeded       |
+| unchanged | no action required               |
+| blocked   | cannot proceed due to dependency |
+| failed    | execution or convergence failure |
+
+### Important constraint
+
+* `skipped` MUST NOT be used for unchanged objects
+* `skipped` is ONLY valid for:
+
+  * short-circuit due to failure
+  * dependency-driven omission
+
+---
+
+## 5. Rendering Invariants (MUST)
+
+### 5.1 Single owner of output
+
+Human-readable output MUST be produced exclusively by the renderer.
+
+The following MUST NOT appear in human mode:
+
+* raw JSON event dumps
+* raw provenance JSON
+* raw detector/debug messages
+
+---
+
+### 5.2 Determinism
+
+* object order MUST match reconciliation order
+* rendering MUST be stable across runs
+
+---
+
+### 5.3 Mode behavior
+
+| Mode              | Behavior              |
+| ----------------- | --------------------- |
+| Interactive (TTY) | MAY update lines      |
+| Non-interactive   | MUST be append-only   |
+| Structured        | MUST emit events only |
+
+---
+
+## 6. Live Apply Rendering (MUST)
+
+### 6.1 Temporal consistency
+
+Apply rendering MUST preserve:
+
+* object identity
+* action classification
+* ordering
+
+as established in plan output.
+
+---
+
+### 6.2 Visibility rules
+
+Default apply output SHOULD show:
+
+* objects with actions (create/update/delete/restart/recover)
+* failed objects
+* blocked objects
+
+Default apply output SHOULD NOT show:
+
+* unchanged objects
+* no-op/skipped objects (unless relevant to failure)
+
+---
+
+## 7. Failure Semantics (MUST)
+
+### 7.1 Failure block (REQUIRED)
+
+Failures MUST be rendered as explicit blocks:
+
+```text
+[!] service/whoami.service
+    failed during convergence check
+    systemd reports unit is in failed state
+```
+
+---
+
+### 7.2 Separation of concerns
+
+Failures MUST NOT be embedded inside summary lines.
+
+---
+
+### 7.3 Operator guidance (SHOULD)
+
+Failures SHOULD include:
+
+* next diagnostic steps
+* relevant commands
+
+Example:
+
+```text
+Suggested checks
+  - systemctl status whoami.service
+  - journalctl -u whoami.service -b
+```
+
+---
+
+## 8. Summary (MUST)
+
+Summary MUST contain only:
+
+* counts
+* overall outcome
+
+Example:
+
+```text
+Summary
+───────
+1 create • 1 update • 4 unchanged
+Outcome: convergence failed
+```
+
+Summary MUST NOT contain:
+
+* object identifiers
+* failure fragments
+* debug keywords
+
+---
+
+## 9. Phase Visibility (SHOULD)
+
+Phases:
+
+* SHOULD be hidden in default mode
+* MAY be shown in verbose/debug
+
+If shown, MUST be human-translated:
+
+Bad:
+
+```
+graph construction completed
+```
+
+Better:
+
+```
+Planning complete
+```
+
+---
+
+## 10. Provenance (MUST)
+
+Raw provenance JSON MUST NOT appear in human mode.
+
+Optional:
+
+* summarized provenance MAY appear in verbose mode
+
+---
+
+## 11. First-Run vs Recovery Semantics (MUST)
+
+The system MUST distinguish:
+
+| State     | Meaning                                |
+| --------- | -------------------------------------- |
+| first run | no provenance, no residual state       |
+| recovery  | no provenance, residual state detected |
+| managed   | valid applied provenance               |
+
+### Header requirement
+
+Example:
+
+```text
+(first run)
+(recovery from failed initial apply)
+```
+
+---
+
+## 12. Dependency Rendering (MUST)
+
+Default mode:
+
+* dependencies shown ONLY when explanatory
+
+Verbose/debug:
+
+* full dependency tree MAY be shown
+
+---
+
+## 13. Structured Event Consumption (MUST)
+
+The system MUST support:
+
+* replaying structured events
+* rendering them into humane output
+
+This MUST work even when events are transported via journald.
+
+---
+
+## 14. Invariant
+
+> Human output is a projection of structured events.
+> Structured events are never shown raw in human mode.
+
+---

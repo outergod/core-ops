@@ -1,13 +1,13 @@
 use core_ops::core::evaluate::evaluate_desired_state;
 use core_ops::core::reconcile::reconcile_apply;
+use core_ops::core::reconcile::ReconcileDependencies;
 use core_ops::core::types::{
     ArtifactSource, Boundaries, BoundaryScope, DesiredState, DropInSource, EnabledState,
-    EvaluationInput, HostDeclaration, HostOverlaySet, Invariant, MountDeclaration,
-    MountDependency, MountVerificationMode, ObservedState, ObservedUnit, PathDependencyMode,
-    QuadletType, RestartPolicy, ServiceCatalog, ServiceDefinition, UnitActiveState,
-    UnitDependencyMode, Workload,
+    EvaluationInput, HostDeclaration, HostOverlaySet, Invariant, MountDeclaration, MountDependency,
+    MountVerificationMode, ObservedState, ObservedUnit, PathDependencyMode, QuadletType,
+    RestartPolicy, ServiceCatalog, ServiceDefinition, UnitActiveState, UnitDependencyMode,
+    Workload,
 };
-use core_ops::core::reconcile::ReconcileDependencies;
 use std::collections::BTreeMap;
 #[test]
 fn evaluation_is_deterministic_for_same_input() {
@@ -68,6 +68,8 @@ fn degraded_mount_failure_is_deterministic() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![Workload {
             name: "var-lib-immich-media".to_string(),
             quadlet_type: QuadletType::Mount,

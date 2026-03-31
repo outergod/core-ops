@@ -222,6 +222,11 @@ fn public_output_types_preserve_stable_identity_and_schema_shape() {
         view_kind: "plan".to_string(),
         revision_context: RevisionContext {
             target_revision: "rev-2".to_string(),
+            requested_repository: None,
+            requested_ref: None,
+            last_applied_requested_repository: None,
+            last_applied_requested_ref: None,
+            scope_id: None,
             last_applied_revision: Some("rev-1".to_string()),
             change_revision: Some("rev-2".to_string()),
         },
@@ -241,7 +246,12 @@ fn public_output_types_preserve_stable_identity_and_schema_shape() {
         action_or_outcome: "update".to_string(),
         causes: plan.entries[0].causes.clone(),
         dependencies: plan.entries[0].dependencies.clone(),
+        dependency_context: None,
         diff: plan.entries[0].diff.clone(),
+        metadata: None,
+        x_coreops: None,
+        apply_intent: None,
+        summary: None,
         history: None,
     };
 

@@ -1,7 +1,7 @@
 use core_ops::core::audit::{build_audit_event, format_audit_event_json};
 use core_ops::core::types::{
-    FailureClass, PlanAction, PlanActionType, ReconcileMode, ReconcileRun,
-    ReconciliationPlan, RunStatus, VerificationResult, VerificationStatus,
+    FailureClass, PlanAction, PlanActionType, ReconcileMode, ReconcileRun, ReconciliationPlan,
+    RunStatus, VerificationResult, VerificationStatus,
 };
 use core_ops::io::audit::journal_target;
 

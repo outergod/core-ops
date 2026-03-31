@@ -107,6 +107,28 @@ package version in `Cargo.toml`.
   set stops automatic progress and records structured convergence diagnostics for
   operator review.
 
+## Explainable Reconciliation Interface
+
+- Machine-readable `plan`, `apply`, `result`, and `explain` outputs are the
+  authoritative operator contract. Human-readable output must remain a
+  deterministic rendering of those same view models.
+- Human revision context keeps the immutable resolved revision primary and shows
+  a meaningful requested ref secondarily, for example
+  `454ac5f1 (demo-uat-v1)`.
+- Persisted reconciliation and rollback semantics stay anchored to immutable
+  revisions. Requested repository/ref values are operator-facing provenance
+  only.
+- Prior requested-ref context is only available after a successful apply has
+  retained that revision with a build that knows how to store selector context.
+- Default human output should stay concise:
+  - `plan` emphasizes changed or recovery-relevant objects and collapses
+    unchanged dependency trees unless they explain the outcome.
+  - `apply` summaries contain only counts and overall outcome.
+  - verbose `apply` may show translated phase progression and expanded
+    diagnostics.
+- `core-ops explain <object>` defaults to the currently deployed target from
+  persisted state when `--repo` and `--rev` are omitted.
+
 ### Normalization Rules and Tolerated Runtime Variance
 
 Supported managed resource kinds in this iteration are generated systemd units,

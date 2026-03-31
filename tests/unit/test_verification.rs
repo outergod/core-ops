@@ -1,11 +1,18 @@
+use core_ops::cli::report::build_apply_output;
+use core_ops::core::reconcile::normalize_verification_results_for_desired;
+use core_ops::core::retry::build_retry_observation;
 use core_ops::core::types::{
-    Boundaries, BoundaryScope, ConvergenceStatus, DesiredState, EnabledState, HostInfo, Invariant,
+    Boundaries, BoundaryScope, ConvergenceStatus, DependencyEdgeKind, DesiredState,
+    DeterministicActionClass, DeterministicConvergenceRecord, DeterministicPlannedAction,
+    DeterministicReconciliationPlan, EnabledState, HostInfo, Invariant, ManagedObjectKind,
     MountDeclaration, MountVerificationMode, ObservedState, ObservedUnit, PathDependencyMode,
-    QuadletType, RestartPolicy, ServiceDependencyEdit, UnitActiveState, UnitDependencyMode,
+    QuadletType, RestartPolicy, SemanticDependencyEdge, SemanticDependencyGraph,
+    SemanticDependencyNode, ServiceDependencyEdit, UnitActiveState, UnitDependencyMode,
     VerificationResult, VerificationStatus, Workload,
 };
-use core_ops::core::unit::{apply_service_mount_dependencies, render_automount_unit, render_mount_unit};
-use core_ops::core::retry::build_retry_observation;
+use core_ops::core::unit::{
+    apply_service_mount_dependencies, render_automount_unit, render_mount_unit,
+};
 use core_ops::core::verify::{evaluate_convergence, verify_state};
 
 fn workload(name: &str, quadlet_type: QuadletType, unit: &str) -> Workload {
@@ -23,6 +30,8 @@ fn desired_state(workloads: Vec<Workload>) -> DesiredState {
     DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads,
         mount_declarations: Vec::new(),
         mount_dependencies: Vec::new(),
@@ -50,7 +59,11 @@ fn observed_state(units: Vec<ObservedUnit>) -> ObservedState {
 
 #[test]
 fn verify_container_requires_active_unit() {
-    let desired = desired_state(vec![workload("alpha", QuadletType::Container, "alpha.container")]);
+    let desired = desired_state(vec![workload(
+        "alpha",
+        QuadletType::Container,
+        "alpha.container",
+    )]);
     let observed = observed_state(vec![ObservedUnit {
         unit_name: "alpha.service".to_string(),
         active_state: UnitActiveState::Inactive,
@@ -74,6 +87,26 @@ fn verify_volume_accepts_loaded_unit() {
     let results = verify_state(&desired, &observed);
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].status, VerificationStatus::Success);
+}
+
+#[test]
+fn verification_results_normalize_runtime_units_to_managed_object_ids() {
+    let desired = desired_state(vec![workload(
+        "frontend",
+        QuadletType::Container,
+        "frontend.container",
+    )]);
+    let normalized = normalize_verification_results_for_desired(
+        &desired,
+        vec![VerificationResult {
+            target: "frontend.service".to_string(),
+            status: VerificationStatus::Failure,
+            details: Some("unit not active: failed".to_string()),
+        }],
+    );
+
+    assert_eq!(normalized.len(), 1);
+    assert_eq!(normalized[0].target, "frontend.container");
 }
 
 #[test]
@@ -113,6 +146,8 @@ fn verify_mount_requires_active_unit_and_mounted_target() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![mount_workload],
         mount_declarations: vec![mount.clone()],
         mount_dependencies: vec![core_ops::core::types::MountDependency {
@@ -179,6 +214,8 @@ fn render_automount_unit_and_verify_active_automount() {
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![automount_workload],
         mount_declarations: vec![mount.clone()],
         mount_dependencies: vec![core_ops::core::types::MountDependency {
@@ -239,6 +276,8 @@ fn verify_automount_backed_mount_accepts_inactive_mount_when_automount_is_active
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![
             workload(
                 "srv-immich-media",
@@ -275,7 +314,9 @@ fn verify_automount_backed_mount_accepts_inactive_mount_when_automount_is_active
 
     let results = verify_state(&desired, &observed);
     assert_eq!(results.len(), 2);
-    assert!(results.iter().all(|result| result.status == VerificationStatus::Success));
+    assert!(results
+        .iter()
+        .all(|result| result.status == VerificationStatus::Success));
 }
 
 #[test]
@@ -294,6 +335,8 @@ fn verify_automount_backed_mount_accepts_missing_mount_unit_when_automount_is_ac
     let desired = DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: vec![
             workload(
                 "srv-immich-media",
@@ -323,7 +366,176 @@ fn verify_automount_backed_mount_accepts_missing_mount_unit_when_automount_is_ac
 
     let results = verify_state(&desired, &observed);
     assert_eq!(results.len(), 2);
-    assert!(results.iter().all(|result| result.status == VerificationStatus::Success));
+    assert!(results
+        .iter()
+        .all(|result| result.status == VerificationStatus::Success));
+}
+
+#[test]
+fn apply_output_events_follow_phase_and_plan_order() {
+    let plan = DeterministicReconciliationPlan {
+        desired_revision_id: Some("rev-2".to_string()),
+        baseline_revision_id: Some("rev-1".to_string()),
+        requested_repository: None,
+        requested_ref: None,
+        last_applied_requested_repository: None,
+        last_applied_requested_ref: None,
+        scope_id: "host:alpha".to_string(),
+        actions: vec![
+            DeterministicPlannedAction {
+                object_id: "alpha.service".to_string(),
+                classification: DeterministicActionClass::Update,
+                reason: "drift".to_string(),
+                dependency_context: Vec::new(),
+                semantic_diff: [(
+                    "contents".to_string(),
+                    "desired=a actual=b applied=a".to_string(),
+                )]
+                .into_iter()
+                .collect(),
+            },
+            DeterministicPlannedAction {
+                object_id: "beta.service".to_string(),
+                classification: DeterministicActionClass::Restart,
+                reason: "dependency changed".to_string(),
+                dependency_context: vec!["alpha.service".to_string()],
+                semantic_diff: Default::default(),
+            },
+            DeterministicPlannedAction {
+                object_id: "gamma.service".to_string(),
+                classification: DeterministicActionClass::NoOp,
+                reason: "no change".to_string(),
+                dependency_context: Vec::new(),
+                semantic_diff: Default::default(),
+            },
+        ],
+        drift_records: Vec::new(),
+        graph: SemanticDependencyGraph {
+            nodes: vec![
+                SemanticDependencyNode {
+                    object_id: "alpha.service".to_string(),
+                    object_kind: ManagedObjectKind::GeneratedUnit,
+                    ordering_key: "alpha.service".to_string(),
+                },
+                SemanticDependencyNode {
+                    object_id: "beta.service".to_string(),
+                    object_kind: ManagedObjectKind::GeneratedUnit,
+                    ordering_key: "beta.service".to_string(),
+                },
+                SemanticDependencyNode {
+                    object_id: "gamma.service".to_string(),
+                    object_kind: ManagedObjectKind::GeneratedUnit,
+                    ordering_key: "gamma.service".to_string(),
+                },
+            ],
+            edges: vec![SemanticDependencyEdge {
+                from_object_id: "alpha.service".to_string(),
+                to_object_id: "beta.service".to_string(),
+                edge_kind: DependencyEdgeKind::Explicit,
+                reason: "prerequisite".to_string(),
+            }],
+        },
+    };
+    let convergence = DeterministicConvergenceRecord {
+        desired_revision_id: "rev-2".to_string(),
+        scope_id: "host:alpha".to_string(),
+        status: ConvergenceStatus::Success,
+        attempt_count: 1,
+        affected_objects: vec![
+            "alpha.service".to_string(),
+            "beta.service".to_string(),
+            "gamma.service".to_string(),
+        ],
+        completed_actions: vec!["alpha.service".to_string(), "beta.service".to_string()],
+        failed_actions: Vec::new(),
+        can_continue: false,
+    };
+    let output = build_apply_output(&plan, &[], Some(&convergence));
+
+    for (index, phase) in output.phases.iter().enumerate() {
+        assert_eq!(phase.sequence, index);
+    }
+    for (index, event) in output.events.iter().enumerate() {
+        assert_eq!(event.sequence, output.phases.len() + index);
+    }
+
+    let object_order = output
+        .events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event.state,
+                core_ops::core::types::ExecutionState::Pending
+                    | core_ops::core::types::ExecutionState::Unchanged
+            )
+        })
+        .map(|event| event.object.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        object_order,
+        vec!["alpha.service", "beta.service", "gamma.service"]
+    );
+}
+
+#[test]
+fn apply_output_uses_recovered_terminal_vocabulary_for_recovery_actions() {
+    let plan = DeterministicReconciliationPlan {
+        desired_revision_id: Some("rev-2".to_string()),
+        baseline_revision_id: Some("rev-1".to_string()),
+        requested_repository: None,
+        requested_ref: None,
+        last_applied_requested_repository: None,
+        last_applied_requested_ref: None,
+        scope_id: "host:alpha".to_string(),
+        actions: vec![DeterministicPlannedAction {
+            object_id: "alpha.service".to_string(),
+            classification: DeterministicActionClass::Recover,
+            reason: "runtime reconciliation required: unit not active: failed".to_string(),
+            dependency_context: Vec::new(),
+            semantic_diff: Default::default(),
+        }],
+        drift_records: Vec::new(),
+        graph: SemanticDependencyGraph {
+            nodes: vec![SemanticDependencyNode {
+                object_id: "alpha.service".to_string(),
+                object_kind: ManagedObjectKind::GeneratedUnit,
+                ordering_key: "alpha.service".to_string(),
+            }],
+            edges: Vec::new(),
+        },
+    };
+    let convergence = DeterministicConvergenceRecord {
+        desired_revision_id: "rev-2".to_string(),
+        scope_id: "host:alpha".to_string(),
+        status: ConvergenceStatus::Success,
+        attempt_count: 1,
+        affected_objects: vec!["alpha.service".to_string()],
+        completed_actions: vec!["alpha.service".to_string()],
+        failed_actions: Vec::new(),
+        can_continue: true,
+    };
+
+    let output = build_apply_output(&plan, &[], Some(&convergence));
+    let terminal = output
+        .events
+        .iter()
+        .find(|event| {
+            matches!(
+                event.event_kind,
+                core_ops::core::types::ExecutionEventKind::ObjectTerminal
+            )
+        })
+        .expect("terminal event");
+
+    assert_eq!(terminal.object.name, "alpha.service");
+    assert_eq!(
+        terminal.state,
+        core_ops::core::types::ExecutionState::Recovered
+    );
+    assert_eq!(
+        terminal.action,
+        Some(core_ops::core::types::PlanEntryAction::Recover)
+    );
 }
 
 struct MountInfoGuard;
@@ -336,7 +548,11 @@ impl Drop for MountInfoGuard {
 
 #[test]
 fn convergence_status_classifies_repeated_failure_and_honors_retry_budget() {
-    let desired = desired_state(vec![workload("alpha", QuadletType::Container, "alpha.container")]);
+    let desired = desired_state(vec![workload(
+        "alpha",
+        QuadletType::Container,
+        "alpha.container",
+    )]);
     let observed = observed_state(vec![ObservedUnit {
         unit_name: "alpha.service".to_string(),
         active_state: UnitActiveState::Inactive,
@@ -358,7 +574,11 @@ fn convergence_status_classifies_repeated_failure_and_honors_retry_budget() {
 
 #[test]
 fn convergence_status_classifies_blocked_and_success_cases() {
-    let desired = desired_state(vec![workload("alpha", QuadletType::Container, "alpha.container")]);
+    let desired = desired_state(vec![workload(
+        "alpha",
+        QuadletType::Container,
+        "alpha.container",
+    )]);
     let blocked_observed = observed_state(vec![ObservedUnit {
         unit_name: "alpha.service".to_string(),
         active_state: UnitActiveState::Inactive,
@@ -380,7 +600,10 @@ fn convergence_status_classifies_blocked_and_success_cases() {
         active_state: UnitActiveState::Active,
         enabled_state: EnabledState::Enabled,
     }]);
-    let success_history = vec![build_retry_observation(1, &verify_state(&desired, &success_observed))];
+    let success_history = vec![build_retry_observation(
+        1,
+        &verify_state(&desired, &success_observed),
+    )];
     let success = evaluate_convergence(&desired, &success_observed, &success_history, 3);
     assert_eq!(success.status, ConvergenceStatus::Success);
 }

@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::report::build_plan_output;
 use crate::core::types::{
-    DesiredState, DeterministicPersistedState, DeterministicReconciliationPlan,
+    ApplyOutputView, DesiredState, DeterministicConvergenceRecord, DeterministicPersistedState,
+    DeterministicReconciliationPlan, PlanEntry, PlanEntryAction, PlanOutputView,
     VerificationResult, VerificationStatus,
 };
 use crate::io::state::{
@@ -62,15 +63,224 @@ pub fn render_mount_dependency_summary(
 
 pub fn render_deterministic_plan_summary(plan: &DeterministicReconciliationPlan) -> String {
     let view = build_plan_output(plan);
+    let target = render_revision_with_requested_ref(
+        &view.revision_context.target_revision,
+        view.revision_context.requested_ref.as_deref(),
+    );
+    let baseline = view
+        .revision_context
+        .last_applied_revision
+        .as_deref()
+        .map(|previous| {
+            render_previous_revision_with_requested_ref(
+                previous,
+                view.revision_context.last_applied_requested_ref.as_deref(),
+            )
+        })
+        .unwrap_or_else(|| "none".to_string());
     format!(
-        "deterministic_plan scope={} target_revision={} changed={} unchanged={} blocked={} skipped={}",
+        "deterministic_plan scope={} target=\"{}\" baseline=\"{}\" summary=\"{}\"",
         plan.scope_id,
-        view.revision_context.target_revision,
-        view.summary.changed_count,
-        view.summary.unchanged_count,
-        view.summary.blocked_count,
-        view.summary.skipped_count
+        target,
+        baseline,
+        render_plan_count_summary(&view, false),
     )
+}
+
+pub fn render_plan_count_summary(view: &PlanOutputView, verbose: bool) -> String {
+    let phrases = [
+        summary_count_phrase(
+            count_plan_entries(&view.entries, PlanEntryAction::Create),
+            "create",
+            "creates",
+        ),
+        summary_count_phrase(
+            count_plan_entries(&view.entries, PlanEntryAction::Update),
+            "update",
+            "updates",
+        ),
+        summary_count_phrase(
+            count_plan_entries(&view.entries, PlanEntryAction::Recover),
+            "recover",
+            "recovers",
+        ),
+        summary_count_phrase(
+            count_plan_entries(&view.entries, PlanEntryAction::Restart),
+            "restart",
+            "restarts",
+        ),
+        summary_count_phrase(
+            count_plan_entries(&view.entries, PlanEntryAction::Delete),
+            "delete",
+            "deletes",
+        ),
+        summary_count_phrase(
+            count_plan_entries(&view.entries, PlanEntryAction::Blocked),
+            "blocked",
+            "blocked",
+        ),
+        summary_count_phrase(
+            count_plan_entries(&view.entries, PlanEntryAction::Skipped),
+            "skipped",
+            "skipped",
+        ),
+        summary_count_phrase(
+            count_plan_entries(&view.entries, PlanEntryAction::NoOp),
+            "unchanged",
+            "unchanged",
+        ),
+    ];
+    let visible = if verbose {
+        phrases.into_iter().collect::<Vec<_>>()
+    } else {
+        phrases
+            .into_iter()
+            .filter(|phrase| !phrase.starts_with("0 "))
+            .collect::<Vec<_>>()
+    };
+    visible.join(" • ")
+}
+
+pub fn render_apply_summary(
+    view: &ApplyOutputView,
+    convergence: Option<&DeterministicConvergenceRecord>,
+) -> String {
+    let counts = render_apply_count_summary(view);
+    let outcome = convergence
+        .map(|record| format!("Outcome: {}", humane_outcome_label(&record.status)))
+        .unwrap_or_else(|| "Outcome: unknown".to_string());
+    format!("{counts}\n{outcome}")
+}
+
+pub fn render_apply_count_summary(view: &ApplyOutputView) -> String {
+    let mut counts = std::collections::BTreeMap::new();
+    for event in &view.events {
+        match event.state {
+            crate::core::types::ExecutionState::Created => {
+                *counts.entry("create").or_insert(0usize) += 1
+            }
+            crate::core::types::ExecutionState::Updated => {
+                *counts.entry("update").or_insert(0usize) += 1
+            }
+            crate::core::types::ExecutionState::Deleted => {
+                *counts.entry("delete").or_insert(0usize) += 1
+            }
+            crate::core::types::ExecutionState::Recovered => {
+                *counts.entry("recover").or_insert(0usize) += 1
+            }
+            crate::core::types::ExecutionState::Restarted => {
+                *counts.entry("restart").or_insert(0usize) += 1
+            }
+            crate::core::types::ExecutionState::Failed => {
+                *counts.entry("failed").or_insert(0usize) += 1
+            }
+            crate::core::types::ExecutionState::Blocked => {
+                *counts.entry("blocked").or_insert(0usize) += 1
+            }
+            crate::core::types::ExecutionState::Unchanged => {
+                *counts.entry("unchanged").or_insert(0usize) += 1
+            }
+            crate::core::types::ExecutionState::Skipped => {
+                *counts.entry("skipped").or_insert(0usize) += 1
+            }
+            crate::core::types::ExecutionState::Pending
+            | crate::core::types::ExecutionState::Running => {}
+        }
+    }
+    let order = [
+        "create",
+        "update",
+        "recover",
+        "restart",
+        "delete",
+        "failed",
+        "blocked",
+        "skipped",
+        "unchanged",
+    ];
+    let parts = order
+        .into_iter()
+        .filter_map(|label| {
+            counts
+                .get(label)
+                .copied()
+                .filter(|count| *count > 0)
+                .map(|count| match label {
+                    "create" => summary_count_phrase(count, "create", "creates"),
+                    "update" => summary_count_phrase(count, "update", "updates"),
+                    "recover" => summary_count_phrase(count, "recover", "recovers"),
+                    "restart" => summary_count_phrase(count, "restart", "restarts"),
+                    "delete" => summary_count_phrase(count, "delete", "deletes"),
+                    "failed" => summary_count_phrase(count, "failed", "failed"),
+                    "blocked" => summary_count_phrase(count, "blocked", "blocked"),
+                    "skipped" => summary_count_phrase(count, "skipped", "skipped"),
+                    "unchanged" => summary_count_phrase(count, "unchanged", "unchanged"),
+                    _ => format!("{count} {label}"),
+                })
+        })
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        "0 changes".to_string()
+    } else {
+        parts.join(" • ")
+    }
+}
+
+fn summary_count_phrase(count: usize, singular: &str, plural: &str) -> String {
+    let noun = if count == 1 { singular } else { plural };
+    format!("{count} {noun}")
+}
+
+fn count_plan_entries(entries: &[PlanEntry], action: PlanEntryAction) -> usize {
+    entries.iter().filter(|entry| entry.action == action).count()
+}
+
+pub fn render_revision_with_requested_ref(target: &str, requested_ref: Option<&str>) -> String {
+    let primary = short_revision(target);
+    match meaningful_requested_ref(target, requested_ref) {
+        Some(requested_ref) => format!("{primary} ({requested_ref})"),
+        None => primary.to_string(),
+    }
+}
+
+pub fn render_previous_revision_with_requested_ref(
+    previous: &str,
+    requested_ref: Option<&str>,
+) -> String {
+    let primary = short_revision(previous);
+    match meaningful_requested_ref(previous, requested_ref) {
+        Some(requested_ref) => format!("{primary} ({requested_ref})"),
+        None => primary.to_string(),
+    }
+}
+
+fn meaningful_requested_ref<'a>(target: &str, requested_ref: Option<&'a str>) -> Option<&'a str> {
+    let requested_ref = requested_ref?.trim();
+    if requested_ref.is_empty() {
+        return None;
+    }
+    if requested_ref == target {
+        return None;
+    }
+    if target.starts_with(requested_ref) || requested_ref.starts_with(target) {
+        return None;
+    }
+    Some(requested_ref)
+}
+
+fn short_revision(revision: &str) -> &str {
+    &revision[..revision.len().min(8)]
+}
+
+fn humane_outcome_label(status: &crate::core::types::ConvergenceStatus) -> &'static str {
+    match status {
+        crate::core::types::ConvergenceStatus::Success => "converged",
+        crate::core::types::ConvergenceStatus::Partial => "partially applied",
+        crate::core::types::ConvergenceStatus::Blocked => "blocked",
+        crate::core::types::ConvergenceStatus::RepeatedFailure
+        | crate::core::types::ConvergenceStatus::Oscillation => "non-converging",
+        crate::core::types::ConvergenceStatus::Failed => "convergence failed",
+    }
 }
 
 pub fn render_rollback_summary(state: &DeterministicPersistedState) -> String {

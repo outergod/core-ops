@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 pub struct DesiredState {
     pub repository_ref: String,
     pub revision_id: String,
+    pub requested_repository: Option<String>,
+    pub requested_ref: Option<String>,
     pub workloads: Vec<Workload>,
     pub mount_declarations: Vec<MountDeclaration>,
     pub mount_dependencies: Vec<MountDependency>,
@@ -660,6 +662,7 @@ pub enum DeterministicActionClass {
     Update,
     Delete,
     Replace,
+    Recover,
     Restart,
     NoOp,
     Blocked,
@@ -697,6 +700,10 @@ pub struct DeterministicPlannedAction {
 pub struct DeterministicReconciliationPlan {
     pub desired_revision_id: Option<String>,
     pub baseline_revision_id: Option<String>,
+    pub requested_repository: Option<String>,
+    pub requested_ref: Option<String>,
+    pub last_applied_requested_repository: Option<String>,
+    pub last_applied_requested_ref: Option<String>,
     pub scope_id: String,
     pub actions: Vec<DeterministicPlannedAction>,
     pub drift_records: Vec<StructuredDriftRecord>,
@@ -716,6 +723,10 @@ pub enum RollbackEligibility {
 pub struct RetainedAppliedSnapshot {
     pub revision_id: String,
     pub scope_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_ref: Option<String>,
     pub snapshot: NormalizedSnapshot,
     pub retained: bool,
 }
@@ -771,7 +782,17 @@ pub struct ManagedObjectRef {
 pub struct RevisionContext {
     pub target_revision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_repository: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_applied_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_applied_requested_repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_applied_requested_ref: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub change_revision: Option<String>,
 }
@@ -785,6 +806,7 @@ pub enum CauseKind {
     DependencyFailure,
     BlockedPrerequisite,
     RuntimeVariance,
+    RecoveryRequired,
     ReplacementRequired,
     RestartRequired,
     NoChange,
@@ -841,6 +863,7 @@ pub enum PlanEntryAction {
     Update,
     Replace,
     Delete,
+    Recover,
     Restart,
     NoOp,
     Blocked,
@@ -920,7 +943,12 @@ pub enum ExecutionEventKind {
 pub enum ExecutionState {
     Pending,
     Running,
-    Succeeded,
+    Created,
+    Updated,
+    Deleted,
+    Recovered,
+    Restarted,
+    Unchanged,
     Failed,
     Blocked,
     Skipped,
@@ -1015,7 +1043,25 @@ pub struct ExplainOutputView {
     pub causes: Vec<Cause>,
     pub dependencies: Vec<DependencyEdgeView>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub dependency_context: Option<Vec<ExplainDependencyView>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<SemanticDiffView>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x_coreops: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub apply_intent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub history: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExplainDependencyView {
+    pub relation: DependencyRelation,
+    pub object: ManagedObjectRef,
+    pub state: String,
+    pub reason: String,
 }

@@ -2,15 +2,16 @@ use std::collections::BTreeMap;
 
 use core_ops::core::planner::{
     direct_and_transitive_prerequisite_refs, managed_object_ref, plan,
-    plan_deterministic_reconciliation, plan_mount_units,
+    plan_deterministic_reconciliation, plan_deterministic_reconciliation_with_runtime,
+    plan_mount_units,
 };
-use core_ops::core::unit::{apply_service_mount_dependencies, render_mount_unit};
 use core_ops::core::types::{
     Boundaries, BoundaryScope, DesiredState, DeterministicActionClass, EnabledState, Invariant,
     ManagedObjectKind, MountDeclaration, MountDependency, MountVerificationMode,
     NormalizedManagedObject, NormalizedSnapshot, ObservedState, PathDependencyMode, QuadletType,
-    RestartPolicy, UnitDependencyMode, Workload,
+    RestartPolicy, UnitDependencyMode, VerificationResult, VerificationStatus, Workload,
 };
+use core_ops::core::unit::{apply_service_mount_dependencies, render_mount_unit};
 
 fn workload(name: &str) -> Workload {
     workload_with_type(name, QuadletType::Container)
@@ -42,6 +43,8 @@ fn desired_state(workloads: Vec<Workload>) -> DesiredState {
     DesiredState {
         repository_ref: "repo".to_string(),
         revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
         workloads,
         mount_declarations: Vec::new(),
         mount_dependencies: Vec::new(),
@@ -116,10 +119,7 @@ fn plan_orders_actions_by_quadlet_type() {
     let plan = plan(&desired, &observed).expect("plan should succeed");
     let targets: Vec<String> = plan.actions.iter().map(|a| a.target.clone()).collect();
 
-    let volume_prefix = vec![
-        "volume.volume".to_string(),
-        "volume.volume".to_string(),
-    ];
+    let volume_prefix = vec!["volume.volume".to_string(), "volume.volume".to_string()];
     let container_prefix = vec![
         "container.container".to_string(),
         "container.container".to_string(),
@@ -145,9 +145,7 @@ fn plan_orders_actions_by_quadlet_type() {
 #[test]
 fn plan_restarts_socket_when_socket_dropin_removed() {
     let desired = desired_state(Vec::new());
-    let observed = observed_state(vec![socket_dropin_workload(
-        "alpha.socket.d/10-host.conf",
-    )]);
+    let observed = observed_state(vec![socket_dropin_workload("alpha.socket.d/10-host.conf")]);
 
     let plan = plan(&desired, &observed).expect("plan should succeed");
 
@@ -165,8 +163,7 @@ fn plan_restarts_socket_when_socket_dropin_removed() {
             && *target == "alpha.socket.d/10-host.conf"
     }));
     assert!(actions.iter().any(|(action, target)| {
-        *action == core_ops::core::types::PlanActionType::RestartUnit
-            && *target == "alpha.socket"
+        *action == core_ops::core::types::PlanActionType::RestartUnit && *target == "alpha.socket"
     }));
 }
 
@@ -224,7 +221,8 @@ fn mount_planning_expands_path_and_explicit_unit_dependencies() {
         &planned.service_dependency_edits[0],
     );
     assert!(service_contents.contains("RequiresMountsFor=/var/lib/immich/media"));
-    assert!(service_contents.contains("After=var-lib-immich-media.automount var-lib-immich-media.mount"));
+    assert!(service_contents
+        .contains("After=var-lib-immich-media.automount var-lib-immich-media.mount"));
 }
 
 fn normalized_object(
@@ -240,7 +238,10 @@ fn normalized_object(
             .iter()
             .map(|(key, value)| (key.to_string(), value.to_string()))
             .collect::<BTreeMap<_, _>>(),
-        dependency_refs: dependency_refs.iter().map(|value| value.to_string()).collect(),
+        dependency_refs: dependency_refs
+            .iter()
+            .map(|value| value.to_string())
+            .collect(),
     }
 }
 
@@ -275,11 +276,19 @@ fn deterministic_planner_orders_objects_by_dependency_graph() {
 
     let plan = plan_deterministic_reconciliation(&desired, Some(&applied), &actual)
         .expect("deterministic plan");
-    let ordered: Vec<&str> = plan.actions.iter().map(|action| action.object_id.as_str()).collect();
+    let ordered: Vec<&str> = plan
+        .actions
+        .iter()
+        .map(|action| action.object_id.as_str())
+        .collect();
 
     assert_eq!(
         ordered,
-        vec!["config:/etc/alpha/env", "var-lib-alpha.mount", "alpha.service"]
+        vec![
+            "config:/etc/alpha/env",
+            "var-lib-alpha.mount",
+            "alpha.service"
+        ]
     );
 }
 
@@ -466,8 +475,8 @@ fn deterministic_planner_deletes_in_reverse_dependency_order() {
         ],
     };
 
-    let plan = plan_deterministic_reconciliation(&desired, None, &actual)
-        .expect("deterministic plan");
+    let plan =
+        plan_deterministic_reconciliation(&desired, None, &actual).expect("deterministic plan");
     let delete_ids: Vec<&str> = plan
         .actions
         .iter()
@@ -540,7 +549,13 @@ fn deterministic_planner_uses_restart_for_dependency_driven_reactivation() {
     let actions = plan
         .actions
         .iter()
-        .map(|action| (action.object_id.as_str(), action.classification.clone(), action.reason.clone()))
+        .map(|action| {
+            (
+                action.object_id.as_str(),
+                action.classification.clone(),
+                action.reason.clone(),
+            )
+        })
         .collect::<Vec<_>>();
 
     assert!(actions.iter().any(|(object_id, classification, _)| {
@@ -550,5 +565,46 @@ fn deterministic_planner_uses_restart_for_dependency_driven_reactivation() {
         *object_id == "app.service"
             && *classification == DeterministicActionClass::Restart
             && reason.contains("config:/etc/app.env changed")
+    }));
+}
+
+#[test]
+fn deterministic_planner_uses_recover_for_runtime_variance_without_declarative_drift() {
+    let desired = NormalizedSnapshot {
+        revision_id: Some("rev-2".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![normalized_object(
+            "app.service",
+            ManagedObjectKind::GeneratedUnit,
+            &[("unit", "app.service"), ("image", "stable")],
+            &[],
+        )],
+    };
+    let applied = desired.clone();
+    let actual = desired.clone();
+    let verification_results = vec![VerificationResult {
+        target: "app.service".to_string(),
+        status: VerificationStatus::Failure,
+        details: Some("unit not active: failed".to_string()),
+    }];
+
+    let plan = plan_deterministic_reconciliation_with_runtime(
+        &desired,
+        Some(&applied),
+        &actual,
+        &verification_results,
+    )
+    .expect("deterministic plan");
+    let action = plan
+        .actions
+        .iter()
+        .find(|action| action.object_id == "app.service")
+        .unwrap();
+
+    assert_eq!(action.classification, DeterministicActionClass::Recover);
+    assert!(action.reason.contains("runtime reconciliation required"));
+    assert!(plan.drift_records.iter().any(|record| {
+        record.object_id == "app.service"
+            && record.category == core_ops::core::types::DriftCategory::RuntimeVariance
     }));
 }

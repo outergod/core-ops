@@ -6,6 +6,14 @@ fn systemd_unit_templates_exist() {
     let service = root.join("specs/002-systemd-agent/contracts/systemd/core-ops.service");
     let timer = root.join("specs/002-systemd-agent/contracts/systemd/core-ops.timer");
 
-    assert!(service.exists(), "missing service template: {}", service.display());
-    assert!(timer.exists(), "missing timer template: {}", timer.display());
+    assert!(
+        service.exists(),
+        "missing service template: {}",
+        service.display()
+    );
+    assert!(
+        timer.exists(),
+        "missing timer template: {}",
+        timer.display()
+    );
 }

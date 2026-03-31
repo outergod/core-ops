@@ -29,7 +29,14 @@ impl std::fmt::Display for ApplyError {
                 write!(f, "missing quadlet dir: {}", path.display())
             }
             ApplyError::MissingWorkload(name) => write!(f, "missing workload: {}", name),
-            ApplyError::SystemdCommandFailed(msg) => write!(f, "systemd command failed: {}", msg),
+            ApplyError::SystemdCommandFailed(msg) => {
+                let trimmed = msg.trim();
+                if trimmed.is_empty() {
+                    write!(f, "systemd command failed")
+                } else {
+                    write!(f, "systemd command failed: {}", trimmed)
+                }
+            }
             ApplyError::Io(err) => write!(f, "apply io error: {}", err),
         }
     }
@@ -43,6 +50,13 @@ pub struct ApplyOutcome {
     pub files_removed: Vec<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ApplyObjectEvent {
+    Started { target: String },
+    Completed { target: String },
+    Failed { target: String, error: String },
+}
+
 pub fn apply_plan(
     plan: &ReconciliationPlan,
     desired_workloads: &[Workload],
@@ -52,6 +66,8 @@ pub fn apply_plan(
     let desired = DesiredState {
         repository_ref: String::new(),
         revision_id: String::new(),
+        requested_repository: None,
+        requested_ref: None,
         workloads: desired_workloads.to_vec(),
         mount_declarations: Vec::new(),
         mount_dependencies: Vec::new(),
@@ -69,6 +85,19 @@ pub fn apply_plan_with_desired(
     quadlet_dir: &Path,
     reload_systemd: bool,
 ) -> Result<ApplyOutcome, ApplyError> {
+    apply_plan_with_desired_and_events(plan, desired, quadlet_dir, reload_systemd, |_| {})
+}
+
+pub fn apply_plan_with_desired_and_events<F>(
+    plan: &ReconciliationPlan,
+    desired: &DesiredState,
+    quadlet_dir: &Path,
+    reload_systemd: bool,
+    mut emit: F,
+) -> Result<ApplyOutcome, ApplyError>
+where
+    F: FnMut(ApplyObjectEvent),
+{
     if !quadlet_dir.exists() {
         return Err(ApplyError::MissingQuadletDir(quadlet_dir.to_path_buf()));
     }
@@ -81,18 +110,40 @@ pub fn apply_plan_with_desired(
     prepare_target_paths(&desired.mount_declarations)?;
 
     let mut deferred_units: Vec<(PlanActionType, String)> = Vec::new();
+    let mut remaining_steps = remaining_step_counts(plan);
+    let mut started_targets = std::collections::HashSet::new();
 
     for action in &plan.actions {
         match &action.action_type {
             PlanActionType::PreparePath => {
+                emit_started(
+                    &action.target,
+                    &mut started_targets,
+                    &remaining_steps,
+                    &mut emit,
+                );
                 if should_skip_prepare_path(&desired.mount_declarations, &action.target) {
                     files_written.push(action.target.clone());
+                    emit_completed_if_done(&action.target, &mut remaining_steps, &mut emit);
                     continue;
                 }
-                ensure_mountpoint_path(&action.target)?;
+                if let Err(err) = ensure_mountpoint_path(&action.target) {
+                    emit(ApplyObjectEvent::Failed {
+                        target: action.target.clone(),
+                        error: err.to_string(),
+                    });
+                    return Err(err);
+                }
                 files_written.push(action.target.clone());
+                emit_completed_if_done(&action.target, &mut remaining_steps, &mut emit);
             }
             PlanActionType::WriteQuadlet => {
+                emit_started(
+                    &action.target,
+                    &mut started_targets,
+                    &remaining_steps,
+                    &mut emit,
+                );
                 let workload = find_workload(&desired.workloads, &action.target)?;
                 let path = if workload.quadlet_type == QuadletType::ConfigFile {
                     PathBuf::from(&workload.systemd_unit_name)
@@ -104,16 +155,28 @@ pub fn apply_plan_with_desired(
                 }
                 fs::write(&path, &workload.quadlet_contents)?;
                 files_written.push(path.display().to_string());
+                emit_completed_if_done(&action.target, &mut remaining_steps, &mut emit);
             }
             PlanActionType::RemoveQuadlet => {
+                emit_started(
+                    &action.target,
+                    &mut started_targets,
+                    &remaining_steps,
+                    &mut emit,
+                );
                 if is_mount_unit_target(&action.target) {
                     stop_managed_service_workloads(&desired.workloads, quadlet_dir)?;
                     if let Some(target_path) = target_path_for_mount_unit(&action.target)? {
                         if is_mount_target_active(&target_path) {
-                            return Err(ApplyError::SystemdCommandFailed(format!(
+                            let err = ApplyError::SystemdCommandFailed(format!(
                                 "busy mount removal: {}",
                                 target_path
-                            )));
+                            ));
+                            emit(ApplyObjectEvent::Failed {
+                                target: action.target.clone(),
+                                error: err.to_string(),
+                            });
+                            return Err(err);
                         }
                     }
                 }
@@ -158,6 +221,7 @@ pub fn apply_plan_with_desired(
                         return Err(ApplyError::MissingWorkload(action.target.clone()));
                     }
                 }
+                emit_completed_if_done(&action.target, &mut remaining_steps, &mut emit);
             }
             PlanActionType::EnableUnit => {
                 // Quadlet-generated units rely on [Install] processing; no enable call is needed.
@@ -172,14 +236,40 @@ pub fn apply_plan_with_desired(
                 deferred_units.push((PlanActionType::RestartUnit, action.target.clone()));
             }
             PlanActionType::StopUnit => {
+                emit_started(
+                    &action.target,
+                    &mut started_targets,
+                    &remaining_steps,
+                    &mut emit,
+                );
                 let unit =
                     unit_name_for_start_stop(&desired.workloads, quadlet_dir, &action.target)?;
-                run_systemctl_allow_not_loaded(&["stop", &unit])?;
+                if let Err(err) = run_systemctl_allow_not_loaded(&["stop", &unit]) {
+                    emit(ApplyObjectEvent::Failed {
+                        target: action.target.clone(),
+                        error: err.to_string(),
+                    });
+                    return Err(err);
+                }
+                emit_completed_if_done(&action.target, &mut remaining_steps, &mut emit);
             }
             PlanActionType::ReloadSystemd => {
+                emit_started(
+                    &action.target,
+                    &mut started_targets,
+                    &remaining_steps,
+                    &mut emit,
+                );
                 if reload_systemd {
-                    run_systemctl(&["daemon-reload"])?;
+                    if let Err(err) = run_systemctl(&["daemon-reload"]) {
+                        emit(ApplyObjectEvent::Failed {
+                            target: action.target.clone(),
+                            error: err.to_string(),
+                        });
+                        return Err(err);
+                    }
                 }
+                emit_completed_if_done(&action.target, &mut remaining_steps, &mut emit);
             }
             PlanActionType::Unknown(action) => {
                 return Err(ApplyError::SystemdCommandFailed(format!(
@@ -195,21 +285,39 @@ pub fn apply_plan_with_desired(
     for (action_type, target) in deferred_units {
         match action_type {
             PlanActionType::RestartUnit => {
+                emit_started(&target, &mut started_targets, &remaining_steps, &mut emit);
                 let unit = unit_name_for_start_stop(&desired.workloads, quadlet_dir, &target)?;
-                run_systemctl(&["restart", &unit])?;
+                if let Err(err) = run_systemctl(&["restart", &unit]) {
+                    emit(ApplyObjectEvent::Failed {
+                        target: target.clone(),
+                        error: err.to_string(),
+                    });
+                    return Err(err);
+                }
                 restarted.insert(target.clone());
-                started.insert(target);
+                started.insert(target.clone());
+                emit_completed_if_done(&target, &mut remaining_steps, &mut emit);
             }
             PlanActionType::StartUnit => {
                 if restarted.contains(&target) {
+                    emit_completed_if_done(&target, &mut remaining_steps, &mut emit);
                     continue;
                 }
                 if started.contains(&target) {
+                    emit_completed_if_done(&target, &mut remaining_steps, &mut emit);
                     continue;
                 }
+                emit_started(&target, &mut started_targets, &remaining_steps, &mut emit);
                 let unit = unit_name_for_start_stop(&desired.workloads, quadlet_dir, &target)?;
-                run_systemctl(&["start", &unit])?;
-                started.insert(target);
+                if let Err(err) = run_systemctl(&["start", &unit]) {
+                    emit(ApplyObjectEvent::Failed {
+                        target: target.clone(),
+                        error: err.to_string(),
+                    });
+                    return Err(err);
+                }
+                started.insert(target.clone());
+                emit_completed_if_done(&target, &mut remaining_steps, &mut emit);
             }
             _ => {}
         }
@@ -220,6 +328,59 @@ pub fn apply_plan_with_desired(
         files_written,
         files_removed,
     })
+}
+
+fn remaining_step_counts(plan: &ReconciliationPlan) -> std::collections::BTreeMap<String, usize> {
+    let mut counts = std::collections::BTreeMap::new();
+    for action in &plan.actions {
+        if matches!(
+            action.action_type,
+            PlanActionType::EnableUnit | PlanActionType::DisableUnit
+        ) {
+            continue;
+        }
+        *counts.entry(action.target.clone()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn emit_started<F>(
+    target: &str,
+    started_targets: &mut std::collections::HashSet<String>,
+    remaining_steps: &std::collections::BTreeMap<String, usize>,
+    emit: &mut F,
+) where
+    F: FnMut(ApplyObjectEvent),
+{
+    if remaining_steps.get(target).copied().unwrap_or(0) == 0 {
+        return;
+    }
+    if started_targets.insert(target.to_string()) {
+        emit(ApplyObjectEvent::Started {
+            target: target.to_string(),
+        });
+    }
+}
+
+fn emit_completed_if_done<F>(
+    target: &str,
+    remaining_steps: &mut std::collections::BTreeMap<String, usize>,
+    emit: &mut F,
+) where
+    F: FnMut(ApplyObjectEvent),
+{
+    let Some(remaining) = remaining_steps.get_mut(target) else {
+        return;
+    };
+    if *remaining == 0 {
+        return;
+    }
+    *remaining -= 1;
+    if *remaining == 0 {
+        emit(ApplyObjectEvent::Completed {
+            target: target.to_string(),
+        });
+    }
 }
 
 fn validate_runtime_unit_targets(
@@ -240,7 +401,10 @@ fn validate_runtime_unit_targets(
 
 fn target_dir_for_workload(quadlet_dir: &Path, workload: &Workload) -> PathBuf {
     match workload.quadlet_type {
-        QuadletType::Socket | QuadletType::SocketDropIn | QuadletType::Mount | QuadletType::Automount => systemd_unit_dir(),
+        QuadletType::Socket
+        | QuadletType::SocketDropIn
+        | QuadletType::Mount
+        | QuadletType::Automount => systemd_unit_dir(),
         QuadletType::ConfigFile => PathBuf::from("/"),
         _ => quadlet_dir.to_path_buf(),
     }
@@ -350,10 +514,17 @@ fn is_mount_unit_target(target: &str) -> bool {
     target.ends_with(".mount") || target.ends_with(".automount")
 }
 
-fn stop_managed_service_workloads(workloads: &[Workload], quadlet_dir: &Path) -> Result<(), ApplyError> {
+fn stop_managed_service_workloads(
+    workloads: &[Workload],
+    quadlet_dir: &Path,
+) -> Result<(), ApplyError> {
     for workload in workloads {
-        if matches!(workload.quadlet_type, QuadletType::Container | QuadletType::Pod) {
-            let unit = unit_name_for_start_stop(workloads, quadlet_dir, &workload.systemd_unit_name)?;
+        if matches!(
+            workload.quadlet_type,
+            QuadletType::Container | QuadletType::Pod
+        ) {
+            let unit =
+                unit_name_for_start_stop(workloads, quadlet_dir, &workload.systemd_unit_name)?;
             run_systemctl_allow_not_loaded(&["stop", &unit])?;
         }
     }
@@ -383,10 +554,7 @@ fn is_mount_target_active(target_path: &str) -> bool {
     })
 }
 
-fn find_workload<'a>(
-    workloads: &'a [Workload],
-    name: &str,
-) -> Result<&'a Workload, ApplyError> {
+fn find_workload<'a>(workloads: &'a [Workload], name: &str) -> Result<&'a Workload, ApplyError> {
     workloads
         .iter()
         .find(|workload| workload.systemd_unit_name == name || workload.name == name)
@@ -420,7 +588,6 @@ fn run_systemctl_allow_not_loaded(args: &[&str]) -> Result<(), ApplyError> {
     }
     Err(ApplyError::SystemdCommandFailed(stderr.to_string()))
 }
-
 
 fn unit_name_for_start_stop(
     workloads: &[Workload],

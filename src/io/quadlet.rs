@@ -1,9 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::core::unit::{render_automount_unit, render_mount_unit};
 use crate::core::types::MountDeclaration;
 use crate::core::types::{EnabledState, QuadletType, RestartPolicy, Workload};
+use crate::core::unit::{render_automount_unit, render_mount_unit};
 
 pub(crate) const SOCKET_MANAGED_MARKER: &str = "# managed-by: core-ops";
 

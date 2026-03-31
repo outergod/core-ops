@@ -26,12 +26,13 @@ fn init_git_repo(repo: &PathBuf) -> String {
 
     let quadlets = repo.join("quadlets");
     fs::create_dir_all(&quadlets).expect("create quadlets");
-    fs::write(quadlets.join("alpha.container"), "[Container]\nImage=alpine")
-        .expect("write container");
-    fs::write(quadlets.join("beta.socket"), "[Socket]\nListenStream=8080")
-        .expect("write socket");
-    fs::write(quadlets.join("gamma.volume"), "[Volume]\nDriver=local")
-        .expect("write volume");
+    fs::write(
+        quadlets.join("alpha.container"),
+        "[Container]\nImage=alpine",
+    )
+    .expect("write container");
+    fs::write(quadlets.join("beta.socket"), "[Socket]\nListenStream=8080").expect("write socket");
+    fs::write(quadlets.join("gamma.volume"), "[Volume]\nDriver=local").expect("write volume");
 
     std::process::Command::new("git")
         .arg("-C")
@@ -75,7 +76,8 @@ fn plan_orders_volume_before_container_before_socket() {
     let deps = ReconcileDependencies {
         load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
         read_observed: &|desired| {
-            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string())).map_err(map_io_error)
+            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string()))
+                .map_err(map_io_error)
         },
         apply_plan: &|plan, desired| {
             apply_plan(plan, &desired.workloads, &host_quadlets, false)

@@ -3,11 +3,11 @@ use std::path::Path;
 
 use crate::core::errors::EvaluationError;
 use crate::core::types::{
-    ConfigFileSource, DropInSource, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn,
-    EvaluationInput, ManagedObjectKind, MountDependency, MountDeclaration, MountVerificationMode,
-    NormalizedManagedObject, NormalizedSnapshot, PathDependencyMode, PreparedTargetPath, QuadletType,
-    ServiceDependencyEdit, UnitDependencyMode,
-    automount_unit_name_for_path, mount_unit_name_for_path,
+    automount_unit_name_for_path, mount_unit_name_for_path, ConfigFileSource, DropInSource,
+    EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn, EvaluationInput, ManagedObjectKind,
+    MountDeclaration, MountDependency, MountVerificationMode, NormalizedManagedObject,
+    NormalizedSnapshot, PathDependencyMode, PreparedTargetPath, QuadletType, ServiceDependencyEdit,
+    UnitDependencyMode,
 };
 use crate::core::unit::apply_service_mount_dependencies;
 
@@ -174,10 +174,7 @@ fn directive_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
         .map(|value| value.trim_start_matches('-'))
 }
 
-fn config_refs_for_path(
-    path: &str,
-    managed_configs: &BTreeSet<&str>,
-) -> Vec<String> {
+fn config_refs_for_path(path: &str, managed_configs: &BTreeSet<&str>) -> Vec<String> {
     if path.starts_with('/') && managed_configs.contains(path) {
         vec![path.to_string()]
     } else {
@@ -185,10 +182,7 @@ fn config_refs_for_path(
     }
 }
 
-fn config_refs_for_root(
-    root: &str,
-    managed_configs: &BTreeSet<&str>,
-) -> Vec<String> {
+fn config_refs_for_root(root: &str, managed_configs: &BTreeSet<&str>) -> Vec<String> {
     if !root.starts_with('/') {
         return Vec::new();
     }
@@ -226,15 +220,16 @@ fn unit_refs_for_list(value: &str, workload_ids: &BTreeSet<&str>) -> Vec<String>
         .collect()
 }
 
-pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutput, EvaluationError> {
+pub fn evaluate_desired_state(
+    input: &EvaluationInput,
+) -> Result<EvaluationOutput, EvaluationError> {
     let mut artifacts = Vec::new();
     let mut socket_dropins = Vec::new();
     for service_name in &input.host.services {
-        let service = input
-            .catalog
-            .services
-            .get(service_name)
-            .ok_or_else(|| EvaluationError::new(format!("missing service: {}", service_name)))?;
+        let service =
+            input.catalog.services.get(service_name).ok_or_else(|| {
+                EvaluationError::new(format!("missing service: {}", service_name))
+            })?;
         for artifact in &service.artifacts {
             let mut contents = artifact.contents.clone();
             let mut source_layers = vec![artifact.source_path.clone()];
@@ -288,7 +283,10 @@ pub fn evaluate_desired_state(input: &EvaluationInput) -> Result<EvaluationOutpu
         .collect();
 
     for artifact in &mut artifacts {
-        if !matches!(artifact.quadlet_type, QuadletType::Container | QuadletType::Pod) {
+        if !matches!(
+            artifact.quadlet_type,
+            QuadletType::Container | QuadletType::Pod
+        ) {
             continue;
         }
         if let Some(service_name) = service_name_from_layers(&artifact.source_layers) {
@@ -447,11 +445,17 @@ fn mount_ids_for_service_artifacts(
         .collect::<BTreeMap<_, _>>();
     let automount_units = declaration_map
         .values()
-        .filter_map(|decl| decl.automount_unit_name().map(|unit| (unit, decl.id.as_str())))
+        .filter_map(|decl| {
+            decl.automount_unit_name()
+                .map(|unit| (unit, decl.id.as_str()))
+        })
         .collect::<BTreeMap<_, _>>();
 
     for artifact in artifacts {
-        if !matches!(artifact.quadlet_type, QuadletType::Container | QuadletType::Pod) {
+        if !matches!(
+            artifact.quadlet_type,
+            QuadletType::Container | QuadletType::Pod
+        ) {
             continue;
         }
         for raw_line in artifact.contents.lines() {
@@ -460,17 +464,22 @@ fn mount_ids_for_service_artifacts(
                 for consumed_path in value.split_whitespace() {
                     for declaration in declaration_map.values() {
                         if consumed_path == declaration.target_path
-                            || consumed_path.starts_with(&format!("{}/", declaration.target_path.trim_end_matches('/')))
+                            || consumed_path.starts_with(&format!(
+                                "{}/",
+                                declaration.target_path.trim_end_matches('/')
+                            ))
                         {
                             mount_ids.insert(declaration.id.clone());
                         }
                     }
                 }
-            } else if let Some(value) = directive_value(line, "After")
-                .or_else(|| directive_value(line, "Requires"))
+            } else if let Some(value) =
+                directive_value(line, "After").or_else(|| directive_value(line, "Requires"))
             {
                 for unit in value.split_whitespace() {
-                    if let Some(mount_id) = mount_units.get(unit).or_else(|| automount_units.get(unit)) {
+                    if let Some(mount_id) =
+                        mount_units.get(unit).or_else(|| automount_units.get(unit))
+                    {
                         mount_ids.insert((*mount_id).to_string());
                     }
                 }
@@ -634,7 +643,8 @@ impl ParsedManagedMount {
             Some(artifact) => {
                 let sections = parse_sections(&artifact.contents);
                 validate_x_coreops_keys(&sections, &[], &artifact.name)?;
-                let where_path = required_section_value(&sections, "Automount", "Where", &artifact.name)?;
+                let where_path =
+                    required_section_value(&sections, "Automount", "Where", &artifact.name)?;
                 if where_path != self.target_path {
                     return Err(EvaluationError::new(format!(
                         "automount Where does not match mount target: {} != {}",
@@ -713,7 +723,10 @@ fn section_value(
     section: &str,
     key: &str,
 ) -> Option<String> {
-    sections.get(section).and_then(|values| values.get(key)).cloned()
+    sections
+        .get(section)
+        .and_then(|values| values.get(key))
+        .cloned()
 }
 
 fn section_bool_value(
@@ -729,7 +742,7 @@ fn section_bool_value(
 fn parse_prepared_path(
     sections: &BTreeMap<String, BTreeMap<String, String>>,
     target_path: &str,
- ) -> Option<PreparedTargetPath> {
+) -> Option<PreparedTargetPath> {
     Some(PreparedTargetPath {
         path: target_path.to_string(),
         create_if_missing: section_bool_value(sections, "X-CoreOps", "CreateMountpoint")

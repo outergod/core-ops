@@ -22,8 +22,11 @@ fn init_git_repo(repo: &PathBuf) -> String {
 
     let quadlets = repo.join("quadlets");
     std::fs::create_dir_all(&quadlets).expect("create quadlets");
-    std::fs::write(quadlets.join("alpha.container"), "[Container]\nImage=alpine")
-        .expect("write quadlet");
+    std::fs::write(
+        quadlets.join("alpha.container"),
+        "[Container]\nImage=alpine",
+    )
+    .expect("write quadlet");
 
     std::process::Command::new("git")
         .arg("-C")
@@ -86,12 +89,80 @@ fn ignores_dotfiles_and_warns_on_unknown_extensions() {
     let rev = init_git_repo(&repo);
     let quadlets = repo.join("quadlets");
 
-    std::fs::write(quadlets.join(".ignored.container"), "[Container]\nImage=alpine")
-        .expect("write dotfile");
+    std::fs::write(
+        quadlets.join(".ignored.container"),
+        "[Container]\nImage=alpine",
+    )
+    .expect("write dotfile");
     std::fs::write(quadlets.join("readme.txt"), "ignore me").expect("write unknown");
 
     let desired = load_desired_state(repo.to_str().unwrap(), &rev).expect("load desired");
 
     assert_eq!(desired.workloads.len(), 1);
     assert_eq!(desired.workloads[0].name, "alpha");
+}
+
+#[test]
+fn layered_repo_preserves_requested_repository_and_ref() {
+    let repo = temp_repo();
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(&repo)
+        .output()
+        .expect("git init");
+    let services = repo.join("services").join("demo").join("quadlet");
+    let hosts = repo.join("hosts").join("uat");
+    std::fs::create_dir_all(&services).expect("create services");
+    std::fs::create_dir_all(&hosts).expect("create hosts");
+    std::fs::write(
+        services.join("whoami.container"),
+        "[Container]\nImage=quay.io/podman/hello",
+    )
+    .expect("write service quadlet");
+    std::fs::write(hosts.join("host.yaml"), "host: uat\nservices:\n  - demo\n")
+        .expect("write host yaml");
+
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .arg("add")
+        .arg(".")
+        .output()
+        .expect("git add");
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .arg("commit")
+        .arg("-m")
+        .arg("layered fixture")
+        .env("GIT_AUTHOR_NAME", "fixture")
+        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
+        .env("GIT_COMMITTER_NAME", "fixture")
+        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
+        .output()
+        .expect("git commit");
+
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output()
+        .expect("git rev-parse");
+    let rev = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .arg("branch")
+        .arg("demo-uat-v2")
+        .output()
+        .expect("git branch");
+
+    std::env::set_var("CORE_OPS_HOST", "uat");
+    let desired = load_desired_state(repo.to_str().unwrap(), "demo-uat-v2").expect("load desired");
+    std::env::remove_var("CORE_OPS_HOST");
+
+    assert_eq!(desired.revision_id, rev);
+    assert_eq!(desired.requested_repository.as_deref(), repo.to_str());
+    assert_eq!(desired.requested_ref.as_deref(), Some("demo-uat-v2"));
 }

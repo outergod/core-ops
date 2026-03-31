@@ -184,7 +184,8 @@ fn reusable_mount_declarations_support_layered_native_overrides_and_service_depe
         .contains("After=var-lib-immich-media.automount var-lib-immich-media.mount"));
 
     std::env::set_var("CORE_OPS_HOST", "invalid");
-    let err = load_desired_state(repo.to_str().expect("repo str"), &rev).expect_err("invalid override");
+    let err =
+        load_desired_state(repo.to_str().expect("repo str"), &rev).expect_err("invalid override");
     assert!(err
         .to_string()
         .contains("mount unit name does not match Mount Where"));
@@ -258,7 +259,8 @@ Id=immich-media
     let _guard = HostGuard(previous);
     std::env::set_var("CORE_OPS_HOST", "alpha");
 
-    let err = load_desired_state(repo.to_str().expect("repo str"), &rev).expect_err("invalid field");
+    let err =
+        load_desired_state(repo.to_str().expect("repo str"), &rev).expect_err("invalid field");
     assert!(err.to_string().contains("unsupported X-CoreOps field"));
 }
 
