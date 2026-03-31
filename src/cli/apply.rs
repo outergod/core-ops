@@ -3,8 +3,9 @@ use std::path::Path;
 
 use crate::cli::report::{
     build_result_output, format_apply_output_json, format_apply_output_report,
-    format_result_output_json, format_result_output_report, format_rollback_report, ApplyHumanMode,
-    ApplyInteractiveEvent, ApplyProgressRenderer, ApplyRunDisplayState,
+    format_result_output_json, format_result_output_report, format_rollback_report,
+    format_rollback_report_json, ApplyHumanMode, ApplyInteractiveEvent, ApplyProgressRenderer,
+    ApplyRunDisplayState,
 };
 use crate::core::errors::CoreError;
 use crate::core::evaluate::build_desired_snapshot_from_state;
@@ -683,7 +684,19 @@ pub fn execute_rollback_with_report(
         read_observed_state(quadlet_dir, Some(&desired), None).map_err(map_plan_error)?;
     let actual =
         build_observed_snapshot(&observed, Some(&desired), &scope_id_for_observed(&observed));
-    let preview = rollback_with_report(&deterministic_state_path, target_revision_id, &actual)?;
+    let rollback_state = read_deterministic_state(&deterministic_state_path)
+        .map_err(map_apply_error)?
+        .ok_or_else(|| {
+            CoreError::new(
+                FailureClass::Apply,
+                "deterministic rollback state is absent",
+            )
+        })?;
+    let rollback_preview =
+        reconcile_rollback(&rollback_state, &actual.scope_id, target_revision_id, &actual)?;
+    let preview = format_rollback_report(&rollback_preview.target, &rollback_preview.plan);
+    let preview_json =
+        format_rollback_report_json(&rollback_preview.target, &rollback_preview.plan);
 
     if plan_only {
         let run = ReconcileRun {
@@ -715,9 +728,9 @@ pub fn execute_rollback_with_report(
                 })?
                 .plan,
             },
-            human_report: preview,
-            verbose_report: String::new(),
-            machine_report: String::new(),
+            human_report: preview.clone(),
+            verbose_report: preview,
+            machine_report: preview_json,
             result_report: String::new(),
             result_machine_report: String::new(),
             plan: reconcile_plan(&ReconcileDependencies {

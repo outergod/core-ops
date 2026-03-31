@@ -397,6 +397,15 @@ fn rollback_plan_only_executes_the_reachable_cli_helper() {
         format!("rollback plan ready for {}", rev1)
     );
     assert!(output.human_report.contains("rollback target="));
+    assert_eq!(output.verbose_report, output.human_report);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&output.machine_report).expect("parse rollback plan json");
+    assert_eq!(parsed["view_kind"].as_str(), Some("rollback_plan"));
+    assert_eq!(
+        parsed["target"]["target_revision_id"].as_str(),
+        Some(rev1.as_str())
+    );
+    assert_eq!(parsed["plan"]["view_kind"].as_str(), Some("plan"));
     assert!(output.human_report.contains("Plan for host kadath @ "));
 }
 

@@ -2989,6 +2989,23 @@ pub fn format_rollback_report(
     output
 }
 
+pub fn format_rollback_report_json(
+    target: &RollbackTargetCandidate,
+    plan: &DeterministicReconciliationPlan,
+) -> String {
+    serde_json::json!({
+        "view_kind": "rollback_plan",
+        "target": {
+            "target_revision_id": target.target_revision_id,
+            "eligibility": format!("{:?}", target.eligibility).to_lowercase(),
+            "reason": target.reason,
+            "scope_id": target.scope_id,
+        },
+        "plan": build_plan_output(plan),
+    })
+    .to_string()
+}
+
 fn quadlet_type_label(quadlet_type: Option<QuadletType>) -> &'static str {
     match quadlet_type {
         Some(QuadletType::Container) => "container",
