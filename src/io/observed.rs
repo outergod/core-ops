@@ -322,9 +322,8 @@ fn read_systemd_units(workloads: &[Workload]) -> Result<Vec<ObservedUnit>, Obser
             continue;
         }
         let unit_name = systemd_unit_for_quadlet_file(&workload.systemd_unit_name);
-        match query_unit_state(&unit_name)? {
-            Some(unit) => units.push(unit),
-            None => {}
+        if let Some(unit) = query_unit_state(&unit_name)? {
+            units.push(unit);
         }
     }
 

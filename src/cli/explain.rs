@@ -85,7 +85,9 @@ pub fn explain(
     );
     let mut deterministic = reconcile_deterministic_plan_with_runtime(
         &desired_snapshot,
-        last_applied_snapshot.as_ref().map(|snapshot| &snapshot.snapshot),
+        last_applied_snapshot
+            .as_ref()
+            .map(|snapshot| &snapshot.snapshot),
         &observed_snapshot,
         &verification_results,
     )?
@@ -101,13 +103,14 @@ pub fn explain(
     deterministic.last_applied_requested_ref = last_applied_snapshot
         .as_ref()
         .and_then(|snapshot| snapshot.requested_ref.clone());
-    let explain = build_explain_output(&deterministic, &verification_results, None, object_selector)
-        .ok_or_else(|| {
-            CoreError::new(
-                crate::core::types::FailureClass::Plan,
-                format!("managed object not found: {object_selector}"),
-            )
-        })?;
+    let explain =
+        build_explain_output(&deterministic, &verification_results, None, object_selector)
+            .ok_or_else(|| {
+                CoreError::new(
+                    crate::core::types::FailureClass::Plan,
+                    format!("managed object not found: {object_selector}"),
+                )
+            })?;
     Ok(ExplainCommandOutput {
         human: format_explain_output_report(&explain),
         machine: format_explain_output_json(&explain),
@@ -225,8 +228,8 @@ mod tests {
             )
         );
 
-        let partial = resolve_explain_target(Some("file:///override"), None)
-            .expect("resolve mixed target");
+        let partial =
+            resolve_explain_target(Some("file:///override"), None).expect("resolve mixed target");
         assert_eq!(
             partial,
             ("file:///override".to_string(), "demo-uat-v1".to_string())

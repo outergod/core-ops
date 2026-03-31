@@ -1,13 +1,13 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::integration::env_lock::path_lock;
 use core_ops::cli::apply::{apply_with_report, apply_with_report_streaming};
 use core_ops::cli::report::{
-    build_apply_output, build_result_output, format_apply_output_report, format_result_output_report,
-    render_apply_output_from_events, ApplyHumanMode, ApplyInteractiveEvent, ApplyProgressRenderer,
-    ApplyRunDisplayState,
+    build_apply_output, build_result_output, format_apply_output_report,
+    format_result_output_report, render_apply_output_from_events, ApplyHumanMode,
+    ApplyInteractiveEvent, ApplyProgressRenderer, ApplyRunDisplayState,
 };
 use core_ops::core::types::{
     ConvergenceStatus, DependencyEdgeKind, DeterministicActionClass,
@@ -34,7 +34,7 @@ fn strip_ansi(value: &str) -> String {
     while let Some(ch) = chars.next() {
         if ch == '\u{1b}' && chars.peek() == Some(&'[') {
             chars.next();
-            while let Some(next) = chars.next() {
+            for next in chars.by_ref() {
                 if next.is_ascii_alphabetic() {
                     break;
                 }
@@ -92,7 +92,7 @@ fn init_git_repo(repo: &PathBuf) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn write_systemctl_stub(dir: &PathBuf, log_path: &PathBuf) -> PathBuf {
+fn write_systemctl_stub(dir: &Path, log_path: &Path) -> PathBuf {
     let bin_path = dir.join("systemctl");
     let script = format!(
         "#!/bin/sh\n\n\
@@ -625,10 +625,8 @@ fn apply_header_renders_requested_ref_secondarily_when_meaningful() {
         ApplyRunDisplayState::Managed,
     );
 
-    assert!(
-        strip_ansi(&rendered)
-            .contains("Apply for host alpha @ 221145e6 (demo-uat-v1) → 454ac5f1 (demo-uat-v2)")
-    );
+    assert!(strip_ansi(&rendered)
+        .contains("Apply for host alpha @ 221145e6 (demo-uat-v1) → 454ac5f1 (demo-uat-v2)"));
 }
 
 #[test]
@@ -780,8 +778,11 @@ fn apply_interactive_finish_event_starts_on_a_new_line_before_summary() {
         },
     };
 
-    let mut renderer =
-        ApplyProgressRenderer::new(&plan, ApplyHumanMode::Default, ApplyRunDisplayState::Managed);
+    let mut renderer = ApplyProgressRenderer::new(
+        &plan,
+        ApplyHumanMode::Default,
+        ApplyRunDisplayState::Managed,
+    );
     let event = renderer.finish_interactive(&[], None);
 
     match event {
@@ -872,9 +873,18 @@ fn result_view_preserves_plan_and_apply_continuity() {
 
     assert_eq!(result.entries.len(), 2);
     assert_eq!(result.entries[0].object.display_id, "config/etc/demo.conf");
-    assert_eq!(result.entries[1].object.display_id, "container/frontend.container");
-    assert_eq!(apply.events[2].object.display_id, result.entries[0].object.display_id);
-    assert_eq!(apply.events[5].object.display_id, result.entries[1].object.display_id);
+    assert_eq!(
+        result.entries[1].object.display_id,
+        "container/frontend.container"
+    );
+    assert_eq!(
+        apply.events[2].object.display_id,
+        result.entries[0].object.display_id
+    );
+    assert_eq!(
+        apply.events[5].object.display_id,
+        result.entries[1].object.display_id
+    );
     assert!(rendered.contains("Result for host alpha @ rev-1 → rev-2"));
     assert!(rendered.contains("updated"));
     assert!(rendered.contains("recovered"));

@@ -39,7 +39,7 @@ fn workload_key_is_name() {
 
 #[test]
 fn invariants_can_be_listed_explicitly() {
-    let invariants = vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan];
+    let invariants = [Invariant::BoundariesDeclared, Invariant::DeterministicPlan];
 
     assert!(invariants.contains(&Invariant::BoundariesDeclared));
     assert!(invariants.contains(&Invariant::DeterministicPlan));

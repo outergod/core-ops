@@ -1,9 +1,9 @@
+use core_ops::cli::report::{build_result_output, format_result_output_report};
 use core_ops::core::types::{
     Boundaries, BoundaryScope, ConvergenceStatus, DesiredState, DeterministicConvergenceRecord,
     Invariant, NormalizedSnapshot, ReconciliationProvenance, ReconciliationStatus,
     RetainedAppliedSnapshot, RollbackEligibility,
 };
-use core_ops::cli::report::{build_result_output, format_result_output_report};
 use core_ops::core::validation::validate_desired_state;
 use core_ops::io::state::{resolve_rollback_target, retain_successful_snapshot};
 
@@ -189,8 +189,14 @@ fn result_output_rendering_preserves_outcome_and_object_order() {
     let result = build_result_output(&plan, &[], Some(&convergence));
     let rendered = format_result_output_report(&result);
 
-    assert_eq!(result.entries[0].object.display_id, "container/alpha.container");
-    assert_eq!(result.entries[1].object.display_id, "container/beta.container");
+    assert_eq!(
+        result.entries[0].object.display_id,
+        "container/alpha.container"
+    );
+    assert_eq!(
+        result.entries[1].object.display_id,
+        "container/beta.container"
+    );
     assert!(rendered.contains("Outcome: converged"));
     assert!(rendered.contains("container/alpha.container"));
     assert!(rendered.contains("container/beta.container"));

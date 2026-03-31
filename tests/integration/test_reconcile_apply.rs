@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::integration::env_lock::path_lock;
@@ -75,7 +75,7 @@ fn init_git_repo(repo: &PathBuf) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn write_systemctl_stub(dir: &PathBuf, log_path: &PathBuf) -> PathBuf {
+fn write_systemctl_stub(dir: &Path, log_path: &Path) -> PathBuf {
     let bin_path = dir.join("systemctl");
     let script = format!(
         r#"#!/bin/sh
@@ -108,11 +108,7 @@ esac
     bin_path
 }
 
-fn write_recovery_systemctl_stub(
-    dir: &PathBuf,
-    log_path: &PathBuf,
-    active_path: &PathBuf,
-) -> PathBuf {
+fn write_recovery_systemctl_stub(dir: &Path, log_path: &Path, active_path: &Path) -> PathBuf {
     let bin_path = dir.join("systemctl");
     let script = format!(
         r#"#!/bin/sh

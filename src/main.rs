@@ -100,55 +100,53 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                     state_file.clone(),
                     rollback_plan_only,
                 )?
+            } else if json {
+                apply_cmd::apply_with_report(
+                    &repo_source,
+                    &rev,
+                    &quadlet_dir,
+                    !no_reload,
+                    state_file.clone(),
+                )?
             } else {
-                if json {
-                    apply_cmd::apply_with_report(
+                let stdout = io::stdout();
+                let interactive = stdout.is_terminal();
+                streamed_human_output = true;
+                let mode = if verbose {
+                    core_ops::cli::report::ApplyHumanMode::Verbose
+                } else {
+                    core_ops::cli::report::ApplyHumanMode::Default
+                };
+                if interactive {
+                    let mut handle = io::stdout();
+                    let mut spinner = InteractiveApplyDisplay::new();
+                    let output = apply_cmd::apply_with_report_streaming_interactive(
                         &repo_source,
                         &rev,
                         &quadlet_dir,
                         !no_reload,
                         state_file.clone(),
-                    )?
+                        mode,
+                        |event| {
+                            let _ = spinner.render(&mut handle, event);
+                        },
+                    )?;
+                    let _ = spinner.finish(&mut handle);
+                    output
                 } else {
-                    let stdout = io::stdout();
-                    let interactive = stdout.is_terminal();
-                    streamed_human_output = true;
-                    let mode = if verbose {
-                        core_ops::cli::report::ApplyHumanMode::Verbose
-                    } else {
-                        core_ops::cli::report::ApplyHumanMode::Default
-                    };
-                    if interactive {
-                        let mut handle = io::stdout();
-                        let mut spinner = InteractiveApplyDisplay::new();
-                        let output = apply_cmd::apply_with_report_streaming_interactive(
-                            &repo_source,
-                            &rev,
-                            &quadlet_dir,
-                            !no_reload,
-                            state_file.clone(),
-                            mode,
-                            |event| {
-                                let _ = spinner.render(&mut handle, event);
-                            },
-                        )?;
-                        let _ = spinner.finish(&mut handle);
-                        output
-                    } else {
-                        let mut handle = stdout.lock();
-                        apply_cmd::apply_with_report_streaming(
-                            &repo_source,
-                            &rev,
-                            &quadlet_dir,
-                            !no_reload,
-                            state_file.clone(),
-                            mode,
-                            |chunk| {
-                                let _ = handle.write_all(chunk.as_bytes());
-                                let _ = handle.flush();
-                            },
-                        )?
-                    }
+                    let mut handle = stdout.lock();
+                    apply_cmd::apply_with_report_streaming(
+                        &repo_source,
+                        &rev,
+                        &quadlet_dir,
+                        !no_reload,
+                        state_file.clone(),
+                        mode,
+                        |chunk| {
+                            let _ = handle.write_all(chunk.as_bytes());
+                            let _ = handle.flush();
+                        },
+                    )?
                 }
             };
             let run = output.result.run.clone();
@@ -242,7 +240,9 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let (repo_source, revision) =
                 explain_cmd::resolve_explain_target(args.repo.as_deref(), args.rev.as_deref())?;
             let deps = ReconcileDependencies {
-                load_desired: &|| repo::load_desired_state(&repo_source, &revision).map_err(map_plan_error),
+                load_desired: &|| {
+                    repo::load_desired_state(&repo_source, &revision).map_err(map_plan_error)
+                },
                 read_observed: &|desired| {
                     observed::read_observed_state(&args.quadlet_dir, Some(desired), None)
                         .map_err(map_plan_error)

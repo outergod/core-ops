@@ -6,8 +6,8 @@ use crate::core::types::{
     ApplyOutputView, ApplyPhaseEvent, ApplyPhaseKind, Cause, CauseKind, DependencyEdgeView,
     DependencyRelation, DeterministicActionClass, DeterministicConvergenceRecord,
     DeterministicReconciliationPlan, DiffItem, ExecutionEvent, ExecutionEventKind, ExecutionState,
-    ExplainDependencyView, ExplainOutputView, ManagedObjectKind, ManagedObjectRef, PhaseState, PlanEntry,
-    PlanEntryAction, PlanOutputView, PlanSummaryView, QuadletType, ReconcileRun,
+    ExplainDependencyView, ExplainOutputView, ManagedObjectKind, ManagedObjectRef, PhaseState,
+    PlanEntry, PlanEntryAction, PlanOutputView, PlanSummaryView, QuadletType, ReconcileRun,
     ReconciliationPlan, ResultEntry, ResultFinalState, ResultOutcome, ResultOutputView,
     ResultSummaryView, RevisionContext, RollbackTargetCandidate, SemanticDiffKind,
     SemanticDiffView, VerificationResult,
@@ -399,7 +399,10 @@ pub fn format_result_output_report(view: &ResultOutputView) -> String {
         summary_heading,
         color_reset(),
     ));
-    output.push_str(&format!("{}\n", "─".repeat(summary_heading.chars().count())));
+    output.push_str(&format!(
+        "{}\n",
+        "─".repeat(summary_heading.chars().count())
+    ));
     output.push_str(&format!(
         "{}\nOutcome: {}\n",
         result_summary_line(&view.summary),
@@ -527,10 +530,7 @@ pub fn format_explain_output_report(view: &ExplainOutputView) -> String {
                     let is_last = index + 1 == related.len();
                     let branch = if is_last { "  └─" } else { "  ├─" };
                     let continuation = if is_last { "     " } else { "  │  " };
-                    output.push_str(&format!(
-                        "{branch} {}\n",
-                        dependency.object.display_id
-                    ));
+                    output.push_str(&format!("{branch} {}\n", dependency.object.display_id));
                     output.push_str(&format!("{continuation}state: {}\n", dependency.state));
                     output.push_str(&format!("{continuation}reason: {}\n", dependency.reason));
                 }
@@ -1239,13 +1239,21 @@ fn default_explain_reason(entry: &ResultEntry) -> String {
         Some(PlanEntryAction::NoOp) => "declarative state matches desired state".to_string(),
         Some(PlanEntryAction::Recover) => "runtime reconciliation is required".to_string(),
         Some(PlanEntryAction::Restart) => "a prerequisite change requires reactivation".to_string(),
-        Some(PlanEntryAction::Create) => "this object does not yet exist in the desired state".to_string(),
+        Some(PlanEntryAction::Create) => {
+            "this object does not yet exist in the desired state".to_string()
+        }
         Some(PlanEntryAction::Update | PlanEntryAction::Replace) => {
             "declarative state differs from the desired state".to_string()
         }
-        Some(PlanEntryAction::Delete) => "this object is no longer present in the desired state".to_string(),
-        Some(PlanEntryAction::Blocked) => "a blocking prerequisite prevents reconciliation".to_string(),
-        Some(PlanEntryAction::Skipped) => "an earlier failure prevented safe reconciliation".to_string(),
+        Some(PlanEntryAction::Delete) => {
+            "this object is no longer present in the desired state".to_string()
+        }
+        Some(PlanEntryAction::Blocked) => {
+            "a blocking prerequisite prevents reconciliation".to_string()
+        }
+        Some(PlanEntryAction::Skipped) => {
+            "an earlier failure prevented safe reconciliation".to_string()
+        }
         None if matches!(entry.final_state, ResultFinalState::NoOp) => {
             "declarative state matches desired state".to_string()
         }
@@ -1306,9 +1314,7 @@ fn format_explain_context(view: &ExplainOutputView) -> Option<String> {
             "Last:   {}",
             crate::cli::status::render_previous_revision_with_requested_ref(
                 previous,
-                view.revision_context
-                    .last_applied_requested_ref
-                    .as_deref(),
+                view.revision_context.last_applied_requested_ref.as_deref(),
             )
         ));
     }
@@ -1342,7 +1348,10 @@ fn explain_apply_intent(entry: &ResultEntry, has_convergence: bool) -> String {
             "CoreOps will not act on this object in the current plan.".to_string()
         }
         (true, _, ResultFinalState::Succeeded) => {
-            format!("CoreOps applied this object and reported it as {}.", result_label(entry))
+            format!(
+                "CoreOps applied this object and reported it as {}.",
+                result_label(entry)
+            )
         }
         (true, _, ResultFinalState::Failed) => {
             "CoreOps attempted reconciliation, but this object did not converge.".to_string()
@@ -1355,10 +1364,17 @@ fn explain_apply_intent(entry: &ResultEntry, has_convergence: bool) -> String {
             "CoreOps skipped this object because an earlier failure prevented safe progress."
                 .to_string()
         }
-        (true, _, ResultFinalState::NoOp) => "no action was needed in the last apply run".to_string(),
-        (false, None, ResultFinalState::Succeeded | ResultFinalState::Failed | ResultFinalState::Blocked | ResultFinalState::Skipped) => {
-            "CoreOps has no planned action recorded for this object.".to_string()
+        (true, _, ResultFinalState::NoOp) => {
+            "no action was needed in the last apply run".to_string()
         }
+        (
+            false,
+            None,
+            ResultFinalState::Succeeded
+            | ResultFinalState::Failed
+            | ResultFinalState::Blocked
+            | ResultFinalState::Skipped,
+        ) => "CoreOps has no planned action recorded for this object.".to_string(),
     }
 }
 
@@ -1390,7 +1406,10 @@ fn explain_summary(entry: &ResultEntry, has_convergence: bool) -> String {
 
 fn explain_metadata(entry: &ResultEntry) -> BTreeMap<String, String> {
     let mut metadata = BTreeMap::new();
-    metadata.insert("resource_type".to_string(), entry.object.resource_type.clone());
+    metadata.insert(
+        "resource_type".to_string(),
+        entry.object.resource_type.clone(),
+    );
     metadata.insert("managed_name".to_string(), entry.object.name.clone());
     metadata.insert(
         "runtime_unit".to_string(),
@@ -1408,7 +1427,10 @@ fn explain_metadata(entry: &ResultEntry) -> BTreeMap<String, String> {
 fn explain_x_coreops(entry: &ResultEntry) -> Option<BTreeMap<String, serde_json::Value>> {
     if entry.object.name.ends_with(".mount") || entry.object.name.ends_with(".automount") {
         let mut map = BTreeMap::new();
-        map.insert("CreateMountpoint".to_string(), serde_json::Value::Bool(true));
+        map.insert(
+            "CreateMountpoint".to_string(),
+            serde_json::Value::Bool(true),
+        );
         return Some(map);
     }
     None
@@ -1673,8 +1695,6 @@ fn inferred_kind_for_missing_dependency(object_id: &str) -> ManagedObjectKind {
         || object_id.ends_with(".socket")
     {
         ManagedObjectKind::QuadletResource
-    } else if object_id.ends_with(".service") {
-        ManagedObjectKind::GeneratedUnit
     } else {
         ManagedObjectKind::GeneratedUnit
     }
@@ -1889,15 +1909,19 @@ pub fn inspect_plan_dependencies(
             .map(|object| object.name)
             .collect::<BTreeSet<_>>();
         let object_kinds = object_kind_by_id(&plan.graph);
-        edges.extend(action.dependency_context.iter().filter_map(|dependency| {
-            (!direct_ids.contains(dependency)).then(|| DependencyEdgeView {
-                relation: DependencyRelation::Blocker,
-                object: object_kinds
-                    .get(dependency.as_str())
-                    .map(|kind| managed_object_ref(dependency, kind))
-                    .unwrap_or_else(|| inferred_managed_object_ref(dependency)),
-            })
-        }));
+        edges.extend(
+            action
+                .dependency_context
+                .iter()
+                .filter(|dependency| !direct_ids.contains(*dependency))
+                .map(|dependency| DependencyEdgeView {
+                    relation: DependencyRelation::Blocker,
+                    object: object_kinds
+                        .get(dependency.as_str())
+                        .map(|kind| managed_object_ref(dependency, kind))
+                        .unwrap_or_else(|| inferred_managed_object_ref(dependency)),
+                }),
+        );
     }
     edges.extend(
         dependent_refs(&plan.graph, object_id)
@@ -2064,76 +2088,20 @@ pub fn format_deterministic_plan_report_with_options_and_state(
     let mut output = String::new();
     output.push_str(&format!("{}{}{}\n", color_header(), header, color_reset(),));
     output.push_str(&format!("{}\n", "─".repeat(header.chars().count())));
-    render_group(
-        &mut output,
+    let context = RenderGroupContext {
         plan,
-        &view.entries,
-        &entry_by_name,
+        entries: &view.entries,
+        entry_by_name: &entry_by_name,
         label_column,
-        PlanEntryAction::Create,
-        "Create",
         verbose,
-    );
-    render_group(
-        &mut output,
-        plan,
-        &view.entries,
-        &entry_by_name,
-        label_column,
-        PlanEntryAction::Update,
-        "Update",
-        verbose,
-    );
-    render_group(
-        &mut output,
-        plan,
-        &view.entries,
-        &entry_by_name,
-        label_column,
-        PlanEntryAction::Recover,
-        "Recover",
-        verbose,
-    );
-    render_group(
-        &mut output,
-        plan,
-        &view.entries,
-        &entry_by_name,
-        label_column,
-        PlanEntryAction::Restart,
-        "Restart",
-        verbose,
-    );
-    render_group(
-        &mut output,
-        plan,
-        &view.entries,
-        &entry_by_name,
-        label_column,
-        PlanEntryAction::Blocked,
-        "Blocked",
-        verbose,
-    );
-    render_group(
-        &mut output,
-        plan,
-        &view.entries,
-        &entry_by_name,
-        label_column,
-        PlanEntryAction::Delete,
-        "Delete",
-        verbose,
-    );
-    render_group(
-        &mut output,
-        plan,
-        &view.entries,
-        &entry_by_name,
-        label_column,
-        PlanEntryAction::NoOp,
-        "Unchanged",
-        verbose,
-    );
+    };
+    render_group(&mut output, &context, PlanEntryAction::Create, "Create");
+    render_group(&mut output, &context, PlanEntryAction::Update, "Update");
+    render_group(&mut output, &context, PlanEntryAction::Recover, "Recover");
+    render_group(&mut output, &context, PlanEntryAction::Restart, "Restart");
+    render_group(&mut output, &context, PlanEntryAction::Blocked, "Blocked");
+    render_group(&mut output, &context, PlanEntryAction::Delete, "Delete");
+    render_group(&mut output, &context, PlanEntryAction::NoOp, "Unchanged");
     let summary_heading = "Summary";
     output.push_str(&format!(
         "{}{}{}\n",
@@ -2214,14 +2182,18 @@ fn render_dependency_tree(
             .iter()
             .map(|(_, object)| object.name.clone())
             .collect::<BTreeSet<_>>();
-        children.extend(action.dependency_context.iter().filter_map(|dependency| {
-            (!direct_ids.contains(dependency)).then(|| {
-                (
-                    DependencyRelation::Blocker,
-                    inferred_managed_object_ref(dependency),
-                )
-            })
-        }));
+        children.extend(
+            action
+                .dependency_context
+                .iter()
+                .filter(|dependency| !direct_ids.contains(*dependency))
+                .map(|dependency| {
+                    (
+                        DependencyRelation::Blocker,
+                        inferred_managed_object_ref(dependency),
+                    )
+                }),
+        );
     }
     children.sort_by(|a, b| a.1.display_id.cmp(&b.1.display_id));
     for (index, (relation, object)) in children.iter().enumerate() {
@@ -2472,17 +2444,22 @@ fn color_noop() -> &'static str {
 
 const DEFAULT_DIFF_CONTEXT_LINES: usize = 6;
 
+struct RenderGroupContext<'a> {
+    plan: &'a DeterministicReconciliationPlan,
+    entries: &'a [PlanEntry],
+    entry_by_name: &'a BTreeMap<&'a str, &'a PlanEntry>,
+    label_column: usize,
+    verbose: bool,
+}
+
 fn render_group(
     output: &mut String,
-    plan: &DeterministicReconciliationPlan,
-    entries: &[PlanEntry],
-    entry_by_name: &BTreeMap<&str, &PlanEntry>,
-    label_column: usize,
+    context: &RenderGroupContext<'_>,
     action: PlanEntryAction,
     title: &str,
-    verbose: bool,
 ) {
-    let group = entries
+    let group = context
+        .entries
         .iter()
         .filter(|entry| entry.action == action)
         .collect::<Vec<_>>();
@@ -2498,7 +2475,14 @@ fn render_group(
         color_reset(),
     ));
     for (index, entry) in group.iter().enumerate() {
-        let has_details = render_entry(output, plan, entry, entry_by_name, label_column, verbose);
+        let has_details = render_entry(
+            output,
+            context.plan,
+            entry,
+            context.entry_by_name,
+            context.label_column,
+            context.verbose,
+        );
         if has_details && index + 1 != group.len() {
             output.push('\n');
         }
@@ -2906,14 +2890,18 @@ fn dependency_tree_label_column(
             .iter()
             .map(|(_, object)| object.name.clone())
             .collect::<BTreeSet<_>>();
-        children.extend(action.dependency_context.iter().filter_map(|dependency| {
-            (!direct_ids.contains(dependency)).then(|| {
-                (
-                    DependencyRelation::Blocker,
-                    inferred_managed_object_ref(dependency),
-                )
-            })
-        }));
+        children.extend(
+            action
+                .dependency_context
+                .iter()
+                .filter(|dependency| !direct_ids.contains(*dependency))
+                .map(|dependency| {
+                    (
+                        DependencyRelation::Blocker,
+                        inferred_managed_object_ref(dependency),
+                    )
+                }),
+        );
     }
     children.sort_by(|a, b| a.1.display_id.cmp(&b.1.display_id));
     for (index, (_, object)) in children.iter().enumerate() {

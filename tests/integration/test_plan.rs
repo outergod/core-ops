@@ -36,7 +36,7 @@ fn strip_ansi(value: &str) -> String {
     while let Some(ch) = chars.next() {
         if ch == '\u{1b}' && chars.peek() == Some(&'[') {
             chars.next();
-            while let Some(next) = chars.next() {
+            for next in chars.by_ref() {
                 if next.is_ascii_alphabetic() {
                     break;
                 }
@@ -118,7 +118,7 @@ fn plan_does_not_apply_changes() {
     let result = reconcile_plan(&deps).expect("plan");
 
     assert_eq!(result.run.summary, "planned");
-    assert!(result.plan.actions.len() >= 1);
+    assert!(!result.plan.actions.is_empty());
     assert!(std::fs::read_dir(&host_quadlets).unwrap().next().is_none());
 }
 

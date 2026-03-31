@@ -47,7 +47,9 @@ pub fn plan(deps: &ReconcileDependencies<'_>, verbose: bool) -> Result<PlanOutpu
         classify_plan_run_display_state(last_applied_revision.as_deref(), &observed_snapshot);
     let mut deterministic = reconcile_deterministic_plan_with_runtime(
         &desired_snapshot,
-        last_applied_snapshot.as_ref().map(|snapshot| &snapshot.snapshot),
+        last_applied_snapshot
+            .as_ref()
+            .map(|snapshot| &snapshot.snapshot),
         &observed_snapshot,
         &verification_results,
     )?;

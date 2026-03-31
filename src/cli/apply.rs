@@ -3,8 +3,8 @@ use std::path::Path;
 
 use crate::cli::report::{
     build_result_output, format_apply_output_json, format_apply_output_report,
-    format_result_output_json, format_result_output_report, format_rollback_report,
-    ApplyHumanMode, ApplyInteractiveEvent, ApplyProgressRenderer, ApplyRunDisplayState,
+    format_result_output_json, format_result_output_report, format_rollback_report, ApplyHumanMode,
+    ApplyInteractiveEvent, ApplyProgressRenderer, ApplyRunDisplayState,
 };
 use crate::core::errors::CoreError;
 use crate::core::evaluate::build_desired_snapshot_from_state;
@@ -25,10 +25,9 @@ use crate::io::observed::{build_observed_snapshot, read_observed_state};
 use crate::io::repo::load_desired_state;
 use crate::io::state::{
     latest_retained_snapshot_for_scope, persist_finished_state, persist_in_progress_state,
-    read_deterministic_state,
-    read_deterministic_state as load_deterministic_state, record_convergence_outcome,
-    record_rollback_outcome, resolve_state_file, retain_successful_snapshot,
-    write_deterministic_state, DETERMINISTIC_STATE_FILE_NAME,
+    read_deterministic_state, read_deterministic_state as load_deterministic_state,
+    record_convergence_outcome, record_rollback_outcome, resolve_state_file,
+    retain_successful_snapshot, write_deterministic_state, DETERMINISTIC_STATE_FILE_NAME,
 };
 
 pub fn apply(

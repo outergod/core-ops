@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::integration::env_lock::path_lock;
 use core_ops::core::errors::CoreError;
@@ -65,7 +65,7 @@ fn init_git_repo(repo: &PathBuf) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn write_systemctl_stub(dir: &PathBuf) {
+fn write_systemctl_stub(dir: &Path) {
     let bin_path = dir.join("systemctl");
     let script = r#"#!/bin/sh
 case "$1" in

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -44,7 +44,7 @@ fn temp_file(prefix: &str) -> PathBuf {
     path
 }
 
-fn write_systemctl_stub(dir: &PathBuf) {
+fn write_systemctl_stub(dir: &Path) {
     let bin_path = dir.join("systemctl");
     let script = "#!/bin/sh\nexit 0\n";
     fs::write(&bin_path, script).expect("write systemctl stub");

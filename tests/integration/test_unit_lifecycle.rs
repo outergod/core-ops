@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::integration::env_lock::path_lock;
 use core_ops::core::types::{
@@ -17,7 +17,7 @@ fn temp_dir(prefix: &str) -> PathBuf {
     path
 }
 
-fn write_systemctl_stub(dir: &PathBuf, log_path: &PathBuf) -> PathBuf {
+fn write_systemctl_stub(dir: &Path, log_path: &Path) -> PathBuf {
     let bin_path = dir.join("systemctl");
     let script = format!(
         "#!/bin/sh\n\n\

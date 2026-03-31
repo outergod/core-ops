@@ -116,14 +116,16 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
     let resolved_revision = resolved_head_revision(&repo_path)?;
     Ok(desired_state_from_workloads(
         &repo_path,
-        &resolved_revision,
-        Some(repo_source.to_string()),
-        Some(revision_id.to_string()),
-        workloads,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
+        DesiredStateInputs {
+            revision_id: &resolved_revision,
+            requested_repository: Some(repo_source.to_string()),
+            requested_ref: Some(revision_id.to_string()),
+            workloads,
+            mount_declarations: Vec::new(),
+            mount_dependencies: Vec::new(),
+            managed_config_paths: Vec::new(),
+            managed_config_roots: Vec::new(),
+        },
     ))
 }
 
@@ -233,38 +235,44 @@ fn load_layered_desired_state(
     let resolved_revision = resolved_head_revision(repo_path)?;
     Ok(desired_state_from_workloads(
         repo_path,
-        &resolved_revision,
-        Some(requested_repository.to_string()),
-        Some(requested_ref.to_string()),
-        workloads,
-        output.mount_declarations,
-        output.mount_dependencies,
-        config_paths,
-        config_roots,
+        DesiredStateInputs {
+            revision_id: &resolved_revision,
+            requested_repository: Some(requested_repository.to_string()),
+            requested_ref: Some(requested_ref.to_string()),
+            workloads,
+            mount_declarations: output.mount_declarations,
+            mount_dependencies: output.mount_dependencies,
+            managed_config_paths: config_paths,
+            managed_config_roots: config_roots,
+        },
     ))
+}
+
+pub struct DesiredStateInputs<'a> {
+    pub revision_id: &'a str,
+    pub requested_repository: Option<String>,
+    pub requested_ref: Option<String>,
+    workloads: Vec<Workload>,
+    pub mount_declarations: Vec<MountDeclaration>,
+    pub mount_dependencies: Vec<crate::core::types::MountDependency>,
+    pub managed_config_paths: Vec<String>,
+    pub managed_config_roots: Vec<String>,
 }
 
 pub fn desired_state_from_workloads(
     repo_path: &Path,
-    revision_id: &str,
-    requested_repository: Option<String>,
-    requested_ref: Option<String>,
-    workloads: Vec<Workload>,
-    mount_declarations: Vec<MountDeclaration>,
-    mount_dependencies: Vec<crate::core::types::MountDependency>,
-    managed_config_paths: Vec<String>,
-    managed_config_roots: Vec<String>,
+    inputs: DesiredStateInputs<'_>,
 ) -> DesiredState {
     DesiredState {
         repository_ref: repo_path.display().to_string(),
-        revision_id: revision_id.to_string(),
-        requested_repository,
-        requested_ref,
-        workloads,
-        mount_declarations,
-        mount_dependencies,
-        managed_config_paths,
-        managed_config_roots,
+        revision_id: inputs.revision_id.to_string(),
+        requested_repository: inputs.requested_repository,
+        requested_ref: inputs.requested_ref,
+        workloads: inputs.workloads,
+        mount_declarations: inputs.mount_declarations,
+        mount_dependencies: inputs.mount_dependencies,
+        managed_config_paths: inputs.managed_config_paths,
+        managed_config_roots: inputs.managed_config_roots,
         invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
         boundaries: Boundaries {
             scopes: vec![BoundaryScope::QuadletSystemd],
@@ -879,7 +887,7 @@ struct ParsedRevisionExpression<'a> {
 
 fn parse_revision_expression(revision: &str) -> ParsedRevisionExpression<'_> {
     let split_at = revision
-        .find(|ch| matches!(ch, '~' | '^' | ':' | '@'))
+        .find(['~', '^', ':', '@'])
         .unwrap_or(revision.len());
     let (fetch_ref, suffix) = revision.split_at(split_at);
     let fetch_ref = if fetch_ref.is_empty() {

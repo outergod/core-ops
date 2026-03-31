@@ -87,7 +87,7 @@ fn plan_is_deterministic_by_name_order() {
 
     let targets: Vec<String> = plan.actions.iter().map(|a| a.target.clone()).collect();
 
-    let alpha_prefix = vec![
+    let alpha_prefix = [
         "alpha.container".to_string(),
         "alpha.container".to_string(),
         "alpha.container".to_string(),
@@ -119,18 +119,18 @@ fn plan_orders_actions_by_quadlet_type() {
     let plan = plan(&desired, &observed).expect("plan should succeed");
     let targets: Vec<String> = plan.actions.iter().map(|a| a.target.clone()).collect();
 
-    let volume_prefix = vec!["volume.volume".to_string(), "volume.volume".to_string()];
-    let container_prefix = vec![
+    let volume_prefix = ["volume.volume".to_string(), "volume.volume".to_string()];
+    let container_prefix = [
         "container.container".to_string(),
         "container.container".to_string(),
         "container.container".to_string(),
     ];
-    let network_prefix = vec![
+    let network_prefix = [
         "network.network".to_string(),
         "network.network".to_string(),
         "network.network".to_string(),
     ];
-    let socket_prefix = vec![
+    let socket_prefix = [
         "socket.socket".to_string(),
         "socket.socket".to_string(),
         "socket.socket".to_string(),

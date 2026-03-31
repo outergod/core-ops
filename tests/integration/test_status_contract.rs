@@ -10,10 +10,10 @@ use core_ops::cli::status::{render_deterministic_plan_summary, render_plan_count
 use core_ops::core::types::{
     ConvergenceStatus, DependencyEdgeKind, DeterministicActionClass,
     DeterministicConvergenceRecord, DeterministicPlannedAction, DeterministicReconciliationPlan,
-    DriftCategory, ManagedObjectKind, ManagedObjectRef, PlanEntry, PlanEntryAction,
-    PlanOutputView, PlanSummaryView, ReconcileMode, ReconcileRun, RevisionContext, RunStatus,
-    SemanticDependencyEdge, SemanticDependencyGraph, SemanticDependencyNode,
-    StructuredDriftRecord, VerificationResult, VerificationStatus,
+    DriftCategory, ManagedObjectKind, ManagedObjectRef, PlanEntry, PlanEntryAction, PlanOutputView,
+    PlanSummaryView, ReconcileMode, ReconcileRun, RevisionContext, RunStatus,
+    SemanticDependencyEdge, SemanticDependencyGraph, SemanticDependencyNode, StructuredDriftRecord,
+    VerificationResult, VerificationStatus,
 };
 use serde_json::Value;
 
@@ -709,13 +709,8 @@ fn result_and_explain_output_expose_required_fields() {
         can_continue: true,
     };
     let result = build_result_output(&plan, &[], Some(&convergence));
-    let explain = build_explain_output(
-        &plan,
-        &[],
-        Some(&convergence),
-        "mount/var-lib-demo.mount",
-    )
-    .expect("explain output");
+    let explain = build_explain_output(&plan, &[], Some(&convergence), "mount/var-lib-demo.mount")
+        .expect("explain output");
 
     let result_json = serde_json::to_value(&result).expect("serialize result output");
     let explain_json = serde_json::to_value(&explain).expect("serialize explain output");
@@ -731,10 +726,7 @@ fn result_and_explain_output_expose_required_fields() {
         result_json["entries"][1]["action"].as_str(),
         Some("recover")
     );
-    assert_eq!(
-        explain_json["view_kind"].as_str(),
-        Some("explain")
-    );
+    assert_eq!(explain_json["view_kind"].as_str(), Some("explain"));
     assert_eq!(
         explain_json["object"]["display_id"].as_str(),
         Some("mount/var-lib-demo.mount")
@@ -824,7 +816,10 @@ fn contract_enum_values_and_ordering_remain_stable() {
         apply_json["events"][0]["event_kind"].as_str(),
         Some("object_progress")
     );
-    assert_eq!(result_json["entries"][0]["action"].as_str(), Some("recover"));
+    assert_eq!(
+        result_json["entries"][0]["action"].as_str(),
+        Some("recover")
+    );
     assert_eq!(explain_json["view_kind"].as_str(), Some("explain"));
 
     let order_indices = plan_json["entries"]

@@ -57,9 +57,7 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
 
     let output = result?;
     let run = output.result.run.clone();
-    if let Err(err) = release_result {
-        return Err(err);
-    }
+    release_result?;
 
     let provenance = read_persisted_state(&state_path).ok().flatten();
     let event = build_audit_event(

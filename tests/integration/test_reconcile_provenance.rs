@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
@@ -64,7 +64,7 @@ fn commit_quadlet(repo: &PathBuf, contents: &str) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn write_systemctl_stub(dir: &PathBuf) {
+fn write_systemctl_stub(dir: &Path) {
     let bin_path = dir.join("systemctl");
     let script = r#"#!/bin/sh
 FAIL_MARKER="${0}.fail"
@@ -356,14 +356,23 @@ fn explain_output_supports_single_object_inspection_with_mount_metadata() {
             }],
         },
     };
-    let explain = build_explain_output(&plan, &[], None, "mount/var-lib-demo.mount")
-        .expect("explain output");
+    let explain =
+        build_explain_output(&plan, &[], None, "mount/var-lib-demo.mount").expect("explain output");
     let json = serde_json::to_value(&explain).expect("serialize explain");
 
     assert_eq!(json["view_kind"].as_str(), Some("explain"));
-    assert_eq!(json["object"]["display_id"].as_str(), Some("mount/var-lib-demo.mount"));
-    assert_eq!(json["metadata"]["runtime_unit"].as_str(), Some("var-lib-demo.mount"));
-    assert_eq!(json["metadata"]["automount_unit"].as_str(), Some("var-lib-demo.automount"));
+    assert_eq!(
+        json["object"]["display_id"].as_str(),
+        Some("mount/var-lib-demo.mount")
+    );
+    assert_eq!(
+        json["metadata"]["runtime_unit"].as_str(),
+        Some("var-lib-demo.mount")
+    );
+    assert_eq!(
+        json["metadata"]["automount_unit"].as_str(),
+        Some("var-lib-demo.automount")
+    );
     assert_eq!(json["x_coreops"]["CreateMountpoint"].as_bool(), Some(true));
 }
 

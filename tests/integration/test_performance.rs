@@ -1,17 +1,19 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::integration::env_lock::path_lock;
+use core_ops::cli::report::{
+    build_result_output, format_deterministic_plan_report, format_result_output_report,
+};
 use core_ops::core::errors::CoreError;
 use core_ops::core::evaluate::build_desired_snapshot_from_state;
 use core_ops::core::reconcile::{reconcile_apply, ReconcileDependencies};
 use core_ops::core::verify::verify_state;
-use core_ops::io::observed::build_observed_snapshot;
 use core_ops::io::apply::apply_plan;
+use core_ops::io::observed::build_observed_snapshot;
 use core_ops::io::observed::read_observed_state;
 use core_ops::io::repo::load_desired_state;
-use core_ops::cli::report::{format_deterministic_plan_report, build_result_output, format_result_output_report};
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -68,7 +70,7 @@ fn init_git_repo(repo: &PathBuf, count: usize) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn write_systemctl_stub(dir: &PathBuf) {
+fn write_systemctl_stub(dir: &Path) {
     let bin_path = dir.join("systemctl");
     let script = r#"#!/bin/sh
 case "$1" in
@@ -144,12 +146,8 @@ fn plan_and_result_rendering_complete_within_interactive_budget() {
     let desired = load_desired_state(repo.to_str().unwrap(), &rev).expect("load desired");
     let observed_dir = repo.join("empty-observed");
     fs::create_dir_all(&observed_dir).expect("create observed dir");
-    let observed = read_observed_state(
-        &observed_dir,
-        Some(&desired),
-        Some("obs".to_string()),
-    )
-    .expect("observed");
+    let observed = read_observed_state(&observed_dir, Some(&desired), Some("obs".to_string()))
+        .expect("observed");
     let scope_id = "host:alpha".to_string();
     let desired_snapshot = build_desired_snapshot_from_state(&desired, &scope_id);
     let observed_snapshot = build_observed_snapshot(&observed, Some(&desired), &scope_id);

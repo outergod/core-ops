@@ -232,7 +232,10 @@ fn summary_count_phrase(count: usize, singular: &str, plural: &str) -> String {
 }
 
 fn count_plan_entries(entries: &[PlanEntry], action: PlanEntryAction) -> usize {
-    entries.iter().filter(|entry| entry.action == action).count()
+    entries
+        .iter()
+        .filter(|entry| entry.action == action)
+        .count()
 }
 
 pub fn render_revision_with_requested_ref(target: &str, requested_ref: Option<&str>) -> String {
