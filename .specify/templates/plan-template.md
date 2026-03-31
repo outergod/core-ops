@@ -20,7 +20,7 @@
 **Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
 **Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
 **Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
+**Testing**: [e.g., pytest, XCTest, cargo test, cargo clippy --all-targets -- -D warnings or NEEDS CLARIFICATION]  
 **Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
 **Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]  
 **Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
@@ -45,6 +45,9 @@
 - Release version policy impact is assessed for any externally observable,
   schema, CLI, reconciliation, or compatibility change; the canonical
   controller version comes from `Cargo.toml`.
+- Rust changes include the required validation gate plan: `cargo test` and
+  `cargo clippy --all-targets -- -D warnings`, or an explicit temporary
+  exception with follow-up.
 - Test strategy covers invariants, external behavior, convergence, and failures.
 - Modules are structured to be regenerable from specs and tests.
 

@@ -9,7 +9,10 @@ description: "Task list template for feature implementation"
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
 **Tests**: The examples below include test tasks. Tests are REQUIRED unless the
-feature spec explicitly documents a justified exemption.
+feature spec explicitly documents a justified exemption. For Rust changes,
+tasks MUST include the standard validation gates `cargo test` and
+`cargo clippy --all-targets -- -D warnings` unless a documented temporary
+exception is approved.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -157,6 +160,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX Code cleanup and refactoring
 - [ ] TXXX Performance optimization across all stories
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
+- [ ] TXXX [P] Run `cargo clippy --all-targets -- -D warnings` or document the approved temporary exception
 - [ ] TXXX Verify provenance/version/status output across changed flows
 - [ ] TXXX Evaluate and update release version policy for any externally
   observable, schema, CLI, reconciliation, or compatibility change
@@ -255,6 +259,8 @@ With multiple developers:
 - Include provenance/version/status assertions where behavior or reconciliation outcomes change
 - Include release-version-policy updates whenever behavior, schema, CLI output,
   reconciliation semantics, or compatibility changes
+- For Rust changes, include `cargo test` and `cargo clippy --all-targets -- -D warnings`
+  in the completion path unless an explicit temporary exception is documented
 - Verify tests fail before implementing
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently

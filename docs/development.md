@@ -11,10 +11,14 @@ Do not assume Rust tooling is installed globally.
 ## Common Commands
 
 - Format: `cargo fmt` (or `make fmt`)
-- Lint: `cargo clippy --all-targets --all-features -- -D warnings` (or `make lint`)
+- Lint: `cargo clippy --all-targets -- -D warnings` (or `make lint`)
 - Test: `cargo test` (or `make test`)
 
 Assume the nix shell is already active, and do not run commands via `direnv exec`.
+
+Rust changes are not considered complete until both `cargo test` and
+`cargo clippy --all-targets -- -D warnings` pass, unless a temporary exception
+is explicitly documented with follow-up work.
 
 ## Systemd Agent Configuration
 
