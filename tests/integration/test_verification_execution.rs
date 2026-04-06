@@ -8,6 +8,9 @@ use core_ops::core::verification_model::{
     VerificationCoreOpsActionKind, VerificationScenarioClass, VerificationScenarioStep,
     VerificationStepTarget, VerificationStepType,
 };
+use core_ops::core::boundaries::VerificationGuestBoundary;
+use core_ops::core::errors::CoreError;
+use core_ops::core::types::FailureClass;
 use core_ops::io::guest::GuestCommandRunner;
 use core_ops::io::libvirt::LibvirtCommandRunner;
 use core_ops::io::verification_artifacts::ArtifactCollector;
@@ -642,6 +645,88 @@ fn failing_regression_scenario_enriches_artifacts_and_report_surfaces() {
     assert!(report.contains("Regression: demo-uat-v1 -> demo-uat-v2"));
     assert!(report.contains("Promotion: accepted permanent regression scenario"));
     assert!(report.contains("Failure-Specific Artifacts:"));
+}
+
+#[derive(Default)]
+struct TimeoutGuestBoundary;
+
+impl VerificationGuestBoundary for TimeoutGuestBoundary {
+    fn wait_ready(
+        &self,
+        guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        timeout: &str,
+    ) -> Result<core_ops::core::verification_model::GuestCommandOutput, CoreError> {
+        Ok(core_ops::core::verification_model::GuestCommandOutput {
+            status_code: 0,
+            stdout: format!("{} ready within {timeout}", guest.guest_name),
+            stderr: String::new(),
+        })
+    }
+
+    fn run_command(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        _command: &str,
+        _timeout: Option<&str>,
+    ) -> Result<core_ops::core::verification_model::GuestCommandOutput, CoreError> {
+        Err(CoreError::new(
+            FailureClass::Transient,
+            "ssh guest command timed out after 1s",
+        ))
+    }
+
+    fn copy_to_guest(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        _local_path: &std::path::Path,
+        _remote_path: &str,
+        _recursive: bool,
+        _executable: bool,
+    ) -> Result<(), CoreError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn transient_guest_command_timeout_classifies_step_and_run_as_timeout() {
+    let scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let libvirt = LibvirtCommandRunner::default();
+    let guest = TimeoutGuestBoundary;
+    let collector = ArtifactCollector;
+    let context = VerificationExecutionContext {
+        workspace: workspace.path(),
+        artifacts_root: artifacts.path(),
+        libvirt: &libvirt,
+        guest_boundary: &guest,
+        artifact_boundary: &collector,
+    };
+
+    let view = execute_scenario(
+        &scenario,
+        VerificationRunMode::Ci,
+        "run-guest-timeout",
+        &context,
+        false,
+    )
+    .expect("execute");
+
+    assert_eq!(view.overall_outcome, VerificationRunOutcome::Timeout);
+    let timed_out_step = view
+        .step_results
+        .iter()
+        .find(|step| step.step_id == "apply")
+        .expect("apply step");
+    assert_eq!(timed_out_step.status, core_ops::core::types::VerificationStepStatus::TimedOut);
+    assert!(timed_out_step
+        .details
+        .as_deref()
+        .unwrap_or("")
+        .contains("timed out"));
 }
 
 fn write_scenario_fixture(path: std::path::PathBuf, scenario: &core_ops::core::verification_model::VerificationScenarioDefinition) {

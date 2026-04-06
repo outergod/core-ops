@@ -3,7 +3,7 @@ use crate::core::errors::CoreError;
 use crate::core::types::FailureClass;
 use crate::core::verification_model::{GuestCommandOutput, LibvirtGuestHandle};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -50,7 +50,55 @@ impl GuestCommandRunner {
         command: &mut Command,
         context: &str,
     ) -> Result<GuestCommandOutput, CoreError> {
+        self.run_output_with_timeout(command, context, None)
+    }
+
+    fn run_output_with_timeout(
+        &self,
+        command: &mut Command,
+        context: &str,
+        timeout: Option<Duration>,
+    ) -> Result<GuestCommandOutput, CoreError> {
         let rendered = render_command(command);
+        if let Some(timeout) = timeout {
+            command.stdout(Stdio::piped()).stderr(Stdio::piped());
+            let mut child = command.spawn().map_err(|err| {
+                CoreError::new(
+                    FailureClass::Apply,
+                    format!("failed to launch {context}: {rendered}: {err}"),
+                )
+            })?;
+            let deadline = Instant::now() + timeout;
+            loop {
+                if let Some(status) = child.try_wait().map_err(|err| {
+                    CoreError::new(
+                        FailureClass::Apply,
+                        format!("failed to poll {context}: {rendered}: {err}"),
+                    )
+                })? {
+                    let output = child.wait_with_output().map_err(|err| {
+                        CoreError::new(
+                            FailureClass::Apply,
+                            format!("failed to collect {context} output: {rendered}: {err}"),
+                        )
+                    })?;
+                    return Ok(GuestCommandOutput {
+                        status_code: status.code().unwrap_or(1),
+                        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                    });
+                }
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(CoreError::new(
+                        FailureClass::Transient,
+                        format!("{context} timed out after {}s: {rendered}", timeout.as_secs()),
+                    ));
+                }
+                sleep(Duration::from_millis(100));
+            }
+        }
         let output = command.output().map_err(|err| {
             CoreError::new(
                 FailureClass::Apply,
@@ -126,7 +174,8 @@ impl VerificationGuestBoundary for GuestCommandRunner {
         }
 
         let mut ssh = self.ssh_command(guest, command);
-        self.run_output(&mut ssh, "ssh guest command")
+        let timeout = _timeout.map(parse_timeout).transpose()?;
+        self.run_output_with_timeout(&mut ssh, "ssh guest command", timeout)
     }
 
     fn copy_to_guest(
@@ -254,4 +303,27 @@ fn render_command(command: &Command) -> String {
         rendered.push_str(&shell_escape(&arg.to_string_lossy()));
     }
     rendered
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GuestCommandRunner;
+
+    #[test]
+    fn run_output_with_timeout_returns_transient_error_for_hung_command() {
+        let runner = GuestCommandRunner::default();
+        let mut command = std::process::Command::new("bash");
+        command.arg("-lc").arg("sleep 2");
+
+        let err = runner
+            .run_output_with_timeout(
+                &mut command,
+                "test command",
+                Some(std::time::Duration::from_millis(100)),
+            )
+            .expect_err("timeout");
+
+        assert_eq!(err.class, crate::core::types::FailureClass::Transient);
+        assert!(err.message.contains("timed out"));
+    }
 }

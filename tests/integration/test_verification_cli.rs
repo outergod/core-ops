@@ -165,6 +165,44 @@ fn cli_verification_run_can_select_specific_accepted_scenario_ids() {
 }
 
 #[test]
+fn cli_verification_suite_json_uses_actual_environment_retention_state() {
+    let accepted_dir = tempfile::tempdir().expect("accepted dir");
+    let scenario_yaml = std::fs::read_to_string(fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("read fixture");
+    std::fs::write(
+        accepted_dir.path().join("minimal-accepted.yaml"),
+        format!(
+            "{scenario_yaml}\npolicy_overrides:\n  artifact_policy:\n    retain_environment_in_debug: false\n    export_format: directory\n"
+        ),
+    )
+    .expect("write scenario");
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let output = Command::new(env!("CARGO_BIN_EXE_core-ops-verify"))
+        .arg("run")
+        .arg("--accepted-dir")
+        .arg(accepted_dir.path())
+        .arg("--workspace-root")
+        .arg(workspace.path())
+        .arg("--artifacts-dir")
+        .arg(artifacts.path())
+        .arg("--debug")
+        .arg("--synthetic")
+        .arg("--json")
+        .output()
+        .expect("run debug corpus");
+
+    assert!(output.status.success());
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("valid suite json");
+    assert_eq!(parsed["mode"], "debug");
+    assert_eq!(parsed["artifacts"]["environment_retained"], false);
+}
+
+#[test]
 fn cli_generate_emits_review_ready_candidate_yaml() {
     let temp = tempfile::tempdir().expect("tempdir");
     let spec_path = temp.path().join("feature.md");

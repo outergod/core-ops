@@ -142,6 +142,7 @@ struct VerificationSuiteJsonView<'a> {
     started_at: &'a str,
     completed_at: &'a str,
     bundle_path: &'a str,
+    environment_retained: bool,
     scenario_outcomes: &'a [VerificationScenarioOutcome],
 }
 
@@ -302,6 +303,7 @@ fn run_accepted_corpus(
     let overall_outcome = classify_run_outcome(&scenario_outcomes);
     let suite_bundle_path = suite_artifacts_root.display().to_string();
     let suite_revision_under_test = summarize_suite_revision_under_test(&scenario_outcomes);
+    let suite_environment_retained = views.iter().any(|view| view.environment_retained);
     write_suite_bundle_index(&suite_bundle_path, &views)?;
 
     let human_report = format_verification_suite_report(
@@ -320,6 +322,7 @@ fn run_accepted_corpus(
         started_at: &started_at,
         completed_at: &completed_at,
         bundle_path: &suite_bundle_path,
+        environment_retained: suite_environment_retained,
         scenario_outcomes: &scenario_outcomes,
     });
     let exit_code = if overall_outcome == VerificationRunOutcome::Passed {
@@ -542,18 +545,31 @@ pub fn execute_scenario(
             },
             VerificationStepType::WaitReady => {
                 let started = Instant::now();
-                let output = context
+                match context
                     .guest_boundary
-                    .wait_ready(&guest, &step.effective_timeout)?;
-                VerificationStepResult {
-                    step_id: step.step_id.clone(),
-                    status: VerificationStepStatus::Passed,
-                    details: Some(output.stdout.clone()),
-                    command: Some("wait_ready".to_string()),
-                    exit_code: Some(0),
-                    stdout: Some(output.stdout),
-                    stderr: Some(output.stderr),
-                    duration_ms: Some(started.elapsed().as_millis() as u64),
+                    .wait_ready(&guest, &step.effective_timeout)
+                {
+                    Ok(output) => VerificationStepResult {
+                        step_id: step.step_id.clone(),
+                        status: VerificationStepStatus::Passed,
+                        details: Some(output.stdout.clone()),
+                        command: Some("wait_ready".to_string()),
+                        exit_code: Some(0),
+                        stdout: Some(output.stdout),
+                        stderr: Some(output.stderr),
+                        duration_ms: Some(started.elapsed().as_millis() as u64),
+                    },
+                    Err(err) if err.class == FailureClass::Transient => VerificationStepResult {
+                        step_id: step.step_id.clone(),
+                        status: VerificationStepStatus::TimedOut,
+                        details: Some(err.message),
+                        command: Some("wait_ready".to_string()),
+                        exit_code: None,
+                        stdout: None,
+                        stderr: None,
+                        duration_ms: Some(started.elapsed().as_millis() as u64),
+                    },
+                    Err(err) => return Err(err),
                 }
             }
             VerificationStepType::CoreopsAction
@@ -562,25 +578,39 @@ pub fn execute_scenario(
             | VerificationStepType::Reboot => {
                 let command = step.command_or_action.as_deref().unwrap_or("noop");
                 let started = Instant::now();
-                let output = context.guest_boundary.run_command(
+                match context.guest_boundary.run_command(
                     &guest,
                     command,
                     Some(step.effective_timeout.as_str()),
-                )?;
-                let status = if output.status_code == 0 {
-                    VerificationStepStatus::Passed
-                } else {
-                    VerificationStepStatus::Failed
-                };
-                VerificationStepResult {
-                    step_id: step.step_id.clone(),
-                    status,
-                    details: Some(output.stdout.clone()),
-                    command: Some(command.to_string()),
-                    exit_code: Some(output.status_code),
-                    stdout: Some(output.stdout),
-                    stderr: Some(output.stderr),
-                    duration_ms: Some(started.elapsed().as_millis() as u64),
+                ) {
+                    Ok(output) => {
+                        let status = if output.status_code == 0 {
+                            VerificationStepStatus::Passed
+                        } else {
+                            VerificationStepStatus::Failed
+                        };
+                        VerificationStepResult {
+                            step_id: step.step_id.clone(),
+                            status,
+                            details: Some(output.stdout.clone()),
+                            command: Some(command.to_string()),
+                            exit_code: Some(output.status_code),
+                            stdout: Some(output.stdout),
+                            stderr: Some(output.stderr),
+                            duration_ms: Some(started.elapsed().as_millis() as u64),
+                        }
+                    }
+                    Err(err) if err.class == FailureClass::Transient => VerificationStepResult {
+                        step_id: step.step_id.clone(),
+                        status: VerificationStepStatus::TimedOut,
+                        details: Some(err.message),
+                        command: Some(command.to_string()),
+                        exit_code: None,
+                        stdout: None,
+                        stderr: None,
+                        duration_ms: Some(started.elapsed().as_millis() as u64),
+                    },
+                    Err(err) => return Err(err),
                 }
             }
         };
@@ -593,6 +623,10 @@ pub fn execute_scenario(
             ));
         }
         step_results.push(step_result);
+        if matches!(step_results.last().map(|step| step.status), Some(VerificationStepStatus::TimedOut))
+        {
+            break;
+        }
     }
 
     let mut assertion_results = evaluate_assertions(&scenario.assertions, &step_results)?;
@@ -728,7 +762,7 @@ fn format_verification_suite_json(view: &VerificationSuiteJsonView<'_>) -> Strin
         })).collect::<Vec<_>>(),
         "artifacts": {
             "bundle_path": view.bundle_path,
-            "environment_retained": view.mode == VerificationRunMode::Debug,
+            "environment_retained": view.environment_retained,
         }
     })
     .to_string()
