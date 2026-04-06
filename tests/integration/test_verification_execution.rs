@@ -8,13 +8,17 @@ use core_ops::core::verification_model::{
     VerificationCoreOpsActionKind, VerificationScenarioClass, VerificationScenarioStep,
     VerificationStepTarget, VerificationStepType,
 };
-use core_ops::core::boundaries::VerificationGuestBoundary;
+use core_ops::core::boundaries::{VerificationGuestBoundary, VerificationLibvirtBoundary};
 use core_ops::core::errors::CoreError;
 use core_ops::core::types::FailureClass;
 use core_ops::io::guest::GuestCommandRunner;
 use core_ops::io::libvirt::LibvirtCommandRunner;
 use core_ops::io::verification_artifacts::ArtifactCollector;
 use std::fs;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 fn fixture_path(relative: &str) -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(relative)
@@ -739,6 +743,131 @@ fn transient_guest_command_timeout_classifies_step_and_run_as_timeout() {
         .as_deref()
         .unwrap_or("")
         .contains("timed out"));
+}
+
+struct SetupFailureLibvirtBoundary {
+    destroy_calls: Arc<AtomicUsize>,
+}
+
+impl VerificationLibvirtBoundary for SetupFailureLibvirtBoundary {
+    fn create_guest(
+        &self,
+        _scenario: &core_ops::core::verification_model::VerificationScenarioDefinition,
+        workspace_root: &std::path::Path,
+    ) -> Result<core_ops::core::verification_model::LibvirtGuestHandle, CoreError> {
+        Ok(core_ops::core::verification_model::LibvirtGuestHandle {
+            guest_name: "setup-failure-guest".to_string(),
+            domain_name: "setup-failure-domain".to_string(),
+            ssh_target: "core@192.0.2.10".to_string(),
+            connection_uri: "qemu:///system".to_string(),
+            workspace_root: workspace_root.display().to_string(),
+            env_backed: true,
+            network_mode: Some("dhcp".to_string()),
+            vm_host: None,
+            ssh_user: Some("core".to_string()),
+            ignition_path: None,
+            local_butane_path: None,
+            local_ignition_path: None,
+            volume_name: Some("setup-failure.qcow2".to_string()),
+            assigned_ip: Some("192.0.2.10".to_string()),
+            lease_path: None,
+            rendered_network_config: None,
+            serial_log_path: None,
+            qemu_launch_log_path: None,
+        })
+    }
+
+    fn destroy_guest(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+    ) -> Result<(), CoreError> {
+        self.destroy_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct SetupFailureGuestBoundary;
+
+impl VerificationGuestBoundary for SetupFailureGuestBoundary {
+    fn wait_ready(
+        &self,
+        guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        timeout: &str,
+    ) -> Result<core_ops::core::verification_model::GuestCommandOutput, CoreError> {
+        Ok(core_ops::core::verification_model::GuestCommandOutput {
+            status_code: 0,
+            stdout: format!("{} ready within {timeout}", guest.guest_name),
+            stderr: String::new(),
+        })
+    }
+
+    fn run_command(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        _command: &str,
+        _timeout: Option<&str>,
+    ) -> Result<core_ops::core::verification_model::GuestCommandOutput, CoreError> {
+        Ok(core_ops::core::verification_model::GuestCommandOutput {
+            status_code: 0,
+            stdout: "ok".to_string(),
+            stderr: String::new(),
+        })
+    }
+
+    fn copy_to_guest(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        _local_path: &std::path::Path,
+        _remote_path: &str,
+        _recursive: bool,
+        _executable: bool,
+    ) -> Result<(), CoreError> {
+        Err(CoreError::new(
+            FailureClass::Apply,
+            "simulated guest copy failure",
+        ))
+    }
+}
+
+#[test]
+fn env_backed_setup_error_tears_down_guest_when_retention_is_disabled() {
+    let scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let destroy_calls = Arc::new(AtomicUsize::new(0));
+    let libvirt = SetupFailureLibvirtBoundary {
+        destroy_calls: Arc::clone(&destroy_calls),
+    };
+    let guest = SetupFailureGuestBoundary;
+    let collector = ArtifactCollector;
+    let context = VerificationExecutionContext {
+        workspace: workspace.path(),
+        artifacts_root: artifacts.path(),
+        libvirt: &libvirt,
+        guest_boundary: &guest,
+        artifact_boundary: &collector,
+    };
+    let temp_binary = tempfile::NamedTempFile::new().expect("temp binary");
+    std::env::set_var("CORE_OPS_VERIFY_CORE_OPS_BIN", temp_binary.path());
+
+    let result = execute_scenario(
+        &scenario,
+        VerificationRunMode::Local,
+        "run-setup-failure",
+        &context,
+        false,
+        false,
+    );
+
+    std::env::remove_var("CORE_OPS_VERIFY_CORE_OPS_BIN");
+
+    let err = result.expect_err("setup failure");
+    assert!(err.message.contains("simulated guest copy failure"));
+    assert_eq!(destroy_calls.load(Ordering::SeqCst), 1);
 }
 
 fn write_scenario_fixture(path: std::path::PathBuf, scenario: &core_ops::core::verification_model::VerificationScenarioDefinition) {

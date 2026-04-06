@@ -11,7 +11,7 @@ use crate::core::types::{
 };
 use crate::core::verification_eval::{
     build_execution_plan, classify_run_outcome, classify_scenario_outcome, evaluate_assertions,
-    parse_timeout_literal,
+    parse_timeout_literal, should_retain_environment,
 };
 use crate::core::verification_generate::{
     build_coverage_report, generate_candidates_from_spec, load_accepted_corpus,
@@ -484,6 +484,7 @@ pub fn execute_scenario(
     verbose: bool,
     pause_before_teardown: bool,
 ) -> Result<VerificationRunView, CoreError> {
+    let retain_environment = should_retain_environment(mode, scenario);
     let started_at = now_rfc3339()?;
     std::fs::create_dir_all(context.workspace).map_err(|err| {
         CoreError::new(
@@ -518,235 +519,256 @@ pub fn execute_scenario(
         .libvirt
         .create_guest(scenario, context.workspace)
         .map_err(|err| augment_pre_guest_error(err, context.workspace, &artifact_workspace))?;
-    write_env_backed_debug_artifacts(&guest, &artifact_workspace)?;
-    if verbose {
-        if let Some(assigned_ip) = &guest.assigned_ip {
-            eprintln!("assigned_ip: {assigned_ip}");
-        }
-        if let Some(network_config) = &guest.rendered_network_config {
-            eprintln!("static_network_config:\n{network_config}");
-        }
-        if guest.env_backed {
-            eprintln!(
-                "debug_artifacts: {}/artifacts",
-                artifact_workspace.display()
-            );
-        }
-    }
-    let runtime_bindings = prepare_runtime_bindings(
-        scenario,
-        run_id,
-        context.workspace,
-        &guest,
-        context.guest_boundary,
-    )
-    .map_err(|err| augment_early_env_backed_error(err, &artifact_workspace, &guest))?;
-    let plan = build_execution_plan(scenario, run_id.to_string(), mode, runtime_bindings.as_ref())?;
-    let mut step_results = Vec::new();
-    let scenario_timeout = parse_timeout_literal(&scenario.effective_timeouts()?.scenario_timeout)?;
-    let scenario_started = Instant::now();
-
-    for step in &plan.step_sequence {
-        let mut step_result = match step.step_type {
-            VerificationStepType::Boot => VerificationStepResult {
-                step_id: step.step_id.clone(),
-                status: VerificationStepStatus::Passed,
-                details: Some(format!("booted {}", guest.guest_name)),
-                command: None,
-                exit_code: Some(0),
-                stdout: Some(format!("booted {}", guest.guest_name)),
-                stderr: None,
-                duration_ms: Some(0),
-            },
-            VerificationStepType::WaitReady => {
-                let started = Instant::now();
-                match context
-                    .guest_boundary
-                    .wait_ready(&guest, &step.effective_timeout)
-                {
-                    Ok(output) => VerificationStepResult {
-                        step_id: step.step_id.clone(),
-                        status: VerificationStepStatus::Passed,
-                        details: Some(output.stdout.clone()),
-                        command: Some("wait_ready".to_string()),
-                        exit_code: Some(0),
-                        stdout: Some(output.stdout),
-                        stderr: Some(output.stderr),
-                        duration_ms: Some(started.elapsed().as_millis() as u64),
-                    },
-                    Err(err) if err.class == FailureClass::Transient => VerificationStepResult {
-                        step_id: step.step_id.clone(),
-                        status: VerificationStepStatus::TimedOut,
-                        details: Some(err.message),
-                        command: Some("wait_ready".to_string()),
-                        exit_code: None,
-                        stdout: None,
-                        stderr: None,
-                        duration_ms: Some(started.elapsed().as_millis() as u64),
-                    },
-                    Err(err) => return Err(err),
-                }
+    let execution = (|| -> Result<VerificationRunView, CoreError> {
+        write_env_backed_debug_artifacts(&guest, &artifact_workspace)?;
+        if verbose {
+            if let Some(assigned_ip) = &guest.assigned_ip {
+                eprintln!("assigned_ip: {assigned_ip}");
             }
-            VerificationStepType::CoreopsAction
-            | VerificationStepType::GuestCommand
-            | VerificationStepType::MutateState
-            | VerificationStepType::Reboot => {
-                let command = step.command_or_action.as_deref().unwrap_or("noop");
-                let started = Instant::now();
-                match context.guest_boundary.run_command(
-                    &guest,
-                    command,
-                    Some(step.effective_timeout.as_str()),
-                ) {
-                    Ok(output) => {
-                        let status = if output.status_code == 0 {
-                            VerificationStepStatus::Passed
-                        } else {
-                            VerificationStepStatus::Failed
-                        };
-                        VerificationStepResult {
+            if let Some(network_config) = &guest.rendered_network_config {
+                eprintln!("static_network_config:\n{network_config}");
+            }
+            if guest.env_backed {
+                eprintln!(
+                    "debug_artifacts: {}/artifacts",
+                    artifact_workspace.display()
+                );
+            }
+        }
+        let runtime_bindings = prepare_runtime_bindings(
+            scenario,
+            run_id,
+            context.workspace,
+            &guest,
+            context.guest_boundary,
+        )
+        .map_err(|err| augment_early_env_backed_error(err, &artifact_workspace, &guest))?;
+        let plan =
+            build_execution_plan(scenario, run_id.to_string(), mode, runtime_bindings.as_ref())?;
+        let mut step_results = Vec::new();
+        let scenario_timeout =
+            parse_timeout_literal(&scenario.effective_timeouts()?.scenario_timeout)?;
+        let scenario_started = Instant::now();
+
+        for step in &plan.step_sequence {
+            let mut step_result = match step.step_type {
+                VerificationStepType::Boot => VerificationStepResult {
+                    step_id: step.step_id.clone(),
+                    status: VerificationStepStatus::Passed,
+                    details: Some(format!("booted {}", guest.guest_name)),
+                    command: None,
+                    exit_code: Some(0),
+                    stdout: Some(format!("booted {}", guest.guest_name)),
+                    stderr: None,
+                    duration_ms: Some(0),
+                },
+                VerificationStepType::WaitReady => {
+                    let started = Instant::now();
+                    match context
+                        .guest_boundary
+                        .wait_ready(&guest, &step.effective_timeout)
+                    {
+                        Ok(output) => VerificationStepResult {
                             step_id: step.step_id.clone(),
-                            status,
+                            status: VerificationStepStatus::Passed,
                             details: Some(output.stdout.clone()),
-                            command: Some(command.to_string()),
-                            exit_code: Some(output.status_code),
+                            command: Some("wait_ready".to_string()),
+                            exit_code: Some(0),
                             stdout: Some(output.stdout),
                             stderr: Some(output.stderr),
                             duration_ms: Some(started.elapsed().as_millis() as u64),
-                        }
+                        },
+                        Err(err) if err.class == FailureClass::Transient => VerificationStepResult {
+                            step_id: step.step_id.clone(),
+                            status: VerificationStepStatus::TimedOut,
+                            details: Some(err.message),
+                            command: Some("wait_ready".to_string()),
+                            exit_code: None,
+                            stdout: None,
+                            stderr: None,
+                            duration_ms: Some(started.elapsed().as_millis() as u64),
+                        },
+                        Err(err) => return Err(err),
                     }
-                    Err(err) if err.class == FailureClass::Transient => VerificationStepResult {
-                        step_id: step.step_id.clone(),
-                        status: VerificationStepStatus::TimedOut,
-                        details: Some(err.message),
-                        command: Some(command.to_string()),
-                        exit_code: None,
-                        stdout: None,
-                        stderr: None,
-                        duration_ms: Some(started.elapsed().as_millis() as u64),
-                    },
-                    Err(err) => return Err(err),
+                }
+                VerificationStepType::CoreopsAction
+                | VerificationStepType::GuestCommand
+                | VerificationStepType::MutateState
+                | VerificationStepType::Reboot => {
+                    let command = step.command_or_action.as_deref().unwrap_or("noop");
+                    let started = Instant::now();
+                    match context.guest_boundary.run_command(
+                        &guest,
+                        command,
+                        Some(step.effective_timeout.as_str()),
+                    ) {
+                        Ok(output) => {
+                            let status = if output.status_code == 0 {
+                                VerificationStepStatus::Passed
+                            } else {
+                                VerificationStepStatus::Failed
+                            };
+                            VerificationStepResult {
+                                step_id: step.step_id.clone(),
+                                status,
+                                details: Some(output.stdout.clone()),
+                                command: Some(command.to_string()),
+                                exit_code: Some(output.status_code),
+                                stdout: Some(output.stdout),
+                                stderr: Some(output.stderr),
+                                duration_ms: Some(started.elapsed().as_millis() as u64),
+                            }
+                        }
+                        Err(err) if err.class == FailureClass::Transient => VerificationStepResult {
+                            step_id: step.step_id.clone(),
+                            status: VerificationStepStatus::TimedOut,
+                            details: Some(err.message),
+                            command: Some(command.to_string()),
+                            exit_code: None,
+                            stdout: None,
+                            stderr: None,
+                            duration_ms: Some(started.elapsed().as_millis() as u64),
+                        },
+                        Err(err) => return Err(err),
+                    }
+                }
+            };
+            if scenario_started.elapsed() > scenario_timeout {
+                step_result.status = VerificationStepStatus::TimedOut;
+                step_result.details = Some(format!(
+                    "scenario timeout exceeded after {} ms (limit {})",
+                    scenario_started.elapsed().as_millis(),
+                    scenario.effective_timeouts()?.scenario_timeout
+                ));
+            }
+            step_results.push(step_result);
+            if matches!(
+                step_results.last().map(|step| step.status),
+                Some(VerificationStepStatus::TimedOut)
+            ) {
+                break;
+            }
+        }
+
+        let mut assertion_results = evaluate_assertions(&scenario.assertions, &step_results)?;
+        for result in &mut assertion_results {
+            result.observed_value = result.observed_value.as_deref().map(strip_ansi_escapes);
+        }
+
+        let overall_outcome = classify_scenario_outcome(&step_results, &assertion_results);
+        let mut diagnostic_warnings = Vec::new();
+        if guest.env_backed && overall_outcome != VerificationRunOutcome::Passed {
+            if let Err(err) = collect_env_backed_failure_diagnostics(
+                context.guest_boundary,
+                &guest,
+                &artifact_workspace,
+                &step_results,
+            ) {
+                diagnostic_warnings.push(format!(
+                    "failed to collect env-backed guest diagnostics: {err}"
+                ));
+            }
+        }
+        let failure_summary = match overall_outcome {
+            VerificationRunOutcome::Passed => None,
+            VerificationRunOutcome::AssertionFailure => {
+                Some("one or more verification assertions failed".to_string())
+            }
+            VerificationRunOutcome::InfrastructureFailure => {
+                Some("guest provisioning or command execution failed".to_string())
+            }
+            VerificationRunOutcome::Timeout => Some("verification timed out".to_string()),
+            VerificationRunOutcome::HarnessError => Some("verification harness error".to_string()),
+        };
+        let bundle_workspace = artifact_workspace.join("artifacts");
+        let enrichment = write_diagnostic_artifacts(
+            &bundle_workspace,
+            scenario,
+            overall_outcome,
+            failure_summary.as_deref(),
+            &step_results,
+            &assertion_results,
+        )?;
+        write_execution_artifacts(&artifact_workspace, &step_results, &assertion_results)?;
+        let mut artifacts = context
+            .artifact_boundary
+            .collect_artifacts(scenario, &artifact_workspace)?;
+        artifacts.warnings.extend(diagnostic_warnings);
+        artifacts.bundle.environment_retained = plan.retain_environment;
+        context
+            .artifact_boundary
+            .write_bundle_manifest(&artifacts.bundle)?;
+
+        if pause_before_teardown && !plan.retain_environment {
+            wait_for_teardown_ack(run_id, &artifact_workspace)?;
+        }
+        if !plan.retain_environment {
+            context.libvirt.destroy_guest(&guest)?;
+        }
+        let completed_at = now_rfc3339()?;
+
+        let _run = VerificationRun {
+            run_id: run_id.to_string(),
+            mode,
+            revision_selection_basis: VerificationRevisionSelectionBasis::SingleScenario,
+            revision_under_test: scenario.fixtures.revision_under_test.clone(),
+            controller_version: env!("CARGO_PKG_VERSION").to_string(),
+            scenario_refs: vec![scenario.scenario_id.clone()],
+            workspace_path: context.workspace.display().to_string(),
+            started_at: started_at.clone(),
+            completed_at: completed_at.clone(),
+            overall_outcome,
+            artifact_bundle: artifacts.bundle.clone(),
+        };
+        let _scenario_outcome = VerificationScenarioOutcome {
+            scenario_id: scenario.scenario_id.clone(),
+            revision_under_test: scenario.fixtures.revision_under_test.clone(),
+            outcome: overall_outcome,
+            step_results: step_results.clone(),
+            assertion_results: assertion_results.clone(),
+            failure_summary: failure_summary.clone(),
+        };
+
+        Ok(VerificationRunView {
+            view_kind: "verification_run".to_string(),
+            run_id: run_id.to_string(),
+            mode,
+            controller_version: env!("CARGO_PKG_VERSION").to_string(),
+            revision_selection_basis: VerificationRevisionSelectionBasis::SingleScenario,
+            revision_under_test: scenario.fixtures.revision_under_test.clone(),
+            started_at,
+            completed_at,
+            scenario_id: scenario.scenario_id.clone(),
+            title: scenario.title.clone(),
+            overall_outcome,
+            artifact_bundle: artifacts.bundle,
+            environment_retained: plan.retain_environment,
+            step_results,
+            assertion_results,
+            warnings: artifacts.warnings,
+            failure_summary,
+            regression_summary: enrichment.regression_summary,
+            promotion_status: enrichment.promotion_status,
+        })
+    })();
+
+    match execution {
+        Ok(view) => Ok(view),
+        Err(err) => {
+            if !retain_environment {
+                if let Err(cleanup_err) = context.libvirt.destroy_guest(&guest) {
+                    return Err(CoreError::new(
+                        err.class,
+                        format!(
+                            "{}; additionally failed to tear down guest {}: {}",
+                            err.message, guest.domain_name, cleanup_err.message
+                        ),
+                    ));
                 }
             }
-        };
-        if scenario_started.elapsed() > scenario_timeout {
-            step_result.status = VerificationStepStatus::TimedOut;
-            step_result.details = Some(format!(
-                "scenario timeout exceeded after {} ms (limit {})",
-                scenario_started.elapsed().as_millis(),
-                scenario.effective_timeouts()?.scenario_timeout
-            ));
-        }
-        step_results.push(step_result);
-        if matches!(step_results.last().map(|step| step.status), Some(VerificationStepStatus::TimedOut))
-        {
-            break;
+            Err(err)
         }
     }
-
-    let mut assertion_results = evaluate_assertions(&scenario.assertions, &step_results)?;
-    for result in &mut assertion_results {
-        result.observed_value = result
-            .observed_value
-            .as_deref()
-            .map(strip_ansi_escapes);
-    }
-
-    let overall_outcome = classify_scenario_outcome(&step_results, &assertion_results);
-    let mut diagnostic_warnings = Vec::new();
-    if guest.env_backed && overall_outcome != VerificationRunOutcome::Passed {
-        if let Err(err) = collect_env_backed_failure_diagnostics(
-            context.guest_boundary,
-            &guest,
-            &artifact_workspace,
-            &step_results,
-        ) {
-            diagnostic_warnings.push(format!(
-                "failed to collect env-backed guest diagnostics: {err}"
-            ));
-        }
-    }
-    let failure_summary = match overall_outcome {
-        VerificationRunOutcome::Passed => None,
-        VerificationRunOutcome::AssertionFailure => {
-            Some("one or more verification assertions failed".to_string())
-        }
-        VerificationRunOutcome::InfrastructureFailure => {
-            Some("guest provisioning or command execution failed".to_string())
-        }
-        VerificationRunOutcome::Timeout => Some("verification timed out".to_string()),
-        VerificationRunOutcome::HarnessError => Some("verification harness error".to_string()),
-    };
-    let bundle_workspace = artifact_workspace.join("artifacts");
-    let enrichment = write_diagnostic_artifacts(
-        &bundle_workspace,
-        scenario,
-        overall_outcome,
-        failure_summary.as_deref(),
-        &step_results,
-        &assertion_results,
-    )?;
-    write_execution_artifacts(&artifact_workspace, &step_results, &assertion_results)?;
-    let mut artifacts = context
-        .artifact_boundary
-        .collect_artifacts(scenario, &artifact_workspace)?;
-    artifacts.warnings.extend(diagnostic_warnings);
-    artifacts.bundle.environment_retained = plan.retain_environment;
-    context
-        .artifact_boundary
-        .write_bundle_manifest(&artifacts.bundle)?;
-
-    if pause_before_teardown && !plan.retain_environment {
-        wait_for_teardown_ack(run_id, &artifact_workspace)?;
-    }
-    if !plan.retain_environment {
-        context.libvirt.destroy_guest(&guest)?;
-    }
-    let completed_at = now_rfc3339()?;
-
-    let _run = VerificationRun {
-        run_id: run_id.to_string(),
-        mode,
-        revision_selection_basis: VerificationRevisionSelectionBasis::SingleScenario,
-        revision_under_test: scenario.fixtures.revision_under_test.clone(),
-        controller_version: env!("CARGO_PKG_VERSION").to_string(),
-        scenario_refs: vec![scenario.scenario_id.clone()],
-        workspace_path: context.workspace.display().to_string(),
-        started_at: started_at.clone(),
-        completed_at: completed_at.clone(),
-        overall_outcome,
-        artifact_bundle: artifacts.bundle.clone(),
-    };
-    let _scenario_outcome = VerificationScenarioOutcome {
-        scenario_id: scenario.scenario_id.clone(),
-        revision_under_test: scenario.fixtures.revision_under_test.clone(),
-        outcome: overall_outcome,
-        step_results: step_results.clone(),
-        assertion_results: assertion_results.clone(),
-        failure_summary: failure_summary.clone(),
-    };
-
-    Ok(VerificationRunView {
-        view_kind: "verification_run".to_string(),
-        run_id: run_id.to_string(),
-        mode,
-        controller_version: env!("CARGO_PKG_VERSION").to_string(),
-        revision_selection_basis: VerificationRevisionSelectionBasis::SingleScenario,
-        revision_under_test: scenario.fixtures.revision_under_test.clone(),
-        started_at,
-        completed_at,
-        scenario_id: scenario.scenario_id.clone(),
-        title: scenario.title.clone(),
-        overall_outcome,
-        artifact_bundle: artifacts.bundle,
-        environment_retained: plan.retain_environment,
-        step_results,
-        assertion_results,
-        warnings: artifacts.warnings,
-        failure_summary,
-        regression_summary: enrichment.regression_summary,
-        promotion_status: enrichment.promotion_status,
-    })
 }
 
 fn now_rfc3339() -> Result<String, CoreError> {
