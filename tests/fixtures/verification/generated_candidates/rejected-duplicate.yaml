@@ -1,0 +1,42 @@
+candidate_id: candidate-reapplying-the-same-revision-produces-no-managed-changes
+proposed_definition:
+  scenario_id: candidate-reapplying-the-same-revision-produces-no-managed-changes
+  title: Reapplying The Same Revision Produces No Managed Changes
+  description: Reapplying the same revision produces no managed changes
+  scenario_classes:
+    - idempotency
+  source: candidate
+  behavioral_claim: Reapplying the same revision produces no managed changes
+  rationale: Idempotent applies remain stable
+  environment:
+    profile: single-blessed-vm
+  fixtures:
+    repo_fixture: fixtures/repos/generated
+    revision_under_test: candidate-revision
+  steps:
+    - step_id: boot
+      step_type: boot
+      target: guest
+    - step_id: exercise-contract
+      step_type: coreops_action
+      target: guest
+      action:
+        action: apply
+        repository_source: fixture
+        revision: candidate-revision
+  assertions:
+    - assertion_id: derived-behavior
+      assertion_type: no_pending_changes
+      target: guest
+      expected_state: none
+      failure_message: "Derived behavior failed: Reapplying the same revision produces no managed changes"
+      artifact_hints:
+        - Assertion failures remain diagnosable
+  policy_overrides: null
+generation_inputs:
+  - Reapplying the same revision produces no managed changes
+  - Idempotent applies remain stable
+  - Assertion failures remain diagnosable
+validation_findings:
+  - duplicate accepted coverage for normalized behavioral claim
+review_status: rejected

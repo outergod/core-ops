@@ -14,23 +14,6 @@ storage:
       contents:
         inline: |
           ${VM_HOSTNAME}
-    - path: /etc/NetworkManager/system-connections/static.nmconnection
-      mode: 0600
-      contents:
-        inline: |
-          [connection]
-          id=static
-          type=ethernet
-          interface-name=${NETWORK_INTERFACE}
-          autoconnect=true
-
-          [ipv4]
-          method=manual
-          address1=${STATIC_IPV4_ADDRESS}/${STATIC_IPV4_PREFIX},${STATIC_IPV4_GATEWAY}
-          dns=${STATIC_IPV4_DNS};
-
-          [ipv6]
-          method=disabled
 
 systemd:
   units:

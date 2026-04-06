@@ -1,8 +1,11 @@
 pub mod apply;
 pub mod audit;
+pub mod guest;
+pub mod libvirt;
 pub mod lock;
 pub mod observed;
 pub mod quadlet;
 pub mod repo;
 pub mod state;
 pub mod systemd;
+pub mod verification_artifacts;

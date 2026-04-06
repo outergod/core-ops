@@ -1,0 +1,41 @@
+candidate_id: candidate-applying-an-upgraded-revision-preserves-deterministic-transition-summaries
+proposed_definition:
+  scenario_id: candidate-applying-an-upgraded-revision-preserves-deterministic-transition-summaries
+  title: Applying An Upgraded Revision Preserves Deterministic Transition Summaries
+  description: Applying an upgraded revision preserves deterministic transition summaries
+  scenario_classes:
+    - upgrade_transition
+  source: candidate
+  behavioral_claim: Applying an upgraded revision preserves deterministic transition summaries
+  rationale: Transition summaries stay stable
+  environment:
+    profile: single-blessed-vm
+  fixtures:
+    repo_fixture: fixtures/repos/generated
+    revision_under_test: candidate-revision
+  steps:
+    - step_id: boot
+      step_type: boot
+      target: guest
+    - step_id: exercise-contract
+      step_type: coreops_action
+      target: guest
+      action:
+        action: apply
+        repository_source: fixture
+        revision: candidate-revision
+  assertions:
+    - assertion_id: derived-behavior
+      assertion_type: output_contains
+      target: guest
+      expected_state: deterministic-transition
+      failure_message: "Derived behavior failed: Applying an upgraded revision preserves deterministic transition summaries"
+      artifact_hints:
+        - Upgrade failures remain diagnosable
+  policy_overrides: null
+generation_inputs:
+  - Applying an upgraded revision preserves deterministic transition summaries
+  - Transition summaries stay stable
+  - Upgrade failures remain diagnosable
+validation_findings: []
+review_status: needs_review

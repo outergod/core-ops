@@ -1,0 +1,32 @@
+{
+  "view_kind": "verification_run",
+  "run_id": "run-20260401-120001-frontend-idempotency",
+  "mode": "ci",
+  "controller_version": "0.6.0",
+  "revision_selection_basis": "single_scenario",
+  "revision_under_test": "demo-uat-v2",
+  "overall_outcome": "passed",
+  "started_at": "2026-04-01T12:00:01Z",
+  "completed_at": "2026-04-01T12:07:14Z",
+  "scenario_outcomes": [
+    {
+      "scenario_id": "verify-idempotent-frontend",
+      "revision_under_test": "demo-uat-v2",
+      "outcome": "passed",
+      "failure_summary": null,
+      "assertion_results": [
+        {
+          "assertion_id": "no-pending-change",
+          "status": "passed",
+          "evidence_refs": [
+            "artifacts/assertions/no-pending-change.json"
+          ]
+        }
+      ]
+    }
+  ],
+  "artifacts": {
+    "bundle_path": "artifacts/run-20260401-120001-frontend-idempotency",
+    "environment_retained": false
+  }
+}

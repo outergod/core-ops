@@ -100,6 +100,41 @@
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 - **[Entity 2]**: [What it represents, relationships to other entities]
 
+## Verification Guidance *(optional support for features that participate in the verification workflow)*
+
+<!--
+  ACTION OPTIONAL: If this feature is expected to participate in spec-derived
+  end-to-end verification, fill in the fields below to help LLM-assisted
+  scenario derivation and human review. The feature specification itself
+  remains the canonical semantic generation input; this section is guidance,
+  not a required replacement for reading the spec. If this feature is not in
+  scope for that workflow, remove this section entirely.
+-->
+
+### Observable Behaviors
+
+- [Behavior that must be observable in runtime verification]
+
+### Invariants
+
+- [Behavioral invariant that must always hold]
+
+### Idempotency Expectations
+
+- [What repeated application or execution must preserve]
+
+### Failure Modes
+
+- [Expected failure class or operational failure behavior]
+
+### Upgrade Considerations
+
+- [What must remain correct across revision transitions]
+
+### Required Scenario Classes
+
+- [One or more scenario classes the verification workflow must cover]
+
 ## Constitution Alignment *(mandatory)*
 
 <!--

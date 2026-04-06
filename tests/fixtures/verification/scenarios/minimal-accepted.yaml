@@ -1,0 +1,49 @@
+scenario_id: verify-idempotent-frontend
+title: Frontend idempotency remains stable
+description: Reapplying the same desired state produces no pending changes.
+scenario_classes:
+  - idempotency
+source: accepted
+behavioral_claim: Reapplying the same revision produces no managed changes.
+rationale: Guards regression in convergence semantics.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: fixtures/repos/frontend
+  revision_under_test: demo-uat-v2
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/frontend-history
+    revisions:
+      - demo-uat-v1
+      - demo-uat-v2
+    states:
+      - valid
+      - valid
+    transition_expectations:
+      - reapply remains stable
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: apply
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-uat-v2
+      mode: humane
+  - step_id: reapply
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-uat-v2
+      mode: humane
+assertions:
+  - assertion_id: no-pending-change
+    assertion_type: no_pending_changes
+    target: guest
+    expected_state: none
+    failure_message: Reapply reported managed changes.

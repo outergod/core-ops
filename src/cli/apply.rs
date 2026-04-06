@@ -103,7 +103,9 @@ pub fn apply_with_report(
         &plan_result.desired,
         verify_state(&plan_result.desired, &observed_before),
     );
-    let baseline_snapshot = last_applied_snapshot.as_ref().map(|snapshot| &snapshot.snapshot);
+    let baseline_snapshot = last_applied_snapshot
+        .as_ref()
+        .map(|snapshot| &snapshot.snapshot);
     let mut deterministic = reconcile_deterministic_plan_with_runtime(
         &desired_snapshot,
         baseline_snapshot,
@@ -259,7 +261,9 @@ where
         &plan_result.desired,
         verify_state(&plan_result.desired, &observed_before),
     );
-    let baseline_snapshot = last_applied_snapshot.as_ref().map(|snapshot| &snapshot.snapshot);
+    let baseline_snapshot = last_applied_snapshot
+        .as_ref()
+        .map(|snapshot| &snapshot.snapshot);
     let mut deterministic = reconcile_deterministic_plan_with_runtime(
         &desired_snapshot,
         baseline_snapshot,
@@ -467,7 +471,9 @@ where
         &plan_result.desired,
         verify_state(&plan_result.desired, &observed_before),
     );
-    let baseline_snapshot = last_applied_snapshot.as_ref().map(|snapshot| &snapshot.snapshot);
+    let baseline_snapshot = last_applied_snapshot
+        .as_ref()
+        .map(|snapshot| &snapshot.snapshot);
     let mut deterministic = reconcile_deterministic_plan_with_runtime(
         &desired_snapshot,
         baseline_snapshot,
@@ -692,8 +698,12 @@ pub fn execute_rollback_with_report(
                 "deterministic rollback state is absent",
             )
         })?;
-    let rollback_preview =
-        reconcile_rollback(&rollback_state, &actual.scope_id, target_revision_id, &actual)?;
+    let rollback_preview = reconcile_rollback(
+        &rollback_state,
+        &actual.scope_id,
+        target_revision_id,
+        &actual,
+    )?;
     let preview = format_rollback_report(&rollback_preview.target, &rollback_preview.plan);
     let preview_json =
         format_rollback_report_json(&rollback_preview.target, &rollback_preview.plan);
