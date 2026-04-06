@@ -7,7 +7,7 @@ use crate::core::verification_model::{
     VerificationScenarioSource, VerificationScenarioStep, VerificationStepTarget,
     VerificationStepType,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -32,7 +32,14 @@ pub fn extract_verification_inputs(spec_text: &str) -> Result<VerificationInputs
     let guidance_present = spec_text.contains("## Verification Guidance")
         || spec_text.contains("## Verification Inputs");
 
-    let mut observable_behaviors = collect_bullets(spec_text, "### Observable Behaviors");
+    if !guidance_present {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "feature spec must include a Verification Guidance section",
+        ));
+    }
+
+    let observable_behaviors = collect_bullets(spec_text, "### Observable Behaviors");
     let invariants = collect_bullets(spec_text, "### Invariants");
     let idempotency_expectations = collect_bullets(spec_text, "### Idempotency Expectations");
     let failure_modes = collect_bullets(spec_text, "### Failure Modes");
@@ -40,45 +47,50 @@ pub fn extract_verification_inputs(spec_text: &str) -> Result<VerificationInputs
     let required_scenario_classes = parse_explicit_classes(spec_text)?;
 
     if observable_behaviors.is_empty() {
-        observable_behaviors = collect_requirement_behaviors(spec_text);
-    }
-
-    if observable_behaviors.is_empty() {
         return Err(CoreError::new(
             FailureClass::Validation,
-            "feature spec does not expose enough semantic behavior to derive scenarios",
+            "Verification Guidance must include at least one Observable Behavior",
+        ));
+    }
+    if invariants.is_empty() {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "Verification Guidance must include at least one Invariant",
+        ));
+    }
+    if idempotency_expectations.is_empty() {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "Verification Guidance must include at least one Idempotency Expectation",
+        ));
+    }
+    if failure_modes.is_empty() {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "Verification Guidance must include at least one Failure Mode",
+        ));
+    }
+    if upgrade_considerations.is_empty() {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "Verification Guidance must include at least one Upgrade Consideration",
+        ));
+    }
+    if required_scenario_classes.is_empty() {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "Verification Guidance must include at least one Required Scenario Class",
         ));
     }
 
-    let derived_classes = if required_scenario_classes.is_empty() {
-        infer_scenario_classes(&observable_behaviors)
-    } else {
-        required_scenario_classes
-    };
-
-    if derived_classes.is_empty() {
-        return Err(CoreError::new(
-            FailureClass::Validation,
-            "feature spec does not expose enough scenario-class intent to derive candidates",
-        ));
-    }
-
-    let mut generation_inputs = VerificationInputs {
+    Ok(VerificationInputs {
         observable_behaviors,
         invariants,
         idempotency_expectations,
         failure_modes,
         upgrade_considerations,
-        required_scenario_classes: derived_classes,
-    };
-
-    if !guidance_present && generation_inputs.invariants.is_empty() {
-        generation_inputs
-            .invariants
-            .push("Derived from feature specification semantics".to_string());
-    }
-
-    Ok(generation_inputs)
+        required_scenario_classes,
+    })
 }
 
 pub fn load_accepted_corpus(dir: &Path) -> Result<Vec<VerificationScenarioDefinition>, CoreError> {
@@ -280,55 +292,12 @@ fn collect_bullets(spec_text: &str, heading: &str) -> Vec<String> {
     Vec::new()
 }
 
-fn collect_requirement_behaviors(spec_text: &str) -> Vec<String> {
-    let mut behaviors = collect_bullets(spec_text, "### Functional Requirements");
-    if behaviors.is_empty() {
-        behaviors = collect_bullets(spec_text, "## Functional Requirements");
-    }
-    if behaviors.is_empty() {
-        behaviors = spec_text
-            .lines()
-            .filter_map(|line| {
-                let trimmed = line.trim();
-                trimmed
-                    .strip_prefix("- ")
-                    .filter(|value| value.contains("SHALL") || value.contains("should"))
-                    .map(|value| value.to_string())
-            })
-            .collect();
-    }
-    behaviors
-}
-
 fn parse_explicit_classes(spec_text: &str) -> Result<Vec<VerificationScenarioClass>, CoreError> {
     let candidates = collect_bullets(spec_text, "### Required Scenario Classes");
     candidates
         .into_iter()
         .map(|value| parse_scenario_class(&value))
         .collect()
-}
-
-fn infer_scenario_classes(observable_behaviors: &[String]) -> Vec<VerificationScenarioClass> {
-    let mut classes = BTreeSet::new();
-    for behavior in observable_behaviors {
-        let normalized = normalize_behavioral_claim(behavior);
-        if normalized.contains("idempot") || normalized.contains("reapply") {
-            classes.insert(VerificationScenarioClass::Idempotency);
-        }
-        if normalized.contains("upgrade") || normalized.contains("transition") {
-            classes.insert(VerificationScenarioClass::UpgradeTransition);
-        }
-        if normalized.contains("regression") {
-            classes.insert(VerificationScenarioClass::RegressionDetection);
-        }
-        if normalized.contains("explain") {
-            classes.insert(VerificationScenarioClass::ExplainApplyConsistency);
-        }
-    }
-    if classes.is_empty() {
-        classes.insert(VerificationScenarioClass::Convergence);
-    }
-    classes.into_iter().collect()
 }
 
 fn parse_scenario_class(value: &str) -> Result<VerificationScenarioClass, CoreError> {

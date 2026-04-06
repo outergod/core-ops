@@ -91,6 +91,8 @@ verification.
 - Focused accepted-corpus reruns use repeated `--scenario-id <id>` values with
   `--accepted-dir`.
 - `--debug` retains the disposable VM after artifact collection.
+- `--pause-before-teardown` adds an interactive pause before teardown for
+  single-scenario debug runs when the scenario policy still tears the VM down.
 - `--json` emits the authoritative machine-readable `verification_run`
   contract on stdout.
 
@@ -103,6 +105,10 @@ cargo run --bin core-ops-verify -- run \
 cargo run --bin core-ops-verify -- run \
   --scenario tests/fixtures/verification/scenarios/minimal-accepted.yaml \
   --debug --json
+
+cargo run --bin core-ops-verify -- run \
+  --scenario tests/fixtures/verification/scenarios/minimal-accepted.yaml \
+  --debug --pause-before-teardown
 
 cargo run --bin core-ops-verify -- run \
   --accepted-dir tests/fixtures/verification/scenarios \
@@ -167,6 +173,8 @@ Use this decision rule when choosing what to create.
 
 2. **New feature behavior not yet covered**
    - Start from the feature specification
+   - Ensure the spec contains a populated `Verification Guidance` section with
+     all required subsections before generation
    - Generate a candidate into
      `tests/fixtures/verification/generated_candidates/`
    - Review it for:

@@ -37,16 +37,15 @@ fn duplicate_detection_rejects_matching_behavioral_claim_and_class() {
 }
 
 #[test]
-fn extraction_falls_back_to_feature_semantics_without_guidance_section() {
-    let inputs = extract_verification_inputs(
+fn extraction_rejects_specs_missing_mandatory_verification_guidance() {
+    let err = extract_verification_inputs(
         "# Feature Specification\n\n## Functional Requirements\n- The system SHALL reapply the same revision without reporting managed changes.\n",
     )
-    .expect("derived inputs");
+    .expect_err("missing guidance should fail");
 
-    assert!(!inputs.observable_behaviors.is_empty());
-    assert!(inputs
-        .required_scenario_classes
-        .contains(&core_ops::core::verification_model::VerificationScenarioClass::Idempotency));
+    assert!(err
+        .message
+        .contains("must include a Verification Guidance section"));
 }
 
 #[test]

@@ -119,6 +119,22 @@ fn coverage_reporting_identifies_missing_required_scenario_classes() {
 - Reapplying the same revision produces no managed changes
 - Applying an upgraded revision preserves deterministic transition summaries
 
+### Invariants
+
+- Transition summaries stay stable
+
+### Idempotency Expectations
+
+- Reapplying the same revision remains stable
+
+### Failure Modes
+
+- Assertion failures remain diagnosable
+
+### Upgrade Considerations
+
+- Revision transitions remain explainable
+
 ### Required Scenario Classes
 
 - idempotency

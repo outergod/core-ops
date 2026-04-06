@@ -241,6 +241,10 @@ analysis.
 - **FR-017a**: Default execution MUST tear down disposable environments after
   artifact collection completes, including failed runs; a debug-oriented mode
   MAY retain the environment for manual inspection.
+- **FR-017b**: Debug-oriented execution MUST support an explicit
+  pause-before-teardown workflow for interactive investigation when an
+  operator wants temporary live inspection without leaving the disposable
+  environment retained indefinitely.
 - **FR-018**: The system MUST avoid arbitrary timing dependencies by relying on
   explicit readiness conditions, explicit timeouts, pinned inputs, and minimal
   external dependencies.
@@ -249,9 +253,10 @@ analysis.
   expectations, failure modes, upgrade considerations, and required scenario
   classes.
 - **FR-019a**: Verification-oriented fields in feature specifications MUST
-  remain human-authored structured guidance for LLM-assisted derivation and
-  review, and MUST NOT become a rigid intermediate representation required to
-  reconstruct the full behavioral meaning of the feature specification.
+  remain a mandatory, human-authored section for features that participate in
+  this workflow, and MUST NOT become a rigid intermediate representation
+  required to reconstruct the full behavioral meaning of the feature
+  specification.
 - **FR-020**: The system MUST make regression detection across revisions
   possible by associating verification runs with the revision under test and
   surfacing behavioral differences through run outcomes and artifacts.

@@ -138,6 +138,8 @@ and testing of each story.
 - [X] T042 [P] Add additional repeatability and determinism coverage in `tests/integration/test_verification_execution.rs` and `tests/unit/test_verification_results.rs`
 - [X] T050 [P] Document repository-evolution authoring, bug-reproduction promotion, selective developer workflows, and the acceptance workflow for turning a reproduced bug into a permanent accepted regression scenario in `docs/development.md`, `specs/008-e2e-verification-harness/quickstart.md`, and `tests/fixtures/verification/README.md`
 - [X] T055 [P] Document authorable minimal-scenario conventions, profile usage, omitted defaults, and semantic step actions in `docs/development.md`, `specs/008-e2e-verification-harness/quickstart.md`, and `tests/fixtures/verification/README.md`
+- [X] T056 [P] Make the feature-spec Verification Guidance section mandatory for verification-participating features in `.specify/templates/spec-template.md`, `specs/008-e2e-verification-harness/spec.md`, `specs/008-e2e-verification-harness/plan.md`, `src/core/verification_generate.rs`, `tests/unit/test_verification_generation.rs`, `tests/integration/test_verification_generation.rs`, and `tests/integration/test_verification_cli.rs`
+- [X] T057 [P] Add an interactive debug pause-before-teardown workflow for single-scenario verification runs in `src/cli/verification.rs`, `docs/development.md`, `specs/008-e2e-verification-harness/quickstart.md`, and `tests/integration/test_verification_cli.rs`
 - [X] T043 Run `cargo test` and capture the result in the implementation record for `specs/008-e2e-verification-harness/tasks.md`
 - [X] T044 Run `cargo clippy --all-targets -- -D warnings` and capture the result in the implementation record for `specs/008-e2e-verification-harness/tasks.md`
 
@@ -161,6 +163,8 @@ and testing of each story.
 - 2026-04-06: `cargo clippy --all-targets -- -D warnings` passed after the same public command-surface and timing-guardrail implementation.
 - 2026-04-06: `cargo test verification -- --nocapture` passed after adding failure-summary, regression-summary, and promotion-status artifact/report enrichment for failing accepted regression scenarios.
 - 2026-04-06: `cargo clippy --all-targets -- -D warnings` passed after the same regression artifact/report enrichment changes.
+- 2026-04-06: `cargo test verification -- --nocapture` passed after making Verification Guidance mandatory for participating feature specs and adding the single-scenario debug pause-before-teardown workflow.
+- 2026-04-06: `cargo clippy --all-targets -- -D warnings` passed after the same mandatory-guidance and debug-pause changes.
 
 ---
 

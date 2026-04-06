@@ -45,6 +45,7 @@ fn accepted_scenario_execution_passes_and_collects_artifacts() {
         "run-accepted",
         &context,
         false,
+        false,
     )
     .expect("execute");
 
@@ -82,6 +83,7 @@ fn failed_assertion_classifies_as_assertion_failure() {
         VerificationRunMode::Local,
         "run-failed-assertion",
         &context,
+        false,
         false,
     )
     .expect("execute");
@@ -138,6 +140,7 @@ fn partial_artifact_collection_preserves_primary_outcome() {
         "run-partial-artifacts",
         &context,
         false,
+        false,
     )
     .expect("execute");
 
@@ -175,6 +178,7 @@ fn repeated_execution_preserves_meaningful_outcome_shape() {
         "run-one",
         &first_context,
         false,
+        false,
     )
     .expect("first execute");
 
@@ -191,6 +195,7 @@ fn repeated_execution_preserves_meaningful_outcome_shape() {
         VerificationRunMode::Local,
         "run-two",
         &second_context,
+        false,
         false,
     )
     .expect("second execute");
@@ -235,6 +240,7 @@ fn ci_corpus_exit_code_is_non_zero_when_any_accepted_scenario_fails() {
         workspace_root: Some(workspace.path().to_path_buf()),
         artifacts_dir: Some(artifacts.path().to_path_buf()),
         debug: false,
+        pause_before_teardown: false,
         synthetic: true,
         ci: true,
         json: true,
@@ -271,6 +277,7 @@ fn ci_corpus_reporting_preserves_revision_provenance_for_repository_evolution() 
         workspace_root: Some(workspace.path().to_path_buf()),
         artifacts_dir: Some(artifacts.path().to_path_buf()),
         debug: false,
+        pause_before_teardown: false,
         synthetic: true,
         ci: true,
         json: true,
@@ -329,6 +336,7 @@ fn ci_bug_reproduction_rerun_can_focus_single_accepted_regression_scenario() {
         workspace_root: Some(workspace.path().to_path_buf()),
         artifacts_dir: Some(artifacts.path().to_path_buf()),
         debug: false,
+        pause_before_teardown: false,
         synthetic: true,
         ci: true,
         json: true,
@@ -523,6 +531,7 @@ fn command_surface_assertions_cover_machine_human_agent_and_timing_interfaces() 
         "run-command-surfaces",
         &context,
         false,
+        false,
     )
     .expect("execute");
 
@@ -571,6 +580,7 @@ fn scenario_timeout_enforcement_classifies_run_as_timeout() {
         "run-scenario-timeout",
         &context,
         false,
+        false,
     )
     .expect("execute");
 
@@ -613,6 +623,7 @@ fn failing_regression_scenario_enriches_artifacts_and_report_surfaces() {
         VerificationRunMode::Ci,
         "run-regression-failure",
         &context,
+        false,
         false,
     )
     .expect("execute");
@@ -711,6 +722,7 @@ fn transient_guest_command_timeout_classifies_step_and_run_as_timeout() {
         VerificationRunMode::Ci,
         "run-guest-timeout",
         &context,
+        false,
         false,
     )
     .expect("execute");

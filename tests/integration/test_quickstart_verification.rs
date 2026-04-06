@@ -13,6 +13,7 @@ fn quickstart_mentions_local_debug_and_ci_verification_flows() {
     assert!(contents.contains("--accepted-dir tests/fixtures/verification/scenarios"));
     assert!(contents.contains("--ci --json"));
     assert!(contents.contains("debug mode"));
+    assert!(contents.contains("--pause-before-teardown"));
     assert!(contents.contains("retained artifact bundle"));
 }
 
@@ -44,4 +45,5 @@ fn quickstart_mentions_repository_evolution_and_regression_authoring() {
     assert!(contents.contains("permanent regression scenarios"));
     assert!(contents.contains("named environment and policy profiles"));
     assert!(contents.contains("semantic step actions"));
+    assert!(contents.contains("Verification Guidance"));
 }

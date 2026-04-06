@@ -1,4 +1,5 @@
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 fn fixture_path(relative: &str) -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(relative)
@@ -51,6 +52,79 @@ fn cli_verification_run_in_debug_mode_retains_environment() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Verification run verify-idempotent-frontend [debug]"));
     assert!(stdout.contains("Env:     retained"));
+}
+
+#[test]
+fn cli_verification_run_can_pause_before_teardown_in_debug_mode() {
+    let scenario_dir = tempfile::tempdir().expect("scenario dir");
+    let scenario_yaml = std::fs::read_to_string(fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("read fixture");
+    let scenario_path = scenario_dir.path().join("pause-before-teardown.yaml");
+    std::fs::write(
+        &scenario_path,
+        format!(
+            "{scenario_yaml}\npolicy_overrides:\n  artifact_policy:\n    retain_environment_in_debug: false\n    export_format: directory\n"
+        ),
+    )
+    .expect("write scenario");
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_core-ops-verify"))
+        .arg("run")
+        .arg("--scenario")
+        .arg(&scenario_path)
+        .arg("--workspace-root")
+        .arg(workspace.path())
+        .arg("--artifacts-dir")
+        .arg(artifacts.path())
+        .arg("--debug")
+        .arg("--pause-before-teardown")
+        .arg("--synthetic")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn cli");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(b"\n")
+        .expect("ack pause");
+    let output = child.wait_with_output().expect("wait for cli");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stdout.contains("Env:     torn down"));
+    assert!(stderr.contains("Press Enter to continue teardown"));
+}
+
+#[test]
+fn cli_verification_run_rejects_pause_before_teardown_without_debug() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let output = Command::new(env!("CARGO_BIN_EXE_core-ops-verify"))
+        .arg("run")
+        .arg("--scenario")
+        .arg(fixture_path(
+            "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+        ))
+        .arg("--workspace-root")
+        .arg(workspace.path())
+        .arg("--artifacts-dir")
+        .arg(artifacts.path())
+        .arg("--pause-before-teardown")
+        .arg("--synthetic")
+        .output()
+        .expect("run cli");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--pause-before-teardown requires --debug"));
 }
 
 #[test]
@@ -309,6 +383,36 @@ fn cli_generate_rejects_duplicate_candidate_with_non_zero_exit() {
     assert!(stdout.contains("review_status: rejected"));
     assert!(stdout.contains("duplicate accepted coverage"));
     assert!(stdout.contains("Coverage"));
+}
+
+#[test]
+fn cli_generate_rejects_missing_mandatory_verification_guidance() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let spec_path = temp.path().join("missing-guidance.md");
+    std::fs::write(
+        &spec_path,
+        r#"
+# Feature Specification: Missing Guidance
+
+## Functional Requirements
+
+- The system SHALL reapply the same revision without reporting managed changes.
+"#,
+    )
+    .expect("write spec");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_core-ops-verify"))
+        .arg("generate")
+        .arg("--spec")
+        .arg(&spec_path)
+        .arg("--accepted-dir")
+        .arg(fixture_path("tests/fixtures/verification/scenarios"))
+        .output()
+        .expect("run generate");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("feature spec must include a Verification Guidance"));
 }
 
 #[test]

@@ -104,6 +104,7 @@ fn verification_run_json_output_matches_contract_shape() {
         "run-20260401-120001-frontend-idempotency",
         &context,
         false,
+        false,
     )
     .expect("execute");
     let parsed: serde_json::Value =

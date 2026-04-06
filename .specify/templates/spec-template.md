@@ -100,15 +100,16 @@
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 - **[Entity 2]**: [What it represents, relationships to other entities]
 
-## Verification Guidance *(optional support for features that participate in the verification workflow)*
+## Verification Guidance *(mandatory for features that participate in the verification workflow)*
 
 <!--
-  ACTION OPTIONAL: If this feature is expected to participate in spec-derived
-  end-to-end verification, fill in the fields below to help LLM-assisted
-  scenario derivation and human review. The feature specification itself
-  remains the canonical semantic generation input; this section is guidance,
-  not a required replacement for reading the spec. If this feature is not in
-  scope for that workflow, remove this section entirely.
+  ACTION REQUIRED: If this feature participates in spec-derived end-to-end
+  verification, fill in every field below. The feature specification itself
+  remains the canonical semantic generation input; this section is mandatory
+  structured guidance for LLM-assisted scenario derivation and human review,
+  not a replacement for reading the spec. If the feature is definitively out
+  of scope for that workflow, remove this section entirely and document why in
+  the feature discussion.
 -->
 
 ### Observable Behaviors

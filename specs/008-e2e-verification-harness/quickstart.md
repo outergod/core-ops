@@ -37,7 +37,9 @@ Runtime selection notes:
 3. Review the conclusive pass/fail result and inspect the retained artifact
    bundle.
 4. If deeper investigation is needed, rerun in debug mode to retain the
-   disposable environment for manual inspection.
+   disposable environment for manual inspection, or use
+   `--debug --pause-before-teardown` when you want a temporary live
+   inspection window before teardown.
 5. For feature development or triage, rerun only the focused scenario subset
    needed to reproduce the bug or validate the change.
 
@@ -90,6 +92,9 @@ Expected outcome:
 ## Candidate Scenario Workflow
 
 1. Provide a feature specification and any relevant behavioral contracts.
+   The feature specification must include a populated `Verification Guidance`
+   section with observable behaviors, invariants, idempotency expectations,
+   failure modes, upgrade considerations, and required scenario classes.
 2. Generate candidate scenarios with declared behavioral claims, rationale, and
    taxonomy classification.
 3. Validate and review generated candidates.

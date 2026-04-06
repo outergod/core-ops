@@ -34,10 +34,10 @@ onto any cleaner replacement path the harness later adopts. Verification
 execution remains on a dedicated development or testing entrypoint rather than
 expanding the stable operator-facing `core-ops` binary surface.
 Scenario derivation remains spec-driven: the feature specification is the
-canonical semantic input for candidate generation, while any structured
-verification guidance in the spec is optional support for LLM prompting,
-normalization quality, and reviewer context rather than a required replacement
-for semantic reading of the spec.
+canonical semantic input for candidate generation, and the mandatory
+Verification Guidance section provides structured, human-authored inputs for
+LLM prompting, normalization quality, and reviewer context without replacing
+semantic reading of the spec.
 
 ## Technical Context
 
@@ -72,9 +72,10 @@ collection; generated scenarios are advisory until accepted; controller version
 remains sourced from `Cargo.toml`; implementation should prefer reuse or
 extension of the current UAT provisioning path where it fits the harness model,
 and migrate manual UAT onto a better replacement path if one is introduced;
-feature specifications remain the canonical generation input, with structured
-verification guidance treated as optional support rather than a required
-intermediate format; scenario authoring should inherit environment and policy
+feature specifications remain the canonical generation input, with a mandatory
+Verification Guidance section that remains structured human guidance rather
+than a required intermediate format for reconstructing feature semantics;
+scenario authoring should inherit environment and policy
 defaults where possible rather than requiring fully explicit common-case
 configuration; synthetic or non-VM execution helpers may support internal test
 determinism but are not an acceptable replacement for disposable-VM execution  

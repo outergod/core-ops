@@ -27,6 +27,7 @@ use crate::io::guest::GuestCommandRunner;
 use crate::io::libvirt::LibvirtCommandRunner;
 use crate::io::verification_artifacts::{write_diagnostic_artifacts, ArtifactCollector};
 use clap::{Args, Parser, Subcommand};
+use std::io::{self, Write};
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
@@ -36,6 +37,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 const VERIFY_AFTER_HELP: &str = "Examples:
   core-ops-verify run --scenario tests/fixtures/verification/scenarios/minimal-accepted.yaml
   core-ops-verify run --scenario tests/fixtures/verification/scenarios/minimal-accepted.yaml --debug
+  core-ops-verify run --scenario tests/fixtures/verification/scenarios/minimal-accepted.yaml --debug --pause-before-teardown
   core-ops-verify run --scenario tests/fixtures/verification/scenarios/minimal-accepted.yaml --verbose
 
 Verification runs execute declarative single-VM scenarios against disposable
@@ -99,6 +101,9 @@ pub struct VerifyRunArgs {
     /// Keep the disposable environment after artifact capture when the scenario policy allows it.
     #[arg(long)]
     pub debug: bool,
+    /// Pause after artifact capture and wait for user acknowledgement before tearing the guest down.
+    #[arg(long)]
+    pub pause_before_teardown: bool,
     /// Use the deterministic internal synthetic boundary path instead of the authoritative VM-backed path.
     #[arg(long, hide = true)]
     pub synthetic: bool,
@@ -147,6 +152,7 @@ struct VerificationSuiteJsonView<'a> {
 }
 
 pub fn run(args: &VerifyRunArgs) -> Result<VerificationCommandOutput, CoreError> {
+    validate_run_args(args)?;
     let mode = if args.debug {
         VerificationRunMode::Debug
     } else if args.ci {
@@ -185,7 +191,14 @@ pub fn run(args: &VerifyRunArgs) -> Result<VerificationCommandOutput, CoreError>
                 artifact_boundary: &artifact_boundary,
             };
 
-            let view = execute_scenario(&scenario, mode, &run_id, &context, args.verbose)?;
+            let view = execute_scenario(
+                &scenario,
+                mode,
+                &run_id,
+                &context,
+                args.verbose,
+                args.pause_before_teardown,
+            )?;
             let exit_code = if view.overall_outcome == VerificationRunOutcome::Passed {
                 0
             } else {
@@ -285,6 +298,7 @@ fn run_accepted_corpus(
             &scenario_run_id,
             &context,
             args.verbose,
+            false,
         )?);
     }
     let completed_at = now_rfc3339()?;
@@ -468,6 +482,7 @@ pub fn execute_scenario(
     run_id: &str,
     context: &VerificationExecutionContext<'_>,
     verbose: bool,
+    pause_before_teardown: bool,
 ) -> Result<VerificationRunView, CoreError> {
     let started_at = now_rfc3339()?;
     std::fs::create_dir_all(context.workspace).map_err(|err| {
@@ -681,6 +696,9 @@ pub fn execute_scenario(
         .artifact_boundary
         .write_bundle_manifest(&artifacts.bundle)?;
 
+    if pause_before_teardown && !plan.retain_environment {
+        wait_for_teardown_ack(run_id, &artifact_workspace)?;
+    }
     if !plan.retain_environment {
         context.libvirt.destroy_guest(&guest)?;
     }
@@ -735,6 +753,49 @@ fn now_rfc3339() -> Result<String, CoreError> {
     OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .map_err(|err| CoreError::new(FailureClass::Verify, format!("failed to format timestamp: {err}")))
+}
+
+fn validate_run_args(args: &VerifyRunArgs) -> Result<(), CoreError> {
+    if args.pause_before_teardown && !args.debug {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "--pause-before-teardown requires --debug",
+        ));
+    }
+    if args.pause_before_teardown && args.ci {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "--pause-before-teardown cannot be used with --ci",
+        ));
+    }
+    if args.pause_before_teardown && args.accepted_dir.is_some() {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "--pause-before-teardown is supported only for single-scenario runs",
+        ));
+    }
+    Ok(())
+}
+
+fn wait_for_teardown_ack(run_id: &str, artifact_workspace: &Path) -> Result<(), CoreError> {
+    eprintln!(
+        "Debug pause before teardown for {run_id}. Artifacts are in {}. Press Enter to continue teardown.",
+        artifact_workspace.join("artifacts").display()
+    );
+    io::stderr().flush().map_err(|err| {
+        CoreError::new(
+            FailureClass::Apply,
+            format!("failed to flush debug pause prompt: {err}"),
+        )
+    })?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).map_err(|err| {
+        CoreError::new(
+            FailureClass::Apply,
+            format!("failed to read debug pause acknowledgement: {err}"),
+        )
+    })?;
+    Ok(())
 }
 
 fn format_verification_suite_json(view: &VerificationSuiteJsonView<'_>) -> String {
