@@ -76,6 +76,163 @@ CLI output, reconciliation semantics, or compatibility must evaluate and
 update the release version policy. The canonical controller version is the
 package version in `Cargo.toml`.
 
+## Verification Harness Workflow
+
+`core-ops-verify` is the dedicated development and CI entrypoint for the E2E
+verification harness. Its public execution path is VM-backed by default.
+Synthetic execution remains available only as hidden internal test support and
+is not the intended path for developer signoff, CI gating, or release
+verification.
+
+### Execution Modes
+
+- Single-scenario execution uses `--scenario <path>`.
+- Accepted-corpus CI execution uses `--accepted-dir <dir> --ci`.
+- Focused accepted-corpus reruns use repeated `--scenario-id <id>` values with
+  `--accepted-dir`.
+- `--debug` retains the disposable VM after artifact collection.
+- `--pause-before-teardown` adds an interactive pause before teardown for
+  single-scenario debug runs when the scenario policy still tears the VM down.
+- `--json` emits the authoritative machine-readable `verification_run`
+  contract on stdout.
+
+Examples:
+
+```bash
+cargo run --bin core-ops-verify -- run \
+  --scenario tests/fixtures/verification/scenarios/minimal-accepted.yaml
+
+cargo run --bin core-ops-verify -- run \
+  --scenario tests/fixtures/verification/scenarios/minimal-accepted.yaml \
+  --debug --json
+
+cargo run --bin core-ops-verify -- run \
+  --scenario tests/fixtures/verification/scenarios/minimal-accepted.yaml \
+  --debug --pause-before-teardown
+
+cargo run --bin core-ops-verify -- run \
+  --accepted-dir tests/fixtures/verification/scenarios \
+  --ci --json
+```
+
+### Hypervisor Selection
+
+If no libvirt override is set, the verification harness uses the local libvirt
+system URI (`qemu:///system`). This is the default when the same machine acts
+as both CLI host and hypervisor.
+
+To run against a remote hypervisor, set either:
+
+- `CORE_OPS_VERIFY_VM_HOST=<host>`
+  This derives the common remote URI shape
+  `qemu+ssh://core@<host>/system`.
+- `CORE_OPS_VERIFY_LIBVIRT_URI=<uri>`
+  This fully overrides the libvirt connection target and takes precedence over
+  `CORE_OPS_VERIFY_VM_HOST`.
+
+VM-backed runs normally also need a guest-runnable CoreOps binary:
+
+```bash
+export CORE_OPS_VERIFY_VM_HOST=ulthar
+export CORE_OPS_VERIFY_CORE_OPS_BIN=target/debug/core-ops
+```
+
+### Repository-Evolution and Regression Workflow
+
+Accepted scenarios may reference repository-history fixtures rather than a
+single static checkout. This allows a scenario to exercise realistic revision
+transitions, bug reproductions, and regression reruns.
+
+- Repository-history fixtures live under
+  `tests/fixtures/verification/repos/`.
+- Accepted scenario definitions live under
+  `tests/fixtures/verification/scenarios/`.
+- Generated candidates live under
+  `tests/fixtures/verification/generated_candidates/`.
+
+When a real bug is reproduced:
+
+1. capture or author the repository-history fixture sequence that demonstrates
+   the failure
+2. add or accept a scenario that declares the behavioral claim and scenario
+   classes involved
+3. rerun the accepted scenario after the fix
+4. keep the accepted scenario as a permanent regression entry in the
+   maintained corpus
+
+### Agent Playbook For Scenario and Bundle Generation
+
+Use this decision rule when choosing what to create.
+
+1. **Existing behavior already covered by an accepted scenario**
+   - Reuse the accepted scenario in
+     `tests/fixtures/verification/scenarios/`
+   - Run it directly and inspect the resulting bundle
+   - Do not create a new candidate unless the existing scenario is missing a
+     materially different behavioral claim
+
+2. **New feature behavior not yet covered**
+   - Start from the feature specification
+   - Ensure the spec contains a populated `Verification Guidance` section with
+     all required subsections before generation
+   - Generate a candidate into
+     `tests/fixtures/verification/generated_candidates/`
+   - Review it for:
+     - stable behavioral claim
+     - correct scenario class
+     - durable assertions tied to public behavior
+   - Promote it into `tests/fixtures/verification/scenarios/` only after
+     review and successful execution
+
+3. **Regression or bug-reproduction coverage**
+   - Model the revision sequence in
+     `tests/fixtures/verification/repos/`
+   - Reference that history from an accepted scenario with
+     `fixtures.repository_evolution`
+   - Validate the scenario against the failing revision sequence and again
+     after the fix
+   - Retain the accepted regression scenario permanently
+
+4. **CI/release gating**
+   - Use only accepted scenarios from
+     `tests/fixtures/verification/scenarios/`
+   - Prefer corpus execution with `--accepted-dir ... --ci`
+   - Use focused reruns with repeated `--scenario-id` values when triaging a
+     specific regression
+
+### Expected Bundle Shapes
+
+- All runs should retain:
+  - scenario definition
+  - harness log
+  - console output
+  - CoreOps output
+  - assertion results
+- Failed runs should additionally retain failure-specific diagnostics
+- Failed accepted regression scenarios should now also retain:
+  - `failure-summary.txt`
+  - `regression-summary.txt`
+  - `promotion-status.txt`
+
+### Scenario Authoring Conventions
+
+Common scenarios should stay short and authorable.
+
+- prefer named environment and policy profiles over repeating routine harness
+  configuration inline
+- use semantic CoreOps actions for common `apply`, `explain`, `plan`, and
+  related steps
+- use scenario-local overrides only when intentionally deviating from default
+  profile behavior
+- keep assertions tied to observable contract behavior rather than incidental
+  implementation details
+
+### Internal Synthetic Support
+
+The hidden `--synthetic` switch exists only to support deterministic internal
+tests and fast contract validation. It is not the intended product path and
+should not be used for local signoff, CI gating, or release verification.
+
 ## Provenance Status Snapshot Workflow
 
 - Canonical persisted provenance defaults to
@@ -279,14 +436,7 @@ Where=/var/lib/immich/media
 
 ## VM Host Preparation (CoreOS)
 
-On the dev host:
-
-```sh
-just render-ignition minimal
-scp infra/ignition/minimal.ign core@$VM_HOST:/var/lib/libvirt/images/
-```
-
-On remote:
+### One-Time Preparation
 
 ```sh
 sudo rpm-ostree override remove nfs-utils-coreos \
@@ -326,6 +476,29 @@ sudo chmod 0755 /var/lib/libvirt/ignition
 sudo install -m 0644 minimal.ign /var/lib/libvirt/ignition/minimal.ign
 ```
 
+### Preparing the VM
+
+On the dev host:
+
+```sh
+just render-ignition minimal
+scp infra/ignition/minimal.ign core@$VM_HOST:/var/lib/libvirt/images/
+```
+
+The feature-008 verification harness treats this `just render-ignition` plus
+`infra/ignition` flow as the initial provisioning substrate for disposable
+guest bootstrapping. If the harness later adopts a cleaner provisioning
+abstraction, manual UAT should migrate onto that path rather than maintaining a
+parallel setup workflow.
+
+On the VM host:
+
+```
+sudo mkdir -p /var/lib/libvirt/ignition
+sudo chmod 0755 /var/lib/libvirt/ignition
+sudo install -m 0644 minimal.ign /var/lib/libvirt/ignition/minimal.ign
+```
+
 On the dev host:
 
 ```sh
@@ -354,7 +527,7 @@ virt-install \
   --qemu-commandline="-fw_cfg name=opt/com.coreos/config,file=/var/lib/libvirt/ignition/minimal.ign"
 ```
 
-Remove:
+### Tearing Down the VM
 
 ```sh
 virsh -c qemu+ssh://core@$VM_HOST/system destroy core-ops-uat

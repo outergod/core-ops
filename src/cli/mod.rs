@@ -7,3 +7,4 @@ pub mod explain;
 pub mod plan;
 pub mod report;
 pub mod status;
+pub mod verification;

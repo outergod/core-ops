@@ -1,0 +1,12 @@
+[Unit]
+Description=Verification frontend demo UAT v1
+
+[Container]
+Image=docker.io/library/caddy:2.10.2-alpine
+ContainerName=frontend
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

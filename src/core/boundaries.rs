@@ -1,5 +1,10 @@
 use crate::core::errors::CoreError;
 use crate::core::types::{FailureClass, PlanAction, PlanActionType, ReconciliationPlan};
+use crate::core::verification_model::{
+    GuestCommandOutput, LibvirtGuestHandle, VerificationArtifactBundle, VerificationRunArtifacts,
+    VerificationScenarioDefinition,
+};
+use std::path::Path;
 
 pub fn enforce_plan_boundaries(plan: &ReconciliationPlan) -> Result<(), CoreError> {
     for action in &plan.actions {
@@ -30,4 +35,48 @@ fn is_supported_action(action_type: &PlanActionType) -> bool {
             | PlanActionType::RestartUnit
             | PlanActionType::StopUnit
     )
+}
+
+pub trait VerificationLibvirtBoundary {
+    fn create_guest(
+        &self,
+        scenario: &VerificationScenarioDefinition,
+        workspace_root: &Path,
+    ) -> Result<LibvirtGuestHandle, CoreError>;
+
+    fn destroy_guest(&self, guest: &LibvirtGuestHandle) -> Result<(), CoreError>;
+}
+
+pub trait VerificationGuestBoundary {
+    fn wait_ready(
+        &self,
+        guest: &LibvirtGuestHandle,
+        timeout: &str,
+    ) -> Result<GuestCommandOutput, CoreError>;
+
+    fn run_command(
+        &self,
+        guest: &LibvirtGuestHandle,
+        command: &str,
+        timeout: Option<&str>,
+    ) -> Result<GuestCommandOutput, CoreError>;
+
+    fn copy_to_guest(
+        &self,
+        guest: &LibvirtGuestHandle,
+        local_path: &Path,
+        remote_path: &str,
+        recursive: bool,
+        executable: bool,
+    ) -> Result<(), CoreError>;
+}
+
+pub trait VerificationArtifactBoundary {
+    fn collect_artifacts(
+        &self,
+        scenario: &VerificationScenarioDefinition,
+        workspace_root: &Path,
+    ) -> Result<VerificationRunArtifacts, CoreError>;
+
+    fn write_bundle_manifest(&self, bundle: &VerificationArtifactBundle) -> Result<(), CoreError>;
 }

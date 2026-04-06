@@ -9,4 +9,7 @@ pub mod retry;
 pub mod types;
 pub mod unit;
 pub mod validation;
+pub mod verification_eval;
+pub mod verification_generate;
+pub mod verification_model;
 pub mod verify;

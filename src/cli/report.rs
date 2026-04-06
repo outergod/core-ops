@@ -10,13 +10,15 @@ use crate::core::types::{
     PlanEntry, PlanEntryAction, PlanOutputView, PlanSummaryView, QuadletType, ReconcileRun,
     ReconciliationPlan, ResultEntry, ResultFinalState, ResultOutcome, ResultOutputView,
     ResultSummaryView, RevisionContext, RollbackTargetCandidate, SemanticDiffKind,
-    SemanticDiffView, VerificationResult,
+    SemanticDiffView, VerificationResult, VerificationRunMode, VerificationRunOutcome,
 };
 use crate::core::unit::systemd_unit_for_quadlet_file;
 use crate::core::validation::{
     validate_apply_output_view, validate_explain_output_view, validate_plan_output_view,
     validate_result_output_view,
 };
+use crate::core::verification_generate::VerificationCoverageReport;
+use crate::core::verification_model::{VerificationRunView, VerificationScenarioClass};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -144,6 +146,181 @@ pub fn format_convergence_report_json(
         })),
     });
     base.to_string()
+}
+
+pub fn format_verification_run_report(view: &VerificationRunView) -> String {
+    let mut output = String::new();
+    output.push_str(&format!(
+        "Verification run {} [{}]\n",
+        view.scenario_id,
+        verification_mode_label(view.mode)
+    ));
+    output.push_str(&format!("{}\n\n", "─".repeat(18 + view.scenario_id.len())));
+    output.push_str(&format!("Title:   {}\n", view.title));
+    output.push_str(&format!(
+        "Outcome: {}\n",
+        verification_outcome_label(view.overall_outcome)
+    ));
+    output.push_str(&format!("Run ID:  {}\n", view.run_id));
+    output.push_str(&format!("Bundle:  {}\n", view.artifact_bundle.bundle_path));
+    output.push_str(&format!(
+        "Env:     {}\n",
+        if view.environment_retained {
+            "retained"
+        } else {
+            "torn down"
+        }
+    ));
+    output.push_str(&format!(
+        "Artifacts: {}\n",
+        match view.artifact_bundle.collection_status {
+            crate::core::types::VerificationArtifactCollectionStatus::Complete => "complete",
+            crate::core::types::VerificationArtifactCollectionStatus::Partial => "partial",
+            crate::core::types::VerificationArtifactCollectionStatus::Failed => "failed",
+        }
+    ));
+    if let Some(summary) = &view.failure_summary {
+        output.push_str(&format!("Failure: {summary}\n"));
+    }
+    if let Some(summary) = &view.regression_summary {
+        let compact = summary
+            .lines()
+            .find(|line| line.starts_with("Revision sequence: "))
+            .map(|line| line.trim_start_matches("Revision sequence: "))
+            .unwrap_or(summary.as_str());
+        output.push_str(&format!("Regression: {compact}\n"));
+    }
+    if let Some(status) = &view.promotion_status {
+        output.push_str(&format!("Promotion: {status}\n"));
+    }
+    if !view.artifact_bundle.failure_specific_entries.is_empty() {
+        output.push_str("Failure-Specific Artifacts:\n");
+        for entry in &view.artifact_bundle.failure_specific_entries {
+            output.push_str(&format!("  - {entry}\n"));
+        }
+    }
+    if let Some(step) = view
+        .step_results
+        .iter()
+        .find(|step| step.status == crate::core::types::VerificationStepStatus::Failed)
+    {
+        output.push_str(&format!("Failed Step: {}\n", step.step_id));
+        if let Some(command) = &step.command {
+            output.push_str(&format!("Command: {}\n", command));
+        }
+        if let Some(exit_code) = step.exit_code {
+            output.push_str(&format!("Exit Code: {}\n", exit_code));
+        }
+        if let Some(duration_ms) = step.duration_ms {
+            output.push_str(&format!("Duration: {} ms\n", duration_ms));
+        }
+        if let Some(stderr) = &step.stderr {
+            if !stderr.trim().is_empty() {
+                output.push_str("Stderr:\n");
+                output.push_str(stderr.trim());
+                output.push('\n');
+            }
+        }
+        if let Some(stdout) = &step.stdout {
+            if !stdout.trim().is_empty() {
+                output.push_str("Stdout:\n");
+                output.push_str(stdout.trim());
+                output.push('\n');
+            }
+        }
+    }
+    if !view.warnings.is_empty() {
+        output.push_str("\nWarnings\n────────\n");
+        for warning in &view.warnings {
+            output.push_str(&format!("- {warning}\n"));
+        }
+    }
+    output
+}
+
+pub fn format_verification_run_json(view: &VerificationRunView) -> String {
+    serde_json::json!({
+        "view_kind": &view.view_kind,
+        "run_id": &view.run_id,
+        "mode": view.mode,
+        "controller_version": &view.controller_version,
+        "revision_selection_basis": view.revision_selection_basis,
+        "revision_under_test": &view.revision_under_test,
+        "overall_outcome": view.overall_outcome,
+        "started_at": &view.started_at,
+        "completed_at": &view.completed_at,
+        "scenario_outcomes": [
+            {
+                "scenario_id": &view.scenario_id,
+                "revision_under_test": &view.revision_under_test,
+                "outcome": view.overall_outcome,
+                "failure_summary": &view.failure_summary,
+                "assertion_results": view.assertion_results.iter().map(|result| serde_json::json!({
+                    "assertion_id": &result.assertion_id,
+                    "status": result.status,
+                    "observed_value": &result.observed_value,
+                    "evidence_refs": &result.evidence_refs,
+                })).collect::<Vec<_>>(),
+            }
+        ],
+        "artifacts": {
+            "bundle_path": &view.artifact_bundle.bundle_path,
+            "environment_retained": view.environment_retained,
+        }
+    })
+    .to_string()
+}
+
+pub fn format_verification_suite_report(
+    run_id: &str,
+    mode: VerificationRunMode,
+    overall_outcome: VerificationRunOutcome,
+    revision_under_test: &str,
+    scenario_outcomes: &[crate::core::verification_model::VerificationScenarioOutcome],
+    bundle_path: &str,
+) -> String {
+    let mut output = String::new();
+    output.push_str(&format!(
+        "Verification suite [{}]\n",
+        verification_mode_label(mode)
+    ));
+    output.push_str("────────────────────\n\n");
+    output.push_str(&format!("Run ID:  {run_id}\n"));
+    output.push_str(&format!(
+        "Outcome: {}\n",
+        verification_outcome_label(overall_outcome)
+    ));
+    output.push_str(&format!("Revision: {revision_under_test}\n"));
+    output.push_str(&format!("Bundle:  {bundle_path}\n"));
+    output.push_str(&format!("Scenarios: {}\n", scenario_outcomes.len()));
+    output.push_str("\nScenario Outcomes\n─────────────────\n");
+    for outcome in scenario_outcomes {
+        output.push_str(&format!(
+            "- {} @ {}: {}\n",
+            outcome.scenario_id,
+            outcome.revision_under_test,
+            verification_outcome_label(outcome.outcome)
+        ));
+    }
+    output
+}
+
+pub fn format_verification_coverage_report(report: &VerificationCoverageReport) -> String {
+    let mut output = String::new();
+    output.push_str("\nCoverage\n────────\n");
+    output.push_str(&format!(
+        "Required: {}\n",
+        format_scenario_classes(&report.required_classes)
+    ));
+    output.push_str(&format!(
+        "Covered:  {}\n",
+        format_scenario_classes(&report.covered_classes)
+    ));
+    output.push_str(&format!(
+        "Missing:  {}\n",
+        format_scenario_classes(&report.missing_classes)
+    ));
+    output
 }
 
 pub fn build_apply_output(
@@ -3085,6 +3262,44 @@ fn verification_status_label(status: &crate::core::types::VerificationStatus) ->
         crate::core::types::VerificationStatus::Success => "success",
         crate::core::types::VerificationStatus::Failure => "failure",
     }
+}
+
+fn verification_mode_label(mode: VerificationRunMode) -> &'static str {
+    match mode {
+        VerificationRunMode::Local => "local",
+        VerificationRunMode::Ci => "ci",
+        VerificationRunMode::Debug => "debug",
+    }
+}
+
+fn verification_outcome_label(outcome: VerificationRunOutcome) -> &'static str {
+    match outcome {
+        VerificationRunOutcome::Passed => "passed",
+        VerificationRunOutcome::AssertionFailure => "assertion_failure",
+        VerificationRunOutcome::InfrastructureFailure => "infrastructure_failure",
+        VerificationRunOutcome::Timeout => "timeout",
+        VerificationRunOutcome::HarnessError => "harness_error",
+    }
+}
+
+fn format_scenario_classes(classes: &[VerificationScenarioClass]) -> String {
+    if classes.is_empty() {
+        return "none".to_string();
+    }
+
+    classes
+        .iter()
+        .map(|class| match class {
+            VerificationScenarioClass::Convergence => "convergence",
+            VerificationScenarioClass::DriftCorrection => "drift_correction",
+            VerificationScenarioClass::Idempotency => "idempotency",
+            VerificationScenarioClass::UpgradeTransition => "upgrade_transition",
+            VerificationScenarioClass::RebootResilience => "reboot_resilience",
+            VerificationScenarioClass::ExplainApplyConsistency => "explain_apply_consistency",
+            VerificationScenarioClass::RegressionDetection => "regression_detection",
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn convergence_status_label(status: &crate::core::types::ConvergenceStatus) -> &'static str {

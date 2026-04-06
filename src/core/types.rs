@@ -421,6 +421,51 @@ pub enum VerificationStatus {
     Failure,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationRunMode {
+    Local,
+    Ci,
+    Debug,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationRunOutcome {
+    Passed,
+    AssertionFailure,
+    InfrastructureFailure,
+    Timeout,
+    HarnessError,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationAssertionStatus {
+    Passed,
+    Failed,
+    TimedOut,
+    NotEvaluated,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationStepStatus {
+    Pending,
+    Passed,
+    Failed,
+    TimedOut,
+    Skipped,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationArtifactCollectionStatus {
+    Complete,
+    Partial,
+    Failed,
+}
+
 pub struct RunLockGuard {
     pub lock_id: String,
 }
