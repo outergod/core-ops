@@ -182,6 +182,21 @@ pub fn format_verification_run_report(view: &VerificationRunView) -> String {
     if let Some(summary) = &view.failure_summary {
         output.push_str(&format!("Failure: {summary}\n"));
     }
+    if let Some(readiness) = &view.readiness_evidence {
+        output.push_str(&format!(
+            "Readiness: {} via {}\n",
+            readiness.final_status, readiness.source
+        ));
+        if let Some(record) = &readiness.accepted_record {
+            output.push_str(&format!("Readiness IPv4: {}\n", record.ip));
+        }
+        if !readiness.rejected_records.is_empty() {
+            output.push_str(&format!(
+                "Readiness Rejections: {}\n",
+                readiness.rejected_records.len()
+            ));
+        }
+    }
     if let Some(summary) = &view.regression_summary {
         let compact = summary
             .lines()
@@ -255,6 +270,7 @@ pub fn format_verification_run_json(view: &VerificationRunView) -> String {
                 "revision_under_test": &view.revision_under_test,
                 "outcome": view.overall_outcome,
                 "failure_summary": &view.failure_summary,
+                "readiness_evidence": &view.readiness_evidence,
                 "assertion_results": view.assertion_results.iter().map(|result| serde_json::json!({
                     "assertion_id": &result.assertion_id,
                     "status": result.status,

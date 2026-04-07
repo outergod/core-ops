@@ -6,8 +6,10 @@ use crate::core::types::{
 };
 use crate::core::verification_model::{
     VerificationAssertionResult, VerificationAssertionSpec, VerificationExecutionPlan,
-    VerificationPlannedStep, VerificationRuntimeBindings, VerificationScenarioDefinition,
-    VerificationScenarioOutcome, VerificationStepResult, VerificationStepType,
+    VerificationPlannedStep, VerificationReadinessExpectation, VerificationReadinessRecord,
+    VerificationReadinessRejection, VerificationReadinessRejectionKind, VerificationRuntimeBindings,
+    VerificationScenarioDefinition, VerificationScenarioOutcome, VerificationStepResult,
+    VerificationStepType,
 };
 use std::time::Duration;
 
@@ -159,6 +161,83 @@ pub fn parse_timeout_literal(timeout: &str) -> Result<Duration, CoreError> {
             )
         })?;
     Ok(Duration::from_secs(seconds))
+}
+
+pub fn parse_readiness_record_line(
+    line: &str,
+    marker: &str,
+) -> Result<VerificationReadinessRecord, VerificationReadinessRejection> {
+    let prefix = format!("{marker} ");
+    let payload = line.trim();
+    let Some(marker_index) = payload.find(&prefix) else {
+        return Err(VerificationReadinessRejection {
+            kind: VerificationReadinessRejectionKind::Malformed,
+            summary: format!("readiness line missing marker `{marker}`"),
+            raw_line: Some(payload.to_string()),
+        });
+    };
+    let json = &payload[(marker_index + prefix.len())..];
+    let record = serde_json::from_str::<VerificationReadinessRecord>(json).map_err(|err| {
+        VerificationReadinessRejection {
+            kind: VerificationReadinessRejectionKind::Malformed,
+            summary: format!("readiness record is not valid JSON: {err}"),
+            raw_line: Some(payload.to_string()),
+        }
+    })?;
+    Ok(record)
+}
+
+pub fn validate_readiness_record(
+    record: &VerificationReadinessRecord,
+    expectation: &VerificationReadinessExpectation,
+    raw_line: &str,
+) -> Result<(), VerificationReadinessRejection> {
+    if record.run_id != expectation.run_id || record.token != expectation.token {
+        return Err(VerificationReadinessRejection {
+            kind: VerificationReadinessRejectionKind::Stale,
+            summary: "readiness record does not match the current run identity".to_string(),
+            raw_line: Some(raw_line.to_string()),
+        });
+    }
+    if !is_usable_ipv4(&record.ip) {
+        return Err(VerificationReadinessRejection {
+            kind: VerificationReadinessRejectionKind::Malformed,
+            summary: "readiness record does not contain a usable IPv4 address".to_string(),
+            raw_line: Some(raw_line.to_string()),
+        });
+    }
+    Ok(())
+}
+
+pub fn evaluate_readiness_line(
+    line: &str,
+    expectation: &VerificationReadinessExpectation,
+) -> Result<VerificationReadinessRecord, VerificationReadinessRejection> {
+    let record = parse_readiness_record_line(line, &expectation.marker)?;
+    validate_readiness_record(&record, expectation, line)?;
+    Ok(record)
+}
+
+pub fn accept_first_valid_readiness(
+    accepted: &Option<VerificationReadinessRecord>,
+    candidate: VerificationReadinessRecord,
+    raw_line: &str,
+) -> Result<VerificationReadinessRecord, VerificationReadinessRejection> {
+    if accepted.is_some() {
+        return Err(VerificationReadinessRejection {
+            kind: VerificationReadinessRejectionKind::DuplicateCurrentRun,
+            summary: "later current-run readiness record ignored after first acceptance".to_string(),
+            raw_line: Some(raw_line.to_string()),
+        });
+    }
+    Ok(candidate)
+}
+
+pub fn is_usable_ipv4(value: &str) -> bool {
+    value
+        .parse::<std::net::Ipv4Addr>()
+        .map(|ip| !ip.is_unspecified() && !ip.is_multicast())
+        .unwrap_or(false)
 }
 
 fn default_timeout_for_step(

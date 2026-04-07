@@ -31,6 +31,11 @@ storage:
 
           [ipv6]
           method=disabled
+    - path: /usr/local/bin/core-ops-verify-ready
+      mode: 0755
+      contents:
+        inline: |
+${READINESS_SCRIPT}
 
 systemd:
   units:
@@ -49,3 +54,7 @@ systemd:
 
         [Install]
         WantedBy=multi-user.target
+    - name: core-ops-verify-ready.service
+      enabled: true
+      contents: |
+${READINESS_SERVICE}

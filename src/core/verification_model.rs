@@ -14,6 +14,9 @@ const SUPPORTED_ARTIFACT_PROFILE: &str = "standard";
 const SUPPORTED_BACKEND: &str = "approved-libvirt";
 const SUPPORTED_GUEST_IMAGE: &str = "blessed-coreops-guest";
 const SUPPORTED_NETWORK_POLICY: &str = "isolated";
+pub const VERIFICATION_READINESS_MARKER: &str = "CORE_OPS_VERIFY_READY";
+pub const VERIFICATION_READINESS_SERVICE_NAME: &str = "core-ops-verify-ready.service";
+pub const VERIFICATION_READINESS_SCRIPT_PATH: &str = "/usr/local/bin/core-ops-verify-ready";
 const REQUIRED_ALWAYS_COLLECTED: [&str; 5] = [
     "scenario-definition",
     "harness-log",
@@ -268,6 +271,67 @@ pub struct VerificationAssertionResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerificationReadinessRecord {
+    pub run_id: String,
+    pub token: String,
+    pub ip: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ts: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerificationReadinessExpectation {
+    pub run_id: String,
+    pub token: String,
+    pub marker: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationReadinessRejectionKind {
+    Stale,
+    Malformed,
+    DuplicateCurrentRun,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerificationReadinessRejection {
+    pub kind: VerificationReadinessRejectionKind,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_line: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerificationReadinessEvidence {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepted_record: Option<VerificationReadinessRecord>,
+    #[serde(default)]
+    pub rejected_records: Vec<VerificationReadinessRejection>,
+    pub final_status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_summary: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerificationGuestReadinessPayload {
+    pub run_id: String,
+    pub token: String,
+    pub console_marker: String,
+    pub service_name: String,
+    pub script_path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerificationReadinessAcquisition {
+    pub guest: LibvirtGuestHandle,
+    pub evidence: VerificationReadinessEvidence,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationStepResult {
     pub step_id: String,
     pub step_type: VerificationStepType,
@@ -399,6 +463,8 @@ pub struct VerificationRunView {
     pub regression_summary: Option<String>,
     #[serde(default)]
     pub promotion_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub readiness_evidence: Option<VerificationReadinessEvidence>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -427,6 +493,8 @@ pub struct LibvirtGuestHandle {
     pub rendered_network_config: Option<String>,
     pub serial_log_path: Option<String>,
     pub qemu_launch_log_path: Option<String>,
+    pub readiness_payload: Option<VerificationGuestReadinessPayload>,
+    pub readiness_evidence: Option<VerificationReadinessEvidence>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

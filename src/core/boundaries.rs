@@ -1,8 +1,8 @@
 use crate::core::errors::CoreError;
 use crate::core::types::{FailureClass, PlanAction, PlanActionType, ReconciliationPlan};
 use crate::core::verification_model::{
-    GuestCommandOutput, LibvirtGuestHandle, VerificationArtifactBundle, VerificationRunArtifacts,
-    VerificationScenarioDefinition,
+    GuestCommandOutput, LibvirtGuestHandle, VerificationArtifactBundle,
+    VerificationReadinessAcquisition, VerificationRunArtifacts, VerificationScenarioDefinition,
 };
 use std::path::Path;
 
@@ -43,6 +43,12 @@ pub trait VerificationLibvirtBoundary {
         scenario: &VerificationScenarioDefinition,
         workspace_root: &Path,
     ) -> Result<LibvirtGuestHandle, CoreError>;
+
+    fn acquire_guest_readiness(
+        &self,
+        scenario: &VerificationScenarioDefinition,
+        guest: &LibvirtGuestHandle,
+    ) -> Result<VerificationReadinessAcquisition, CoreError>;
 
     fn destroy_guest(&self, guest: &LibvirtGuestHandle) -> Result<(), CoreError>;
 }

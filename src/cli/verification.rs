@@ -18,8 +18,9 @@ use crate::core::verification_generate::{
     render_candidate_yaml,
 };
 use crate::core::verification_model::{
-    load_scenario_definition, VerificationAssertionResult, VerificationRevisionSelectionBasis,
-    VerificationRun, VerificationRunView, VerificationRuntimeBindings,
+    load_scenario_definition, VerificationAssertionResult, VerificationReadinessAcquisition,
+    VerificationReadinessEvidence, VerificationRevisionSelectionBasis, VerificationRun,
+    VerificationRunView, VerificationRuntimeBindings,
     VerificationScenarioDefinition, VerificationScenarioOutcome, VerificationStepResult,
     VerificationStepType,
 };
@@ -149,6 +150,10 @@ struct VerificationSuiteJsonView<'a> {
     bundle_path: &'a str,
     environment_retained: bool,
     scenario_outcomes: &'a [VerificationScenarioOutcome],
+}
+
+struct PreparedRuntimeBindings {
+    bindings: VerificationRuntimeBindings,
 }
 
 pub fn run(args: &VerifyRunArgs) -> Result<VerificationCommandOutput, CoreError> {
@@ -520,7 +525,17 @@ pub fn execute_scenario(
         .create_guest(scenario, context.workspace)
         .map_err(|err| augment_pre_guest_error(err, context.workspace, &artifact_workspace))?;
     let execution = (|| -> Result<VerificationRunView, CoreError> {
+        let readiness = context
+            .libvirt
+            .acquire_guest_readiness(scenario, &guest)
+            .map_err(|err| {
+                let _ = write_env_backed_debug_artifacts(&guest, &artifact_workspace);
+                augment_early_env_backed_error(err, &artifact_workspace, &guest)
+            })?;
+        let readiness_success = readiness_succeeded(&readiness);
+        let guest = readiness.guest;
         write_env_backed_debug_artifacts(&guest, &artifact_workspace)?;
+        write_readiness_evidence_artifact(&artifact_workspace, &readiness.evidence)?;
         if verbose {
             if let Some(assigned_ip) = &guest.assigned_ip {
                 eprintln!("assigned_ip: {assigned_ip}");
@@ -528,6 +543,8 @@ pub fn execute_scenario(
             if let Some(network_config) = &guest.rendered_network_config {
                 eprintln!("static_network_config:\n{network_config}");
             }
+            eprintln!("readiness_source: {}", readiness.evidence.source);
+            eprintln!("readiness_status: {}", readiness.evidence.final_status);
             if guest.env_backed {
                 eprintln!(
                     "debug_artifacts: {}/artifacts",
@@ -535,16 +552,36 @@ pub fn execute_scenario(
                 );
             }
         }
+        if !readiness_success {
+            let view = build_readiness_failure_view(
+                scenario,
+                mode,
+                run_id,
+                &artifact_workspace,
+                retain_environment,
+                readiness.evidence,
+                context.artifact_boundary,
+            )?;
+            if !retain_environment {
+                context.libvirt.destroy_guest(&guest)?;
+            }
+            return Ok(view);
+        }
         let runtime_bindings = prepare_runtime_bindings(
             scenario,
             run_id,
             context.workspace,
             &guest,
+            context.libvirt,
             context.guest_boundary,
         )
         .map_err(|err| augment_early_env_backed_error(err, &artifact_workspace, &guest))?;
-        let plan =
-            build_execution_plan(scenario, run_id.to_string(), mode, runtime_bindings.as_ref())?;
+        let plan = build_execution_plan(
+            scenario,
+            run_id.to_string(),
+            mode,
+            Some(&runtime_bindings.bindings),
+        )?;
         let mut step_results = Vec::new();
         let scenario_timeout =
             parse_timeout_literal(&scenario.effective_timeouts()?.scenario_timeout)?;
@@ -766,6 +803,7 @@ pub fn execute_scenario(
             failure_summary,
             regression_summary: enrichment.regression_summary,
             promotion_status: enrichment.promotion_status,
+            readiness_evidence: guest.readiness_evidence.clone(),
         })
     })();
 
@@ -1422,15 +1460,131 @@ fn augment_pre_guest_error(
     )
 }
 
+fn readiness_succeeded(readiness: &VerificationReadinessAcquisition) -> bool {
+    matches!(
+        readiness.evidence.final_status.as_str(),
+        "accepted" | "fallback_used"
+    )
+}
+
+fn build_readiness_failure_view(
+    scenario: &VerificationScenarioDefinition,
+    mode: VerificationRunMode,
+    run_id: &str,
+    artifact_workspace: &Path,
+    retain_environment: bool,
+    readiness_evidence: VerificationReadinessEvidence,
+    artifact_boundary: &dyn VerificationArtifactBoundary,
+) -> Result<VerificationRunView, CoreError> {
+    let started_at = now_rfc3339()?;
+    let completed_at = now_rfc3339()?;
+    let status = if readiness_evidence.final_status == "timed_out" {
+        VerificationStepStatus::TimedOut
+    } else {
+        VerificationStepStatus::Failed
+    };
+    let step_results = vec![VerificationStepResult {
+        step_id: "wait_ready".to_string(),
+        step_type: VerificationStepType::WaitReady,
+        status,
+        details: readiness_evidence.failure_summary.clone(),
+        command: Some("serial-console readiness".to_string()),
+        exit_code: None,
+        stdout: None,
+        stderr: None,
+        duration_ms: None,
+    }];
+    let overall_outcome = if status == VerificationStepStatus::TimedOut {
+        VerificationRunOutcome::Timeout
+    } else {
+        VerificationRunOutcome::InfrastructureFailure
+    };
+    write_execution_artifacts(artifact_workspace, &step_results, &[])?;
+    let bundle_workspace = artifact_workspace.join("artifacts");
+    let enrichment = write_diagnostic_artifacts(
+        &bundle_workspace,
+        scenario,
+        overall_outcome,
+        readiness_evidence.failure_summary.as_deref(),
+        &step_results,
+        &[],
+    )?;
+    let mut artifacts = artifact_boundary.collect_artifacts(scenario, artifact_workspace)?;
+    artifacts.bundle.environment_retained = retain_environment;
+    artifact_boundary.write_bundle_manifest(&artifacts.bundle)?;
+    Ok(VerificationRunView {
+        view_kind: "verification_run".to_string(),
+        run_id: run_id.to_string(),
+        mode,
+        controller_version: env!("CARGO_PKG_VERSION").to_string(),
+        revision_selection_basis: VerificationRevisionSelectionBasis::SingleScenario,
+        revision_under_test: scenario.fixtures.revision_under_test.clone(),
+        started_at,
+        completed_at,
+        scenario_id: scenario.scenario_id.clone(),
+        title: scenario.title.clone(),
+        overall_outcome,
+        artifact_bundle: artifacts.bundle,
+        environment_retained: retain_environment,
+        step_results,
+        assertion_results: Vec::new(),
+        warnings: artifacts.warnings,
+        failure_summary: readiness_evidence.failure_summary.clone(),
+        regression_summary: enrichment.regression_summary,
+        promotion_status: enrichment.promotion_status,
+        readiness_evidence: Some(readiness_evidence),
+    })
+}
+
+fn write_readiness_evidence_artifact(
+    artifact_workspace: &Path,
+    readiness_evidence: &VerificationReadinessEvidence,
+) -> Result<(), CoreError> {
+    let bundle_root = artifact_workspace.join("artifacts");
+    std::fs::create_dir_all(&bundle_root).map_err(|err| {
+        CoreError::new(
+            FailureClass::Apply,
+            format!(
+                "failed to create readiness artifact root {}: {err}",
+                bundle_root.display()
+            ),
+        )
+    })?;
+    std::fs::write(
+        bundle_root.join("readiness-evidence.json"),
+        serde_json::to_string_pretty(readiness_evidence).map_err(|err| {
+            CoreError::new(
+                FailureClass::Apply,
+                format!("failed to serialize readiness evidence: {err}"),
+            )
+        })?,
+    )
+    .map_err(|err| {
+        CoreError::new(
+            FailureClass::Apply,
+            format!("failed to write readiness evidence artifact: {err}"),
+        )
+    })
+}
+
 fn prepare_runtime_bindings(
     scenario: &VerificationScenarioDefinition,
     run_id: &str,
     workspace: &Path,
     guest: &crate::core::verification_model::LibvirtGuestHandle,
+    _libvirt: &dyn VerificationLibvirtBoundary,
     guest_boundary: &dyn VerificationGuestBoundary,
-) -> Result<Option<VerificationRuntimeBindings>, CoreError> {
+) -> Result<PreparedRuntimeBindings, CoreError> {
     if !guest.env_backed {
-        return Ok(None);
+        return Ok(PreparedRuntimeBindings {
+            bindings: VerificationRuntimeBindings {
+                repo_path: scenario.fixtures.repo_fixture.clone(),
+                core_ops_binary: "core-ops".to_string(),
+                quadlet_dir: "/etc/containers/systemd".to_string(),
+                systemd_unit_dir: "/etc/systemd/system".to_string(),
+                state_file: "/var/lib/core-ops/status.json".to_string(),
+            },
+        });
     }
     let timeouts = scenario.effective_timeouts()?;
     guest_boundary.wait_ready(guest, &timeouts.readiness_timeout)?;
@@ -1458,13 +1612,15 @@ fn prepare_runtime_bindings(
     guest_boundary.copy_to_guest(guest, &core_ops_binary, &remote_binary, false, true)?;
     guest_boundary.copy_to_guest(guest, &local_repo, &remote_repo_parent, true, false)?;
 
-    Ok(Some(VerificationRuntimeBindings {
-        repo_path: format!("file://{remote_repo_checkout}"),
-        core_ops_binary: remote_binary,
-        quadlet_dir: remote_quadlet_dir,
-        systemd_unit_dir: remote_systemd_dir,
-        state_file: remote_state,
-    }))
+    Ok(PreparedRuntimeBindings {
+        bindings: VerificationRuntimeBindings {
+            repo_path: format!("file://{remote_repo_checkout}"),
+            core_ops_binary: remote_binary,
+            quadlet_dir: remote_quadlet_dir,
+            systemd_unit_dir: remote_systemd_dir,
+            state_file: remote_state,
+        },
+    })
 }
 
 fn materialize_repo_fixture(

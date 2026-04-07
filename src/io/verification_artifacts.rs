@@ -199,6 +199,14 @@ impl VerificationArtifactBoundary for ArtifactCollector {
                 required: false,
             });
         }
+        let readiness_evidence = bundle_root.join("readiness-evidence.json");
+        if readiness_evidence.exists() {
+            manifest_entries.push(VerificationArtifactManifestEntry {
+                logical_name: "readiness-evidence".to_string(),
+                relative_path: "readiness-evidence.json".to_string(),
+                required: false,
+            });
+        }
         let rendered_butane = bundle_root.join("rendered-ignition.bu");
         if rendered_butane.exists() {
             manifest_entries.push(VerificationArtifactManifestEntry {
@@ -282,6 +290,7 @@ impl VerificationArtifactBoundary for ArtifactCollector {
             "quadlet-dir-list",
             "systemd-dir-list",
             "regression-summary",
+            "readiness-evidence",
         ] {
             if manifest_names.contains(logical_name) {
                 failure_specific_entries.insert(logical_name.to_string());
