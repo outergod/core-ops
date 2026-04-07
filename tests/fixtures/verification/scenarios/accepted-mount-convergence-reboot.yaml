@@ -1,0 +1,120 @@
+scenario_id: accepted-mount-convergence-reboot
+title: Mount-backed service converges and recovers after reboot
+description: A mount-backed service applies successfully, carries explicit mount dependency semantics, and recovers after reboot through a converged reapply.
+scenario_classes:
+  - convergence
+  - reboot_resilience
+source: accepted
+behavioral_claim: A mount-backed selected revision converges with explicit mount dependencies and remains recoverable after reboot.
+rationale: Provides the minimum accepted VM-backed proof for mount-backed convergence, dependency semantics, and reboot recovery.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: tests/fixtures/verification/repos/mount-reboot-history
+  revision_under_test: demo-mount-v1
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/mount-reboot-history
+    revisions:
+      - demo-mount-v1
+    states:
+      - valid
+    transition_expectations:
+      - mount-backed revision converges on clean boot
+      - rebooted guest remains recoverable by reapply
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: apply
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-mount-v1
+      mode: humane
+  - step_id: inspect-service-unit
+    step_type: guest_command
+    target: guest
+    command: sudo systemctl cat immich.service
+  - step_id: check-mount-active
+    step_type: guest_command
+    target: guest
+    command: sudo systemctl is-active var-lib-immich-media.mount
+  - step_id: check-service-active
+    step_type: guest_command
+    target: guest
+    command: sudo systemctl is-active immich.service
+  - step_id: reboot
+    step_type: reboot
+    target: guest
+  - step_id: wait-ready
+    step_type: wait_ready
+    target: guest
+  - step_id: apply-after-reboot
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-mount-v1
+      mode: humane
+  - step_id: check-mount-active-after-reboot
+    step_type: guest_command
+    target: guest
+    command: sudo systemctl is-active var-lib-immich-media.mount
+  - step_id: check-service-active-after-reboot
+    step_type: guest_command
+    target: guest
+    command: sudo systemctl is-active immich.service
+assertions:
+  - assertion_id: initial-apply-succeeded
+    assertion_type: step_exit_code_is
+    target: apply
+    expected_state: "0"
+    failure_message: Initial mount-backed apply did not exit successfully.
+  - assertion_id: initial-apply-converged
+    assertion_type: step_stdout_contains
+    target: apply
+    expected_state: "Outcome: converged"
+    failure_message: Initial mount-backed apply did not report converged outcome.
+  - assertion_id: service-unit-requires-mount-path
+    assertion_type: step_stdout_contains
+    target: inspect-service-unit
+    expected_state: "RequiresMountsFor=/var/lib/immich/media"
+    failure_message: Generated service unit did not retain the expected mount path dependency.
+  - assertion_id: service-unit-orders-after-mount
+    assertion_type: step_stdout_contains
+    target: inspect-service-unit
+    expected_state: "After=var-lib-immich-media.mount"
+    failure_message: Generated service unit did not declare the expected mount ordering.
+  - assertion_id: mount-active-after-apply
+    assertion_type: step_exit_code_is
+    target: check-mount-active
+    expected_state: "0"
+    failure_message: Managed mount was not active after initial apply.
+  - assertion_id: service-active-after-apply
+    assertion_type: step_exit_code_is
+    target: check-service-active
+    expected_state: "0"
+    failure_message: Dependent service was not active after initial apply.
+  - assertion_id: recovery-apply-succeeded
+    assertion_type: step_exit_code_is
+    target: apply-after-reboot
+    expected_state: "0"
+    failure_message: Post-reboot recovery apply did not exit successfully.
+  - assertion_id: recovery-apply-converged
+    assertion_type: step_stdout_contains
+    target: apply-after-reboot
+    expected_state: "Outcome: converged"
+    failure_message: Post-reboot recovery apply did not report converged outcome.
+  - assertion_id: mount-active-after-reboot
+    assertion_type: step_exit_code_is
+    target: check-mount-active-after-reboot
+    expected_state: "0"
+    failure_message: Managed mount was not active after reboot recovery.
+  - assertion_id: service-active-after-reboot
+    assertion_type: step_exit_code_is
+    target: check-service-active-after-reboot
+    expected_state: "0"
+    failure_message: Dependent service was not active after reboot recovery.

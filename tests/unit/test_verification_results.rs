@@ -4,6 +4,7 @@ use core_ops::core::types::{
 use core_ops::core::verification_eval::{classify_run_outcome, classify_scenario_outcome};
 use core_ops::core::verification_model::{
     VerificationAssertionResult, VerificationScenarioOutcome, VerificationStepResult,
+    VerificationStepType,
 };
 
 #[test]
@@ -11,6 +12,7 @@ fn scenario_outcome_prefers_step_failures_over_assertions() {
     let outcome = classify_scenario_outcome(
         &[VerificationStepResult {
             step_id: "boot".to_string(),
+            step_type: VerificationStepType::Boot,
             status: VerificationStepStatus::Failed,
             details: Some("guest never booted".to_string()),
             command: None,
@@ -31,10 +33,36 @@ fn scenario_outcome_prefers_step_failures_over_assertions() {
 }
 
 #[test]
+fn scenario_outcome_maps_failed_coreops_action_to_assertion_failure() {
+    let outcome = classify_scenario_outcome(
+        &[VerificationStepResult {
+            step_id: "apply".to_string(),
+            step_type: VerificationStepType::CoreopsAction,
+            status: VerificationStepStatus::Failed,
+            details: Some("failed during Applying".to_string()),
+            command: Some("sudo core-ops apply".to_string()),
+            exit_code: Some(1),
+            stdout: Some("failed during Applying".to_string()),
+            stderr: None,
+            duration_ms: None,
+        }],
+        &[VerificationAssertionResult {
+            assertion_id: "never-reached".to_string(),
+            status: VerificationAssertionStatus::NotEvaluated,
+            observed_value: None,
+            evidence_refs: Vec::new(),
+        }],
+    );
+
+    assert_eq!(outcome, VerificationRunOutcome::AssertionFailure);
+}
+
+#[test]
 fn scenario_outcome_maps_failed_assertions_to_assertion_failure() {
     let outcome = classify_scenario_outcome(
         &[VerificationStepResult {
             step_id: "apply".to_string(),
+            step_type: VerificationStepType::CoreopsAction,
             status: VerificationStepStatus::Passed,
             details: None,
             command: None,

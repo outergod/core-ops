@@ -164,12 +164,23 @@ fn cli_verification_run_in_json_mode_emits_machine_readable_contract() {
 
 #[test]
 fn cli_verification_run_in_ci_mode_uses_only_accepted_corpus_entries() {
+    let corpus = tempfile::tempdir().expect("corpus");
+    std::fs::copy(
+        fixture_path("tests/fixtures/verification/scenarios/minimal-accepted.yaml"),
+        corpus.path().join("minimal-accepted.yaml"),
+    )
+    .expect("copy accepted fixture");
+    std::fs::copy(
+        fixture_path("tests/fixtures/verification/scenarios/minimal-candidate.yaml"),
+        corpus.path().join("minimal-candidate.yaml"),
+    )
+    .expect("copy candidate fixture");
     let workspace = tempfile::tempdir().expect("workspace");
     let artifacts = tempfile::tempdir().expect("artifacts");
     let output = Command::new(env!("CARGO_BIN_EXE_core-ops-verify"))
         .arg("run")
         .arg("--accepted-dir")
-        .arg(fixture_path("tests/fixtures/verification/scenarios"))
+        .arg(corpus.path())
         .arg("--workspace-root")
         .arg(workspace.path())
         .arg("--artifacts-dir")

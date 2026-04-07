@@ -554,6 +554,7 @@ pub fn execute_scenario(
             let mut step_result = match step.step_type {
                 VerificationStepType::Boot => VerificationStepResult {
                     step_id: step.step_id.clone(),
+                    step_type: step.step_type,
                     status: VerificationStepStatus::Passed,
                     details: Some(format!("booted {}", guest.guest_name)),
                     command: None,
@@ -570,6 +571,7 @@ pub fn execute_scenario(
                     {
                         Ok(output) => VerificationStepResult {
                             step_id: step.step_id.clone(),
+                            step_type: step.step_type,
                             status: VerificationStepStatus::Passed,
                             details: Some(output.stdout.clone()),
                             command: Some("wait_ready".to_string()),
@@ -580,6 +582,7 @@ pub fn execute_scenario(
                         },
                         Err(err) if err.class == FailureClass::Transient => VerificationStepResult {
                             step_id: step.step_id.clone(),
+                            step_type: step.step_type,
                             status: VerificationStepStatus::TimedOut,
                             details: Some(err.message),
                             command: Some("wait_ready".to_string()),
@@ -610,6 +613,7 @@ pub fn execute_scenario(
                             };
                             VerificationStepResult {
                                 step_id: step.step_id.clone(),
+                                step_type: step.step_type,
                                 status,
                                 details: Some(output.stdout.clone()),
                                 command: Some(command.to_string()),
@@ -621,6 +625,7 @@ pub fn execute_scenario(
                         }
                         Err(err) if err.class == FailureClass::Transient => VerificationStepResult {
                             step_id: step.step_id.clone(),
+                            step_type: step.step_type,
                             status: VerificationStepStatus::TimedOut,
                             details: Some(err.message),
                             command: Some(command.to_string()),
@@ -672,7 +677,19 @@ pub fn execute_scenario(
         let failure_summary = match overall_outcome {
             VerificationRunOutcome::Passed => None,
             VerificationRunOutcome::AssertionFailure => {
-                Some("one or more verification assertions failed".to_string())
+                if assertion_results.iter().any(|result| {
+                    result.status
+                        == crate::core::types::VerificationAssertionStatus::Failed
+                }) {
+                    Some("one or more verification assertions failed".to_string())
+                } else if step_results.iter().any(|step| {
+                    step.status == VerificationStepStatus::Failed
+                        && step.step_type == VerificationStepType::CoreopsAction
+                }) {
+                    Some("core-ops action reported behavioral failure".to_string())
+                } else {
+                    Some("verification reported behavioral failure".to_string())
+                }
             }
             VerificationRunOutcome::InfrastructureFailure => {
                 Some("guest provisioning or command execution failed".to_string())

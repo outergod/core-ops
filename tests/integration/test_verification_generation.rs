@@ -18,27 +18,27 @@ fn advisory_candidate_generation_produces_reviewable_candidate() {
 
 ### Observable Behaviors
 
-- Applying an upgraded revision preserves deterministic transition summaries
+- External drift is detected and corrected on reapply
 
 ### Invariants
 
-- Transition summaries stay stable
+- Drift correction stays explicit
 
 ### Idempotency Expectations
 
-- Reapplying the upgraded revision does not add new changes
+- Reapplying after drift restoration remains stable
 
 ### Failure Modes
 
-- Upgrade failures remain diagnosable
+- Drift correction failures remain diagnosable
 
 ### Upgrade Considerations
 
-- Prior and target revision context remain visible
+- Desired revision attribution remains visible during correction
 
 ### Required Scenario Classes
 
-- upgrade_transition
+- drift_correction
 "#;
 
     let generated = generate_candidates_from_spec(spec, &accepted).expect("generated");
@@ -57,7 +57,7 @@ fn advisory_candidate_generation_produces_reviewable_candidate() {
     let coverage = build_coverage_report(spec, &accepted).expect("coverage");
     assert!(coverage
         .missing_classes
-        .contains(&core_ops::core::verification_model::VerificationScenarioClass::UpgradeTransition));
+        .contains(&core_ops::core::verification_model::VerificationScenarioClass::DriftCorrection));
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn coverage_reporting_identifies_missing_required_scenario_classes() {
 ### Required Scenario Classes
 
 - idempotency
-- upgrade_transition
+- drift_correction
 "#;
 
     let report = build_coverage_report(spec, &accepted).expect("coverage report");
@@ -147,5 +147,5 @@ fn coverage_reporting_identifies_missing_required_scenario_classes() {
         .contains(&core_ops::core::verification_model::VerificationScenarioClass::Idempotency));
     assert!(report
         .missing_classes
-        .contains(&core_ops::core::verification_model::VerificationScenarioClass::UpgradeTransition));
+        .contains(&core_ops::core::verification_model::VerificationScenarioClass::DriftCorrection));
 }

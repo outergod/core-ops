@@ -1,0 +1,16 @@
+[Unit]
+Description=Verification mount-removal service
+After=var-lib-immich-media.mount
+Requires=var-lib-immich-media.mount
+
+[Container]
+Image=docker.io/library/caddy:2.10.2-alpine
+ContainerName=immich
+Volume=/var/lib/immich/media:/data:ro
+
+[Service]
+Restart=on-failure
+RequiresMountsFor=/var/lib/immich/media
+
+[Install]
+WantedBy=default.target

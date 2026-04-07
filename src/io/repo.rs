@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
-use crate::core::evaluate::{evaluate_desired_state, EvaluationOutput};
+use crate::core::evaluate::{derive_mount_model_from_workloads, evaluate_desired_state, EvaluationOutput};
 use crate::core::types::{
     ArtifactSource, Boundaries, BoundaryScope, ConfigFileSource, DesiredState, DropInSource,
     EnabledState, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn, EvaluationInput,
@@ -113,6 +113,8 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
         return Err(RepoError::MissingQuadletDir(quadlet_dir));
     }
     let workloads = read_quadlet_dir(&quadlet_dir)?;
+    let (mount_declarations, mount_dependencies) = derive_mount_model_from_workloads(&workloads)
+        .map_err(|err| RepoError::EvaluationFailed(err.to_string()))?;
     let resolved_revision = resolved_head_revision(&repo_path)?;
     Ok(desired_state_from_workloads(
         &repo_path,
@@ -121,8 +123,8 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
             requested_repository: Some(repo_source.to_string()),
             requested_ref: Some(revision_id.to_string()),
             workloads,
-            mount_declarations: Vec::new(),
-            mount_dependencies: Vec::new(),
+            mount_declarations,
+            mount_dependencies,
             managed_config_paths: Vec::new(),
             managed_config_roots: Vec::new(),
         },

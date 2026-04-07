@@ -59,6 +59,57 @@ fn init_git_repo(repo: &PathBuf) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
+fn init_mount_git_repo(repo: &PathBuf) -> String {
+    std::process::Command::new("git")
+        .arg("init")
+        .arg(repo)
+        .output()
+        .expect("git init");
+
+    let quadlets = repo.join("quadlets");
+    std::fs::create_dir_all(&quadlets).expect("create quadlets");
+    std::fs::write(
+        quadlets.join("immich.container"),
+        "[Unit]\nDescription=Verification mount-backed service\nAfter=var-lib-immich-media.mount\nRequires=var-lib-immich-media.mount\n\n[Container]\nImage=docker.io/library/caddy:2.10.2-alpine\nContainerName=immich\n\n[Service]\nRestart=on-failure\nRequiresMountsFor=/var/lib/immich/media\n\n[Install]\nWantedBy=default.target\n",
+    )
+    .expect("write container");
+    std::fs::write(
+        quadlets.join("var-lib-immich-media.mount"),
+        "[Unit]\nDescription=Verification bind mount for reboot resilience\n\n[Mount]\nWhat=/usr/share/zoneinfo\nWhere=/var/lib/immich/media\nType=none\nOptions=bind,ro\n\n[X-CoreOps]\nCreateMountpoint=true\n",
+    )
+    .expect("write mount");
+
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .arg("add")
+        .arg(".")
+        .output()
+        .expect("git add");
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .arg("commit")
+        .arg("-m")
+        .arg("mount fixture")
+        .env("GIT_AUTHOR_NAME", "fixture")
+        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
+        .env("GIT_COMMITTER_NAME", "fixture")
+        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
+        .output()
+        .expect("git commit");
+
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output()
+        .expect("git rev-parse");
+
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
 #[test]
 fn loads_desired_state_from_quadlet_dir() {
     let repo = temp_repo();
@@ -165,4 +216,27 @@ fn layered_repo_preserves_requested_repository_and_ref() {
     assert_eq!(desired.revision_id, rev);
     assert_eq!(desired.requested_repository.as_deref(), repo.to_str());
     assert_eq!(desired.requested_ref.as_deref(), Some("demo-uat-v2"));
+}
+
+#[test]
+fn loads_mount_declarations_and_dependencies_from_quadlet_only_repo() {
+    let repo = temp_repo();
+    let rev = init_mount_git_repo(&repo);
+
+    let desired = load_desired_state(repo.to_str().unwrap(), &rev).expect("load desired");
+
+    assert_eq!(desired.mount_declarations.len(), 1);
+    let mount = &desired.mount_declarations[0];
+    assert_eq!(mount.id, "var-lib-immich-media");
+    assert_eq!(mount.target_path, "/var/lib/immich/media");
+    assert_eq!(mount.source, "/usr/share/zoneinfo");
+    assert_eq!(mount.fstype, "none");
+    assert_eq!(mount.mount_options, vec!["bind".to_string(), "ro".to_string()]);
+    assert!(!mount.automount);
+
+    assert_eq!(desired.mount_dependencies.len(), 1);
+    let dependency = &desired.mount_dependencies[0];
+    assert_eq!(dependency.service_name, "immich");
+    assert_eq!(dependency.mount_ids, vec!["var-lib-immich-media".to_string()]);
+    assert_eq!(dependency.consumed_paths, vec!["/var/lib/immich/media".to_string()]);
 }

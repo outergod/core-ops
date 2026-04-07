@@ -76,6 +76,11 @@ pub fn classify_scenario_outcome(
         .any(|step| step.status == VerificationStepStatus::TimedOut)
     {
         VerificationRunOutcome::Timeout
+    } else if step_results.iter().any(|step| {
+        step.status == VerificationStepStatus::Failed
+            && step.step_type == VerificationStepType::CoreopsAction
+    }) {
+        VerificationRunOutcome::AssertionFailure
     } else if step_results
         .iter()
         .any(|step| step.status == VerificationStepStatus::Failed)

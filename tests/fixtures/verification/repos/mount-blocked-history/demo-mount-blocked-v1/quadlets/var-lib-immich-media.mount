@@ -1,0 +1,11 @@
+[Unit]
+Description=Verification mount with missing block device
+
+[Mount]
+What=/dev/disk/by-label/CORE_OPS_MISSING_MEDIA
+Where=/var/lib/immich/media
+Type=ext4
+Options=ro
+
+[X-CoreOps]
+CreateMountpoint=true

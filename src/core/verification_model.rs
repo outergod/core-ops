@@ -270,6 +270,7 @@ pub struct VerificationAssertionResult {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationStepResult {
     pub step_id: String,
+    pub step_type: VerificationStepType,
     pub status: VerificationStepStatus,
     #[serde(default)]
     pub details: Option<String>,
@@ -533,7 +534,7 @@ impl VerificationScenarioDefinition {
                 .or_else(|| step.legacy_command_or_action.clone())
                 .or_else(|| {
                     if step.step_type == VerificationStepType::Reboot {
-                        Some("systemctl reboot".to_string())
+                        Some("sudo systemctl reboot".to_string())
                     } else {
                         None
                     }
