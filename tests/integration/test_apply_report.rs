@@ -1062,3 +1062,105 @@ fn apply_summary_pluralizes_create_counts_consistently() {
 
     assert!(rendered.contains("2 creates"));
 }
+
+#[test]
+fn apply_output_humane_and_json_preserve_same_semantics() {
+    let plan = DeterministicReconciliationPlan {
+        desired_revision_id: Some("rev-2".to_string()),
+        baseline_revision_id: Some("rev-1".to_string()),
+        requested_repository: Some("file:///var/lib/core-ops/repo".to_string()),
+        requested_ref: Some("demo-uat-v2".to_string()),
+        last_applied_requested_repository: Some("file:///var/lib/core-ops/repo".to_string()),
+        last_applied_requested_ref: Some("demo-uat-v1".to_string()),
+        scope_id: "host:alpha".to_string(),
+        actions: vec![
+            DeterministicPlannedAction {
+                object_id: "alpha.container".to_string(),
+                classification: DeterministicActionClass::Create,
+                reason: "missing from actual state".to_string(),
+                dependency_context: Vec::new(),
+                semantic_diff: Default::default(),
+            },
+            DeterministicPlannedAction {
+                object_id: "beta.container".to_string(),
+                classification: DeterministicActionClass::NoOp,
+                reason: "no change".to_string(),
+                dependency_context: Vec::new(),
+                semantic_diff: Default::default(),
+            },
+        ],
+        drift_records: vec![StructuredDriftRecord {
+            object_id: "beta.container".to_string(),
+            category: core_ops::core::types::DriftCategory::ExpectedChange,
+            comparison_basis: "desired=actual".to_string(),
+            auto_action: false,
+            attention_required: true,
+            details: "verification_pending".to_string(),
+        }],
+        graph: SemanticDependencyGraph {
+            nodes: vec![
+                SemanticDependencyNode {
+                    object_id: "alpha.container".to_string(),
+                    object_kind: ManagedObjectKind::QuadletResource,
+                    ordering_key: "alpha.container".to_string(),
+                },
+                SemanticDependencyNode {
+                    object_id: "beta.container".to_string(),
+                    object_kind: ManagedObjectKind::QuadletResource,
+                    ordering_key: "beta.container".to_string(),
+                },
+            ],
+            edges: Vec::new(),
+        },
+    };
+    let verification_results = vec![VerificationResult {
+        target: "beta.container".to_string(),
+        status: VerificationStatus::Failure,
+        details: Some("unit is inactive".to_string()),
+    }];
+    let convergence = DeterministicConvergenceRecord {
+        desired_revision_id: "rev-2".to_string(),
+        scope_id: "host:alpha".to_string(),
+        status: ConvergenceStatus::RepeatedFailure,
+        attempt_count: 1,
+        affected_objects: vec!["beta.container".to_string()],
+        completed_actions: vec!["alpha.container".to_string()],
+        failed_actions: vec!["beta.container".to_string()],
+        can_continue: false,
+    };
+
+    let human = strip_ansi(&format_apply_output_report(
+        &plan,
+        &verification_results,
+        Some(&convergence),
+        ApplyHumanMode::Default,
+        ApplyRunDisplayState::Managed,
+    ));
+    let json =
+        serde_json::to_value(build_apply_output(&plan, &verification_results, Some(&convergence)))
+            .expect("serialize apply output");
+
+    assert!(human.contains("rev-2"));
+    assert!(human.contains("demo-uat-v2"));
+    assert!(human.contains("1 create"));
+    assert!(human.contains("1 failed"));
+    assert!(human.contains("Outcome: non-converging"));
+    assert!(human.contains("container/beta.container"));
+
+    assert_eq!(
+        json["revision_context"]["desired_revision"].as_str(),
+        Some("rev-2")
+    );
+    assert_eq!(
+        json["revision_context"]["desired_requested_ref"].as_str(),
+        Some("demo-uat-v2")
+    );
+    assert_eq!(json["summary"]["changed_count"].as_u64(), Some(1));
+    assert_eq!(json["summary"]["failed_count"].as_u64(), Some(1));
+    assert_eq!(json["outcome"].as_str(), Some("non_converging"));
+    assert_eq!(
+        json["events"][1]["object"]["display_id"].as_str(),
+        Some("container/beta.container")
+    );
+    assert_eq!(json["events"][1]["state"].as_str(), Some("failed"));
+}

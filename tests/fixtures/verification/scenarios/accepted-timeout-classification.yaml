@@ -1,0 +1,36 @@
+scenario_id: accepted-timeout-classification
+title: Timed out guest execution is classified explicitly
+description: A VM-backed guest command that exceeds its configured timeout must classify the scenario as timeout while preserving the core artifact bundle.
+scenario_classes:
+  - regression_detection
+source: accepted
+behavioral_claim: A timed out verification step produces the public timeout outcome class rather than assertion or infrastructure failure.
+rationale: Provides the minimum accepted VM-backed proof for timeout classification on a real guest command boundary.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: fixtures/repos/frontend
+  revision_under_test: demo-uat-v2
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/frontend-history
+    revisions:
+      - demo-uat-v2
+    states:
+      - valid
+    transition_expectations:
+      - timed out guest command classifies the scenario as timeout
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: long-guest-command
+    step_type: guest_command
+    target: guest
+    timeout_override: 1s
+    command: sudo sh -lc 'sleep 5'
+assertions:
+  - assertion_id: boot-succeeded
+    assertion_type: step_exit_code_is
+    target: boot
+    expected_state: "0"
+    failure_message: Timeout-classification scenario did not boot the disposable guest successfully before the timeout step.

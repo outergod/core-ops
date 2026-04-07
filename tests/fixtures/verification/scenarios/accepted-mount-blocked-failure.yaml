@@ -1,0 +1,50 @@
+scenario_id: accepted-mount-blocked-failure
+title: Mount-backed service fails explicitly when a required mount is unreachable
+description: A mount-backed service with an unreachable required mount must fail explicitly during apply and report the mount failure clearly.
+scenario_classes:
+  - convergence
+  - regression_detection
+source: accepted
+behavioral_claim: An unreachable required mount produces explicit apply-time failure output attributed to the managed mount.
+rationale: Provides the minimum accepted VM-backed proof for blocked mount failure semantics under the current stop-on-failure harness behavior.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: tests/fixtures/verification/repos/mount-blocked-history
+  revision_under_test: demo-mount-blocked-v1
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/mount-blocked-history
+    revisions:
+      - demo-mount-blocked-v1
+    states:
+      - valid
+    transition_expectations:
+      - unreachable mount source fails explicitly
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: apply
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-mount-blocked-v1
+      mode: humane
+assertions:
+  - assertion_id: apply-failed-explicitly
+    assertion_type: step_exit_code_is
+    target: apply
+    expected_state: "1"
+    failure_message: Mount-blocked apply did not exit with explicit failure.
+  - assertion_id: apply-reported-apply-failure
+    assertion_type: step_stdout_contains
+    target: apply
+    expected_state: "failed during Applying"
+    failure_message: Mount-blocked apply did not report apply-time failure details.
+  - assertion_id: apply-reported-failed-mount
+    assertion_type: step_stdout_contains
+    target: apply
+    expected_state: "mount/var-lib-immich-media.mount"
+    failure_message: Mount-blocked apply did not attribute the failure to the managed mount unit.

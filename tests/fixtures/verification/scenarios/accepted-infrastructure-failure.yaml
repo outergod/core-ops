@@ -1,0 +1,36 @@
+scenario_id: accepted-infrastructure-failure
+title: Guest command boundary failures classify as infrastructure failure
+description: A VM-backed scenario that reaches a healthy guest and then hits a missing command at the guest boundary must classify as infrastructure failure.
+scenario_classes:
+  - regression_detection
+source: accepted
+behavioral_claim: Guest provisioning and command-boundary failures remain distinguishable from assertion failures and timeouts.
+rationale: Provides the minimum accepted VM-backed proof for the public infrastructure-failure outcome class.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: fixtures/repos/frontend
+  revision_under_test: demo-uat-v2
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/frontend-history
+    revisions:
+      - demo-uat-v2
+    states:
+      - valid
+    transition_expectations:
+      - guest boots successfully
+      - missing guest command classifies the scenario as infrastructure failure
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: missing-guest-command
+    step_type: guest_command
+    target: guest
+    command: sudo /core-ops-verification/definitely-missing-command
+assertions:
+  - assertion_id: boot-succeeded
+    assertion_type: step_exit_code_is
+    target: boot
+    expected_state: "0"
+    failure_message: Infrastructure-failure scenario did not boot the disposable guest successfully before the command-boundary failure.

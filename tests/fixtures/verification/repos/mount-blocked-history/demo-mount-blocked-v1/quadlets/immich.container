@@ -1,0 +1,15 @@
+[Unit]
+Description=Verification mount-blocked service
+After=var-lib-immich-media.mount
+Requires=var-lib-immich-media.mount
+
+[Container]
+Image=docker.io/library/caddy:2.10.2-alpine
+ContainerName=immich
+
+[Service]
+Restart=on-failure
+RequiresMountsFor=/var/lib/immich/media
+
+[Install]
+WantedBy=default.target

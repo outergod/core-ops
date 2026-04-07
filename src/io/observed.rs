@@ -8,6 +8,7 @@ use crate::core::types::{
     ObservedState, ObservedUnit, QuadletType, RestartPolicy, RuntimeVerificationSignal,
     UnitActiveState, Workload,
 };
+use crate::io::repo::NATIVE_UNIT_MANAGED_MARKER;
 use crate::core::unit::systemd_unit_for_quadlet_file;
 use crate::io::quadlet::{
     normalize_socket_contents, parse_quadlet_name, read_quadlet_dir, QuadletError,
@@ -155,17 +156,30 @@ fn read_native_mount_units(
     desired: &DesiredState,
 ) -> Result<Vec<Workload>, ObservedError> {
     let desired_units = desired_native_mount_unit_names(desired);
-    if desired_units.is_empty() {
+    if !dir.exists() {
         return Ok(Vec::new());
     }
 
     let mut workloads = Vec::new();
-    for unit_name in desired_units {
-        let path = dir.join(&unit_name);
-        if !path.exists() {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            continue;
+        }
+        let Some(unit_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if unit_name.starts_with('.') || !(unit_name.ends_with(".mount") || unit_name.ends_with(".automount")) {
             continue;
         }
         let contents = std::fs::read_to_string(&path)?;
+        let is_desired_unit = desired_units.contains(unit_name);
+        let is_managed_stale_unit =
+            contents.contains("[X-CoreOps]") || contents.contains(NATIVE_UNIT_MANAGED_MARKER);
+        if !is_desired_unit && !is_managed_stale_unit {
+            continue;
+        }
         let quadlet_type = if unit_name.ends_with(".automount") {
             QuadletType::Automount
         } else {
@@ -175,11 +189,11 @@ fn read_native_mount_units(
             name: Path::new(&unit_name)
                 .file_stem()
                 .and_then(|stem| stem.to_str())
-                .unwrap_or(&unit_name)
+                .unwrap_or(unit_name)
                 .to_string(),
             quadlet_type,
             quadlet_contents: contents,
-            systemd_unit_name: unit_name,
+            systemd_unit_name: unit_name.to_string(),
             enabled_state: EnabledState::Enabled,
             restart_policy: RestartPolicy::Always,
         });

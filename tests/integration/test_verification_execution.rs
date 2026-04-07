@@ -1,4 +1,4 @@
-use core_ops::cli::report::format_verification_run_report;
+use core_ops::cli::report::{format_verification_run_json, format_verification_run_report};
 use core_ops::cli::verification::{execute_scenario, run, VerificationExecutionContext, VerifyRunArgs};
 use core_ops::core::types::{
     VerificationArtifactCollectionStatus, VerificationRunMode, VerificationRunOutcome,
@@ -890,4 +890,61 @@ fn build_assertion(
         failure_message: failure_message.to_string(),
         artifact_hints: Vec::new(),
     }
+}
+
+#[test]
+fn verification_run_humane_and_json_preserve_same_outcome_semantics() {
+    let mut scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+    scenario.assertions[0].assertion_type = "output_contains".to_string();
+    scenario.assertions[0].expected_state = "missing-output".to_string();
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let libvirt = LibvirtCommandRunner::default();
+    let guest = GuestCommandRunner::default();
+    let collector = ArtifactCollector;
+    let context = VerificationExecutionContext {
+        workspace: workspace.path(),
+        artifacts_root: artifacts.path(),
+        libvirt: &libvirt,
+        guest_boundary: &guest,
+        artifact_boundary: &collector,
+    };
+
+    let view = execute_scenario(
+        &scenario,
+        VerificationRunMode::Ci,
+        "run-parity-failure",
+        &context,
+        false,
+        false,
+    )
+    .expect("execute");
+
+    let human = format_verification_run_report(&view);
+    let json: serde_json::Value =
+        serde_json::from_str(&format_verification_run_json(&view)).expect("valid json");
+
+    assert!(human.contains("Verification run verify-idempotent-frontend"));
+    assert!(human.contains("Outcome: assertion_failure"));
+    assert!(human.contains("Failure: one or more verification assertions failed"));
+    assert!(human.contains(&view.artifact_bundle.bundle_path));
+
+    assert_eq!(json["view_kind"], "verification_run");
+    assert_eq!(json["overall_outcome"], "assertion_failure");
+    assert_eq!(
+        json["scenario_outcomes"][0]["scenario_id"],
+        "verify-idempotent-frontend"
+    );
+    assert_eq!(
+        json["scenario_outcomes"][0]["failure_summary"],
+        "one or more verification assertions failed"
+    );
+    assert_eq!(
+        json["artifacts"]["bundle_path"],
+        serde_json::Value::String(view.artifact_bundle.bundle_path.clone())
+    );
 }

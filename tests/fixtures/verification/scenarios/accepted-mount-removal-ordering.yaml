@@ -1,0 +1,85 @@
+scenario_id: accepted-mount-removal-ordering
+title: Managed mount removal stops dependent service before teardown
+description: A mount-backed service revision converges, then a follow-up revision removes both the service and mount without leaving managed artifacts behind.
+scenario_classes:
+  - upgrade_transition
+  - convergence
+source: accepted
+behavioral_claim: Removing a managed mount from desired state stops the dependent managed service and tears the mount down cleanly.
+rationale: Provides the minimum accepted VM-backed proof for successful mount-removal ordering using a service that actively consumes the managed mount path.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: tests/fixtures/verification/repos/mount-removal-history
+  revision_under_test: demo-mount-remove-v2
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/mount-removal-history
+    revisions:
+      - demo-mount-remove-v1
+      - demo-mount-remove-v2
+    states:
+      - valid
+      - valid
+    transition_expectations:
+      - baseline mount-backed revision converges
+      - dependent service is stopped before managed mount teardown completes
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: apply-baseline
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-mount-remove-v1
+      mode: humane
+  - step_id: apply-removal
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-mount-remove-v2
+      mode: humane
+  - step_id: verify-managed-artifacts-removed
+    step_type: guest_command
+    target: guest
+    command: sudo sh -lc 'test ! -e /etc/containers/systemd/immich.container && test ! -e /etc/containers/systemd/var-lib-immich-media.mount && echo removed'
+assertions:
+  - assertion_id: baseline-apply-succeeded
+    assertion_type: step_exit_code_is
+    target: apply-baseline
+    expected_state: "0"
+    failure_message: Baseline mount-removal seed revision did not apply successfully.
+  - assertion_id: baseline-apply-converged
+    assertion_type: step_stdout_contains
+    target: apply-baseline
+    expected_state: "Outcome: converged"
+    failure_message: Baseline mount-removal seed revision did not report converged outcome.
+  - assertion_id: removal-apply-succeeded
+    assertion_type: step_exit_code_is
+    target: apply-removal
+    expected_state: "0"
+    failure_message: Mount-removal transition did not apply successfully.
+  - assertion_id: removal-apply-deleted-managed-work
+    assertion_type: step_stdout_contains
+    target: apply-removal
+    expected_state: "2 deletes"
+    failure_message: Mount-removal transition did not report the expected managed deletions.
+  - assertion_id: removal-apply-converged
+    assertion_type: step_stdout_contains
+    target: apply-removal
+    expected_state: "Outcome: converged"
+    failure_message: Mount-removal transition did not report converged outcome.
+  - assertion_id: managed-artifacts-removed
+    assertion_type: step_exit_code_is
+    target: verify-managed-artifacts-removed
+    expected_state: "0"
+    failure_message: Managed mount-backed artifacts were still present after removal transition.
+  - assertion_id: managed-artifacts-removed-marker
+    assertion_type: step_stdout_contains
+    target: verify-managed-artifacts-removed
+    expected_state: "removed"
+    failure_message: Removal verification command did not confirm managed artifact absence.

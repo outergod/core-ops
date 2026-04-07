@@ -8,6 +8,7 @@ use core_ops::core::types::{
     QuadletType, ReconciliationPlan, RestartPolicy, UnitDependencyMode, Workload,
 };
 use core_ops::io::apply::apply_plan_with_desired;
+use core_ops::io::observed::read_observed_state;
 
 fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mount_management")
@@ -28,6 +29,130 @@ fn reconcile_fixture_covers_invalid_and_busy_removal_paths() {
     assert!(busy.contains("managed-removal"));
     assert!(busy.contains("busy-unmount-failure"));
     assert!(busy.contains("dependent-service-stop-first"));
+}
+
+#[test]
+fn observed_state_keeps_managed_native_mounts_visible_for_removal_planning() {
+    let _env_lock = path_lock().lock().expect("lock env");
+    let temp = std::env::temp_dir().join(format!(
+        "core_ops_mount_observed_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&temp).expect("temp dir");
+    let quadlet_dir = temp.join("quadlets");
+    let systemd_dir = temp.join("systemd");
+    fs::create_dir_all(&quadlet_dir).expect("quadlet dir");
+    fs::create_dir_all(&systemd_dir).expect("systemd dir");
+    std::env::set_var("CORE_OPS_SYSTEMD_UNIT_DIR", &systemd_dir);
+    let _guard = EnvGuard;
+
+    fs::write(
+        quadlet_dir.join("immich.container"),
+        "[Container]\nImage=docker.io/library/caddy:2.10.2-alpine\n",
+    )
+    .expect("write container");
+    fs::write(
+        systemd_dir.join("var-lib-immich-media.mount"),
+        "[Unit]\nDescription=Managed stale mount\n\n[Mount]\nWhat=/usr/share/zoneinfo\nWhere=/var/lib/immich/media\nType=none\nOptions=bind,ro\n\n[X-CoreOps]\nCreateMountpoint=true\n",
+    )
+    .expect("write mount");
+
+    let desired = DesiredState {
+        repository_ref: "repo".to_string(),
+        revision_id: "rev-remove".to_string(),
+        requested_repository: None,
+        requested_ref: None,
+        workloads: vec![Workload {
+            name: "immich".to_string(),
+            quadlet_type: QuadletType::Container,
+            quadlet_contents: "[Container]\nImage=docker.io/library/caddy:2.10.2-alpine\n"
+                .to_string(),
+            systemd_unit_name: "immich.container".to_string(),
+            enabled_state: EnabledState::Enabled,
+            restart_policy: RestartPolicy::Always,
+        }],
+        mount_declarations: Vec::new(),
+        mount_dependencies: Vec::new(),
+        managed_config_paths: Vec::new(),
+        managed_config_roots: Vec::new(),
+        invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
+        boundaries: Boundaries {
+            scopes: vec![BoundaryScope::QuadletSystemd],
+        },
+    };
+
+    let observed = read_observed_state(&quadlet_dir, Some(&desired), Some("obs".to_string()))
+        .expect("read observed");
+
+    assert!(observed
+        .workloads
+        .iter()
+        .any(|workload| workload.systemd_unit_name == "var-lib-immich-media.mount"));
+}
+
+#[test]
+fn observed_state_keeps_layered_generated_native_mounts_visible_for_removal_planning() {
+    let _env_lock = path_lock().lock().expect("lock env");
+    let temp = std::env::temp_dir().join(format!(
+        "core_ops_mount_observed_layered_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&temp).expect("temp dir");
+    let quadlet_dir = temp.join("quadlets");
+    let systemd_dir = temp.join("systemd");
+    fs::create_dir_all(&quadlet_dir).expect("quadlet dir");
+    fs::create_dir_all(&systemd_dir).expect("systemd dir");
+    std::env::set_var("CORE_OPS_SYSTEMD_UNIT_DIR", &systemd_dir);
+    let _guard = EnvGuard;
+
+    fs::write(
+        quadlet_dir.join("immich.container"),
+        "[Container]\nImage=docker.io/library/caddy:2.10.2-alpine\n",
+    )
+    .expect("write container");
+    fs::write(
+        systemd_dir.join("var-lib-immich-media.mount"),
+        "# Managed by CoreOps\n[Mount]\nWhat=/usr/share/zoneinfo\nWhere=/var/lib/immich/media\nType=none\nOptions=bind,ro\n",
+    )
+    .expect("write layered-generated mount");
+
+    let desired = DesiredState {
+        repository_ref: "repo".to_string(),
+        revision_id: "rev-remove".to_string(),
+        requested_repository: None,
+        requested_ref: None,
+        workloads: vec![Workload {
+            name: "immich".to_string(),
+            quadlet_type: QuadletType::Container,
+            quadlet_contents: "[Container]\nImage=docker.io/library/caddy:2.10.2-alpine\n"
+                .to_string(),
+            systemd_unit_name: "immich.container".to_string(),
+            enabled_state: EnabledState::Enabled,
+            restart_policy: RestartPolicy::Always,
+        }],
+        mount_declarations: Vec::new(),
+        mount_dependencies: Vec::new(),
+        managed_config_paths: Vec::new(),
+        managed_config_roots: Vec::new(),
+        invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
+        boundaries: Boundaries {
+            scopes: vec![BoundaryScope::QuadletSystemd],
+        },
+    };
+
+    let observed = read_observed_state(&quadlet_dir, Some(&desired), Some("obs".to_string()))
+        .expect("read observed");
+
+    assert!(observed
+        .workloads
+        .iter()
+        .any(|workload| workload.systemd_unit_name == "var-lib-immich-media.mount"));
 }
 
 #[test]

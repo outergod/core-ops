@@ -7,7 +7,7 @@ use crate::core::types::{
     EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn, EvaluationInput, ManagedObjectKind,
     MountDeclaration, MountDependency, MountVerificationMode, NormalizedManagedObject,
     NormalizedSnapshot, PathDependencyMode, PreparedTargetPath, QuadletType, ServiceDependencyEdit,
-    UnitDependencyMode,
+    UnitDependencyMode, Workload,
 };
 use crate::core::unit::apply_service_mount_dependencies;
 
@@ -191,6 +191,23 @@ fn config_refs_for_root(root: &str, managed_configs: &BTreeSet<&str>) -> Vec<Str
         .filter(|path| **path == root || path.starts_with(&format!("{root}/")))
         .map(|path| (*path).to_string())
         .collect()
+}
+
+pub fn derive_mount_model_from_workloads(
+    workloads: &[Workload],
+) -> Result<(Vec<MountDeclaration>, Vec<MountDependency>), EvaluationError> {
+    let artifacts = workloads
+        .iter()
+        .map(|workload| EvaluatedArtifact {
+            name: workload.systemd_unit_name.clone(),
+            quadlet_type: workload.quadlet_type.clone(),
+            contents: workload.quadlet_contents.clone(),
+            source_layers: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    let mount_declarations = collect_mount_declarations_from_artifacts(&artifacts)?;
+    let mount_dependencies = expand_mount_dependencies_from_workloads(workloads, &mount_declarations);
+    Ok((mount_declarations, mount_dependencies))
 }
 
 fn explicit_workload_ref(value: &str, workload_ids: &BTreeSet<&str>) -> Vec<String> {
@@ -434,8 +451,79 @@ fn expand_mount_dependencies(
     Ok(dependencies)
 }
 
+fn expand_mount_dependencies_from_workloads(
+    workloads: &[Workload],
+    declarations: &[MountDeclaration],
+) -> Vec<MountDependency> {
+    let declaration_map: BTreeMap<&str, &MountDeclaration> = declarations
+        .iter()
+        .map(|decl| (decl.id.as_str(), decl))
+        .collect();
+    let workload_artifacts = workloads
+        .iter()
+        .map(|workload| EvaluatedArtifact {
+            name: workload.systemd_unit_name.clone(),
+            quadlet_type: workload.quadlet_type.clone(),
+            contents: workload.quadlet_contents.clone(),
+            source_layers: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    let mut dependencies = Vec::new();
+    for workload in workloads {
+        if !matches!(
+            workload.quadlet_type,
+            QuadletType::Container | QuadletType::Pod
+        ) {
+            continue;
+        }
+        let Some(artifact) = workload_artifacts
+            .iter()
+            .find(|artifact| artifact.name == workload.systemd_unit_name)
+        else {
+            continue;
+        };
+        let mount_ids = mount_ids_for_evaluated_artifacts(std::slice::from_ref(artifact), &declaration_map);
+        if mount_ids.is_empty() {
+            continue;
+        }
+        let mut consumed_paths = Vec::new();
+        for mount_id in &mount_ids {
+            if let Some(declaration) = declaration_map.get(mount_id.as_str()) {
+                consumed_paths.push(declaration.target_path.clone());
+            }
+        }
+        consumed_paths.sort();
+        consumed_paths.dedup();
+        dependencies.push(MountDependency {
+            service_name: workload.name.clone(),
+            mount_ids,
+            consumed_paths,
+            path_dependency_mode: PathDependencyMode::RequiresMountsFor,
+            unit_dependency_mode: UnitDependencyMode::AfterAndRequires,
+        });
+    }
+    dependencies.sort_by(|a, b| a.service_name.cmp(&b.service_name));
+    dependencies
+}
+
 fn mount_ids_for_service_artifacts(
     artifacts: &[crate::core::types::ArtifactSource],
+    declaration_map: &BTreeMap<&str, &MountDeclaration>,
+) -> Vec<String> {
+    let evaluated = artifacts
+        .iter()
+        .map(|artifact| EvaluatedArtifact {
+            name: artifact.name.clone(),
+            quadlet_type: artifact.quadlet_type.clone(),
+            contents: artifact.contents.clone(),
+            source_layers: vec![artifact.source_path.clone()],
+        })
+        .collect::<Vec<_>>();
+    mount_ids_for_evaluated_artifacts(&evaluated, declaration_map)
+}
+
+fn mount_ids_for_evaluated_artifacts(
+    artifacts: &[EvaluatedArtifact],
     declaration_map: &BTreeMap<&str, &MountDeclaration>,
 ) -> Vec<String> {
     let mut mount_ids = BTreeSet::new();

@@ -1,0 +1,66 @@
+scenario_id: accepted-layered-convergence-idempotency
+title: Representative selected revision converges and reapply stays idle
+description: A selected revision converges on a clean VM and reapplying it reports no managed changes.
+scenario_classes:
+  - convergence
+  - idempotency
+source: accepted
+behavioral_claim: Applying a selected revision converges managed state, and reapplying the same revision remains stable.
+rationale: Provides the minimum accepted VM-backed proof for fresh convergence plus idempotent re-apply.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: fixtures/repos/frontend
+  revision_under_test: demo-uat-v2
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/frontend-history
+    revisions:
+      - demo-uat-v1
+      - demo-uat-v2
+    states:
+      - valid
+      - valid
+    transition_expectations:
+      - selected revision converges on clean boot
+      - reapply remains stable
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: apply
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-uat-v2
+      mode: humane
+  - step_id: reapply
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-uat-v2
+      mode: humane
+assertions:
+  - assertion_id: initial-apply-succeeded
+    assertion_type: step_exit_code_is
+    target: apply
+    expected_state: "0"
+    failure_message: Initial apply did not exit successfully.
+  - assertion_id: initial-apply-converged
+    assertion_type: step_stdout_contains
+    target: apply
+    expected_state: "Outcome: converged"
+    failure_message: Initial apply did not report converged outcome.
+  - assertion_id: initial-apply-created-work
+    assertion_type: step_stdout_contains
+    target: apply
+    expected_state: "1 create"
+    failure_message: Initial apply did not report expected fresh-convergence work.
+  - assertion_id: no-pending-change
+    assertion_type: no_pending_changes
+    target: guest
+    expected_state: none
+    failure_message: Reapplying the converged revision reported managed changes.

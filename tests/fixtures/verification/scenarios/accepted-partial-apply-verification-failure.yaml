@@ -1,0 +1,76 @@
+scenario_id: accepted-partial-apply-verification-failure
+title: Partial apply does not record success before post-apply verification converges
+description: A mixed revision can complete real create work and still fail overall when post-apply verification finds one managed workload inactive.
+scenario_classes:
+  - convergence
+  - regression_detection
+source: accepted
+behavioral_claim: A revision with successful early work and later post-apply verification failure must not be recorded as successfully applied.
+rationale: Provides the minimum accepted VM-backed proof for partial-apply accounting, explicit verification failure output, and failed-run status provenance.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: tests/fixtures/verification/repos/partial-verification-history
+  revision_under_test: demo-partial-v1
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/partial-verification-history
+    revisions:
+      - demo-partial-v1
+    states:
+      - valid
+    transition_expectations:
+      - stable workload creates successfully
+      - transient workload fails post-apply verification
+      - failed verification does not promote last_applied_revision
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: apply
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-partial-v1
+      mode: humane
+  - step_id: check-status-last-applied
+    step_type: guest_command
+    target: guest
+    command: "sudo sh -lc 'grep -q '\"'\"'\"last_applied_revision\": null'\"'\"' /var/lib/core-ops/status.json && echo not-promoted'"
+assertions:
+  - assertion_id: apply-failed-explicitly
+    assertion_type: step_exit_code_is
+    target: apply
+    expected_state: "1"
+    failure_message: Partial-apply verification failure did not exit non-zero.
+  - assertion_id: apply-created-stable-work
+    assertion_type: step_stdout_contains
+    target: apply
+    expected_state: "container/frontend.container"
+    failure_message: Partial-apply run did not report the stable workload create path.
+  - assertion_id: apply-created-transient-work
+    assertion_type: step_stdout_contains
+    target: apply
+    expected_state: "container/transient.container"
+    failure_message: Partial-apply run did not report the transient workload create path.
+  - assertion_id: apply-reported-verification-failure
+    assertion_type: step_stdout_contains
+    target: apply
+    expected_state: "failed during Verifying"
+    failure_message: Partial-apply run did not report post-apply verification failure.
+  - assertion_id: apply-reported-non-converging-outcome
+    assertion_type: step_stdout_contains
+    target: apply
+    expected_state: "Outcome: non-converging"
+    failure_message: Partial-apply run did not report non-converging outcome.
+  - assertion_id: failed-run-did-not-promote-last-applied
+    assertion_type: step_exit_code_is
+    target: check-status-last-applied
+    expected_state: "0"
+    failure_message: Failed verification run still promoted the revision as last applied.
+  - assertion_id: failed-run-status-marker
+    assertion_type: step_stdout_contains
+    target: check-status-last-applied
+    expected_state: "not-promoted"
+    failure_message: Failed verification run did not preserve a non-promoted last_applied_revision marker.

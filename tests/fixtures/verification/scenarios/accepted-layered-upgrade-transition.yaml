@@ -1,0 +1,75 @@
+scenario_id: accepted-layered-upgrade-transition
+title: Layered upgrade transition stays deterministic
+description: Applying a baseline revision and then upgrading to the next revision yields a deterministic converged update.
+scenario_classes:
+  - upgrade_transition
+source: accepted
+behavioral_claim: Upgrading from one accepted revision to the next produces a deterministic converged update with stable reporting.
+rationale: Provides the minimum accepted VM-backed proof for a deterministic layered revision transition.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: fixtures/repos/frontend
+  revision_under_test: demo-uat-v3
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/frontend-history
+    revisions:
+      - demo-uat-v2
+      - demo-uat-v3
+    states:
+      - valid
+      - valid
+    transition_expectations:
+      - baseline selected revision converges
+      - upgrade transition remains deterministic
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: apply-baseline
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-uat-v2
+      mode: humane
+  - step_id: apply-upgrade
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: demo-uat-v3
+      mode: humane
+assertions:
+  - assertion_id: baseline-apply-succeeded
+    assertion_type: step_exit_code_is
+    target: apply-baseline
+    expected_state: "0"
+    failure_message: Baseline apply did not exit successfully.
+  - assertion_id: baseline-apply-created-work
+    assertion_type: step_stdout_contains
+    target: apply-baseline
+    expected_state: "1 create"
+    failure_message: Baseline apply did not report expected create work.
+  - assertion_id: baseline-apply-converged
+    assertion_type: step_stdout_contains
+    target: apply-baseline
+    expected_state: "Outcome: converged"
+    failure_message: Baseline apply did not report converged outcome.
+  - assertion_id: upgrade-apply-succeeded
+    assertion_type: step_exit_code_is
+    target: apply-upgrade
+    expected_state: "0"
+    failure_message: Upgrade apply did not exit successfully.
+  - assertion_id: upgrade-apply-updated-work
+    assertion_type: step_stdout_contains
+    target: apply-upgrade
+    expected_state: "1 update"
+    failure_message: Upgrade apply did not report expected update work.
+  - assertion_id: upgrade-apply-converged
+    assertion_type: step_stdout_contains
+    target: apply-upgrade
+    expected_state: "Outcome: converged"
+    failure_message: Upgrade apply did not report converged outcome.

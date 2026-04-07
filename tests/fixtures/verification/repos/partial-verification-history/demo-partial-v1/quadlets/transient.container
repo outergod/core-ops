@@ -1,0 +1,13 @@
+[Unit]
+Description=Verification transient workload
+
+[Container]
+Image=quay.io/podman/hello
+ContainerName=transient
+
+[Service]
+Type=oneshot
+Restart=no
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Verification mount for removal ordering
+
+[Mount]
+What=/usr/share/zoneinfo
+Where=/var/lib/immich/media
+Type=none
+Options=bind,ro
+
+[X-CoreOps]
+CreateMountpoint=true
