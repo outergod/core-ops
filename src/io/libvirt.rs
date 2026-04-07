@@ -822,9 +822,20 @@ impl VerificationLibvirtBoundary for LibvirtCommandRunner {
         let mut rejected_records = Vec::new();
         let mut seen_lines = std::collections::BTreeSet::new();
         let mut accepted_record = None;
+        let mut last_fetch_error = None;
 
         while std::time::Instant::now() < deadline && accepted_record.is_none() {
-            let console_log = self.fetch_console_log(guest)?;
+            let console_log = match self.fetch_console_log(guest) {
+                Ok(console_log) => {
+                    last_fetch_error = None;
+                    console_log
+                }
+                Err(err) => {
+                    last_fetch_error = Some(err.message);
+                    sleep(Duration::from_secs(2));
+                    continue;
+                }
+            };
             for line in console_log.lines().filter(|line| line.contains(&payload.console_marker)) {
                 let line = line.trim();
                 if line.is_empty() || !seen_lines.insert(line.to_string()) {
@@ -871,10 +882,15 @@ impl VerificationLibvirtBoundary for LibvirtCommandRunner {
                 accepted_record: None,
                 rejected_records,
                 final_status: "fallback_used".to_string(),
-                failure_summary: Some(
-                    "serial-console readiness was not accepted before fallback was used"
-                        .to_string(),
-                ),
+                failure_summary: Some(match last_fetch_error {
+                    Some(error) => format!(
+                        "serial-console readiness was not accepted before fallback was used; last console-read error: {error}"
+                    ),
+                    None => {
+                        "serial-console readiness was not accepted before fallback was used"
+                            .to_string()
+                    }
+                }),
             };
             fallback_guest.readiness_evidence = Some(evidence.clone());
             return Ok(VerificationReadinessAcquisition {
@@ -890,10 +906,15 @@ impl VerificationLibvirtBoundary for LibvirtCommandRunner {
                 accepted_record: None,
                 rejected_records,
                 final_status: "timed_out".to_string(),
-                failure_summary: Some(
-                    "no valid serial-console readiness record was accepted before the readiness deadline"
-                        .to_string(),
-                ),
+                failure_summary: Some(match last_fetch_error {
+                    Some(error) => format!(
+                        "no valid serial-console readiness record was accepted before the readiness deadline; last console-read error: {error}"
+                    ),
+                    None => {
+                        "no valid serial-console readiness record was accepted before the readiness deadline"
+                            .to_string()
+                    }
+                }),
             },
         })
     }

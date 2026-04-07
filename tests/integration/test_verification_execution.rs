@@ -1039,6 +1039,59 @@ fn serial_console_readiness_rejects_previous_run_history_replay() {
 }
 
 #[test]
+fn serial_console_readiness_retries_transient_console_read_failures() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let console = workspace.path().join("console.log");
+    let console_for_writer = console.clone();
+    let writer = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(
+            &console_for_writer,
+            "CORE_OPS_VERIFY_READY {\"run_id\":\"run-current\",\"token\":\"token-current\",\"ip\":\"192.0.2.33\"}\n",
+        )
+        .expect("write console");
+    });
+
+    let libvirt = LibvirtCommandRunner {
+        env_backed: true,
+        ..LibvirtCommandRunner::default()
+    };
+    let guest = build_readiness_guest(workspace.path(), &console);
+    let mut scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+    let mut overrides = scenario.policy_overrides.clone().unwrap_or(
+        core_ops::core::verification_model::VerificationHarnessPolicyOverride {
+            timeout_profile: None,
+            timeouts: None,
+            artifact_profile: None,
+            artifact_policy: None,
+        },
+    );
+    let mut timeouts = scenario.effective_timeouts().expect("timeouts");
+    timeouts.readiness_timeout = "4s".to_string();
+    overrides.timeouts = Some(timeouts);
+    scenario.policy_overrides = Some(overrides);
+
+    let acquisition = libvirt
+        .acquire_guest_readiness(&scenario, &guest)
+        .expect("readiness acquisition");
+    writer.join().expect("writer");
+
+    assert_eq!(acquisition.evidence.final_status, "accepted");
+    assert_eq!(
+        acquisition
+            .evidence
+            .accepted_record
+            .as_ref()
+            .expect("accepted")
+            .ip,
+        "192.0.2.33"
+    );
+}
+
+#[test]
 fn serial_console_readiness_precedes_fallback_when_valid_record_exists() {
     let workspace = tempfile::tempdir().expect("workspace");
     let console = workspace.path().join("console.log");
