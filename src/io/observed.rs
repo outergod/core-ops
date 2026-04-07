@@ -8,6 +8,7 @@ use crate::core::types::{
     ObservedState, ObservedUnit, QuadletType, RestartPolicy, RuntimeVerificationSignal,
     UnitActiveState, Workload,
 };
+use crate::io::repo::NATIVE_UNIT_MANAGED_MARKER;
 use crate::core::unit::systemd_unit_for_quadlet_file;
 use crate::io::quadlet::{
     normalize_socket_contents, parse_quadlet_name, read_quadlet_dir, QuadletError,
@@ -174,7 +175,8 @@ fn read_native_mount_units(
         }
         let contents = std::fs::read_to_string(&path)?;
         let is_desired_unit = desired_units.contains(unit_name);
-        let is_managed_stale_unit = contents.contains("[X-CoreOps]");
+        let is_managed_stale_unit =
+            contents.contains("[X-CoreOps]") || contents.contains(NATIVE_UNIT_MANAGED_MARKER);
         if !is_desired_unit && !is_managed_stale_unit {
             continue;
         }

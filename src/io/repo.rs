@@ -18,6 +18,7 @@ use crate::io::quadlet::{parse_quadlet_name, read_quadlet_dir, QuadletError};
 use serde::Deserialize;
 
 pub const HOST_OVERRIDE_ENV: &str = "CORE_OPS_HOST";
+pub const NATIVE_UNIT_MANAGED_MARKER: &str = "# Managed by CoreOps";
 
 #[derive(Debug)]
 pub struct LayeredRepo {
@@ -532,17 +533,14 @@ fn workloads_from_evaluation(output: &EvaluationOutput) -> Vec<Workload> {
         if !existing_native_units.contains(&mount.mount_unit_name()) {
             units.push(workload_from_native_unit(
                 &mount.mount_unit_name(),
-                &format!(
-                    "[Mount]\nWhat={}\nWhere={}\nType={}\n",
-                    mount.source, mount.target_path, mount.fstype
-                ),
+                &render_generated_mount_unit(mount),
             ));
         }
         if let Some(automount_name) = mount.automount_unit_name() {
             if !existing_native_units.contains(&automount_name) {
                 units.push(workload_from_native_unit(
                     &automount_name,
-                    &format!("[Automount]\nWhere={}\n", mount.target_path),
+                    &render_generated_automount_unit(mount),
                 ));
             }
         }
@@ -620,6 +618,24 @@ fn workload_from_native_unit(unit_name: &str, contents: &str) -> Workload {
         enabled_state: EnabledState::Enabled,
         restart_policy: RestartPolicy::Always,
     }
+}
+
+fn render_generated_mount_unit(mount: &MountDeclaration) -> String {
+    let mut contents = format!(
+        "{NATIVE_UNIT_MANAGED_MARKER}\n[Mount]\nWhat={}\nWhere={}\nType={}\n",
+        mount.source, mount.target_path, mount.fstype
+    );
+    if !mount.mount_options.is_empty() {
+        contents.push_str(&format!("Options={}\n", mount.mount_options.join(",")));
+    }
+    contents
+}
+
+fn render_generated_automount_unit(mount: &MountDeclaration) -> String {
+    format!(
+        "{NATIVE_UNIT_MANAGED_MARKER}\n[Automount]\nWhere={}\n",
+        mount.target_path
+    )
 }
 
 fn selected_service_artifacts(
@@ -963,7 +979,11 @@ fn resolved_head_revision(repo_path: &Path) -> Result<String, RepoError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_revision_expression, required_fetch_depth};
+    use super::{
+        parse_revision_expression, render_generated_automount_unit, render_generated_mount_unit,
+        required_fetch_depth, NATIVE_UNIT_MANAGED_MARKER,
+    };
+    use crate::core::types::{MountDeclaration, MountVerificationMode};
 
     #[test]
     fn revision_expression_uses_fetch_head_for_plain_refs() {
@@ -996,5 +1016,28 @@ mod tests {
         assert_eq!(required_fetch_depth("~5"), 6);
         assert_eq!(required_fetch_depth("^"), 2);
         assert_eq!(required_fetch_depth("~2^"), 4);
+    }
+
+    #[test]
+    fn generated_native_mount_units_include_management_marker() {
+        let declaration = MountDeclaration {
+            id: "var-lib-immich-media".to_string(),
+            target_path: "/var/lib/immich/media".to_string(),
+            source: "/usr/share/zoneinfo".to_string(),
+            fstype: "none".to_string(),
+            mount_options: vec!["bind".to_string(), "ro".to_string()],
+            network_backed: false,
+            automount: true,
+            verification_mode: MountVerificationMode::UnitAndPath,
+            prepared_path: None,
+        };
+
+        let mount = render_generated_mount_unit(&declaration);
+        let automount = render_generated_automount_unit(&declaration);
+
+        assert!(mount.contains(NATIVE_UNIT_MANAGED_MARKER));
+        assert!(mount.contains("Options=bind,ro"));
+        assert!(automount.contains(NATIVE_UNIT_MANAGED_MARKER));
+        assert!(automount.contains("[Automount]"));
     }
 }
