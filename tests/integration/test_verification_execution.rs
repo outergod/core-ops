@@ -5,8 +5,12 @@ use core_ops::core::types::{
 };
 use core_ops::core::verification_model::{
     load_scenario_definition, VerificationAssertionSpec, VerificationCoreOpsAction,
-    VerificationCoreOpsActionKind, VerificationScenarioClass, VerificationScenarioStep,
-    VerificationStepTarget, VerificationStepType,
+    VerificationCoreOpsActionKind, VerificationGuestReadinessPayload, VerificationScenarioClass,
+    VerificationScenarioStep, VerificationStepTarget, VerificationStepType,
+    VerificationReadinessAcquisition, VerificationReadinessEvidence, VerificationReadinessRejection,
+    VerificationReadinessRejectionKind,
+    VERIFICATION_READINESS_MARKER, VERIFICATION_READINESS_SCRIPT_PATH,
+    VERIFICATION_READINESS_SERVICE_NAME,
 };
 use core_ops::core::boundaries::{VerificationGuestBoundary, VerificationLibvirtBoundary};
 use core_ops::core::errors::CoreError;
@@ -774,6 +778,31 @@ impl VerificationLibvirtBoundary for SetupFailureLibvirtBoundary {
             rendered_network_config: None,
             serial_log_path: None,
             qemu_launch_log_path: None,
+            readiness_payload: None,
+            readiness_evidence: None,
+        })
+    }
+
+    fn acquire_guest_readiness(
+        &self,
+        _scenario: &core_ops::core::verification_model::VerificationScenarioDefinition,
+        guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+    ) -> Result<core_ops::core::verification_model::VerificationReadinessAcquisition, CoreError> {
+        Ok(core_ops::core::verification_model::VerificationReadinessAcquisition {
+            guest: guest.clone(),
+            evidence: core_ops::core::verification_model::VerificationReadinessEvidence {
+                source: "synthetic".to_string(),
+                accepted_record: Some(core_ops::core::verification_model::VerificationReadinessRecord {
+                    run_id: "run-setup-failure".to_string(),
+                    token: "token".to_string(),
+                    ip: "192.0.2.10".to_string(),
+                    hostname: None,
+                    ts: None,
+                }),
+                rejected_records: Vec::new(),
+                final_status: "accepted".to_string(),
+                failure_summary: None,
+            },
         })
     }
 
@@ -892,6 +921,352 @@ fn build_assertion(
     }
 }
 
+fn build_readiness_guest(
+    workspace_root: &std::path::Path,
+    console_log_path: &std::path::Path,
+) -> core_ops::core::verification_model::LibvirtGuestHandle {
+    core_ops::core::verification_model::LibvirtGuestHandle {
+        guest_name: "readiness-guest".to_string(),
+        domain_name: "readiness-domain".to_string(),
+        ssh_target: "core@0.0.0.0".to_string(),
+        connection_uri: "qemu:///system".to_string(),
+        workspace_root: workspace_root.display().to_string(),
+        env_backed: true,
+        network_mode: Some("dhcp".to_string()),
+        vm_host: None,
+        ssh_user: Some("core".to_string()),
+        ignition_path: None,
+        local_butane_path: None,
+        local_ignition_path: None,
+        volume_name: Some("readiness.qcow2".to_string()),
+        assigned_ip: None,
+        lease_path: None,
+        rendered_network_config: None,
+        serial_log_path: Some(console_log_path.display().to_string()),
+        qemu_launch_log_path: None,
+        readiness_payload: Some(VerificationGuestReadinessPayload {
+            run_id: "run-current".to_string(),
+            token: "token-current".to_string(),
+            console_marker: VERIFICATION_READINESS_MARKER.to_string(),
+            service_name: VERIFICATION_READINESS_SERVICE_NAME.to_string(),
+            script_path: VERIFICATION_READINESS_SCRIPT_PATH.to_string(),
+        }),
+        readiness_evidence: None,
+    }
+}
+
+#[test]
+fn serial_console_readiness_ignores_stale_and_malformed_records_before_valid_acceptance() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let console = workspace.path().join("console.log");
+    fs::write(
+        &console,
+        concat!(
+            "noise\n",
+            "CORE_OPS_VERIFY_READY {\"run_id\":\"run-old\",\"token\":\"token-old\",\"ip\":\"192.0.2.20\"}\n",
+            "CORE_OPS_VERIFY_READY {\"run_id\":\"run-current\",\"token\":\"token-current\"}\n",
+            "CORE_OPS_VERIFY_READY {\"run_id\":\"run-current\",\"token\":\"token-current\",\"ip\":\"192.0.2.30\"}\n"
+        ),
+    )
+    .expect("write console");
+    let libvirt = LibvirtCommandRunner {
+        env_backed: true,
+        ..LibvirtCommandRunner::default()
+    };
+    let guest = build_readiness_guest(workspace.path(), &console);
+    let scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+
+    let acquisition = libvirt
+        .acquire_guest_readiness(&scenario, &guest)
+        .expect("readiness acquisition");
+
+    assert_eq!(acquisition.evidence.source, "serial-console");
+    assert_eq!(acquisition.evidence.final_status, "accepted");
+    assert_eq!(
+        acquisition
+            .evidence
+            .accepted_record
+            .as_ref()
+            .expect("accepted")
+            .ip,
+        "192.0.2.30"
+    );
+    assert_eq!(acquisition.evidence.rejected_records.len(), 2);
+}
+
+#[test]
+fn serial_console_readiness_rejects_previous_run_history_replay() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let console = workspace.path().join("console.log");
+    fs::write(
+        &console,
+        concat!(
+            "CORE_OPS_VERIFY_READY {\"run_id\":\"run-previous\",\"token\":\"token-previous\",\"ip\":\"192.0.2.11\"}\n",
+            "CORE_OPS_VERIFY_READY {\"run_id\":\"run-current\",\"token\":\"token-current\",\"ip\":\"192.0.2.31\"}\n"
+        ),
+    )
+    .expect("write console");
+    let libvirt = LibvirtCommandRunner {
+        env_backed: true,
+        ..LibvirtCommandRunner::default()
+    };
+    let guest = build_readiness_guest(workspace.path(), &console);
+    let scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+
+    let acquisition = libvirt
+        .acquire_guest_readiness(&scenario, &guest)
+        .expect("readiness acquisition");
+
+    assert_eq!(
+        acquisition
+            .evidence
+            .accepted_record
+            .as_ref()
+            .expect("accepted")
+            .ip,
+        "192.0.2.31"
+    );
+    assert_eq!(
+        acquisition.evidence.rejected_records[0].kind,
+        VerificationReadinessRejectionKind::Stale
+    );
+}
+
+#[test]
+fn serial_console_readiness_retries_transient_console_read_failures() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let console = workspace.path().join("console.log");
+    let console_for_writer = console.clone();
+    let writer = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(
+            &console_for_writer,
+            "CORE_OPS_VERIFY_READY {\"run_id\":\"run-current\",\"token\":\"token-current\",\"ip\":\"192.0.2.33\"}\n",
+        )
+        .expect("write console");
+    });
+
+    let libvirt = LibvirtCommandRunner {
+        env_backed: true,
+        ..LibvirtCommandRunner::default()
+    };
+    let guest = build_readiness_guest(workspace.path(), &console);
+    let mut scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+    let mut overrides = scenario.policy_overrides.clone().unwrap_or(
+        core_ops::core::verification_model::VerificationHarnessPolicyOverride {
+            timeout_profile: None,
+            timeouts: None,
+            artifact_profile: None,
+            artifact_policy: None,
+        },
+    );
+    let mut timeouts = scenario.effective_timeouts().expect("timeouts");
+    timeouts.readiness_timeout = "4s".to_string();
+    overrides.timeouts = Some(timeouts);
+    scenario.policy_overrides = Some(overrides);
+
+    let acquisition = libvirt
+        .acquire_guest_readiness(&scenario, &guest)
+        .expect("readiness acquisition");
+    writer.join().expect("writer");
+
+    assert_eq!(acquisition.evidence.final_status, "accepted");
+    assert_eq!(
+        acquisition
+            .evidence
+            .accepted_record
+            .as_ref()
+            .expect("accepted")
+            .ip,
+        "192.0.2.33"
+    );
+}
+
+#[test]
+fn serial_console_readiness_precedes_fallback_when_valid_record_exists() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let console = workspace.path().join("console.log");
+    fs::write(
+        &console,
+        "CORE_OPS_VERIFY_READY {\"run_id\":\"run-current\",\"token\":\"token-current\",\"ip\":\"192.0.2.32\"}\n",
+    )
+    .expect("write console");
+    std::env::set_var("CORE_OPS_VERIFY_ALLOW_ARP_FALLBACK", "true");
+    let libvirt = LibvirtCommandRunner {
+        env_backed: true,
+        ..LibvirtCommandRunner::default()
+    };
+    let guest = build_readiness_guest(workspace.path(), &console);
+    let scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+
+    let acquisition = libvirt
+        .acquire_guest_readiness(&scenario, &guest)
+        .expect("readiness acquisition");
+    std::env::remove_var("CORE_OPS_VERIFY_ALLOW_ARP_FALLBACK");
+
+    assert_eq!(acquisition.evidence.source, "serial-console");
+    assert_eq!(acquisition.evidence.final_status, "accepted");
+}
+
+struct ReadinessOutcomeLibvirtBoundary {
+    evidence: VerificationReadinessEvidence,
+}
+
+impl VerificationLibvirtBoundary for ReadinessOutcomeLibvirtBoundary {
+    fn create_guest(
+        &self,
+        _scenario: &core_ops::core::verification_model::VerificationScenarioDefinition,
+        workspace_root: &std::path::Path,
+    ) -> Result<core_ops::core::verification_model::LibvirtGuestHandle, CoreError> {
+        Ok(build_readiness_guest(
+            workspace_root,
+            &workspace_root.join("console.log"),
+        ))
+    }
+
+    fn acquire_guest_readiness(
+        &self,
+        _scenario: &core_ops::core::verification_model::VerificationScenarioDefinition,
+        guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+    ) -> Result<VerificationReadinessAcquisition, CoreError> {
+        let mut guest = guest.clone();
+        if let Some(record) = &self.evidence.accepted_record {
+            guest.assigned_ip = Some(record.ip.clone());
+            guest.ssh_target = format!("core@{}", record.ip);
+        }
+        guest.readiness_evidence = Some(self.evidence.clone());
+        Ok(VerificationReadinessAcquisition {
+            guest,
+            evidence: self.evidence.clone(),
+        })
+    }
+
+    fn destroy_guest(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+    ) -> Result<(), CoreError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn execute_scenario_reports_missing_readiness_timeout_as_timeout_view() {
+    let scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let libvirt = ReadinessOutcomeLibvirtBoundary {
+        evidence: VerificationReadinessEvidence {
+            source: "serial-console".to_string(),
+            accepted_record: None,
+            rejected_records: Vec::new(),
+            final_status: "timed_out".to_string(),
+            failure_summary: Some(
+                "no valid serial-console readiness record was accepted before the readiness deadline"
+                    .to_string(),
+            ),
+        },
+    };
+    let guest = GuestCommandRunner::default();
+    let collector = ArtifactCollector;
+    let context = VerificationExecutionContext {
+        workspace: workspace.path(),
+        artifacts_root: artifacts.path(),
+        libvirt: &libvirt,
+        guest_boundary: &guest,
+        artifact_boundary: &collector,
+    };
+
+    let view = execute_scenario(
+        &scenario,
+        VerificationRunMode::Ci,
+        "run-readiness-timeout",
+        &context,
+        false,
+        false,
+    )
+    .expect("execute");
+
+    assert_eq!(view.overall_outcome, VerificationRunOutcome::Timeout);
+    assert_eq!(view.failure_summary.as_deref(), libvirt.evidence.failure_summary.as_deref());
+    assert_eq!(
+        view.readiness_evidence
+            .as_ref()
+            .expect("readiness")
+            .final_status,
+        "timed_out"
+    );
+}
+
+#[test]
+fn execute_scenario_reports_readiness_rejections_as_infrastructure_failure() {
+    let scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let libvirt = ReadinessOutcomeLibvirtBoundary {
+        evidence: VerificationReadinessEvidence {
+            source: "serial-console".to_string(),
+            accepted_record: None,
+            rejected_records: vec![VerificationReadinessRejection {
+                kind: VerificationReadinessRejectionKind::Malformed,
+                summary: "readiness record does not contain a usable IPv4 address".to_string(),
+                raw_line: Some("CORE_OPS_VERIFY_READY {}".to_string()),
+            }],
+            final_status: "invalid".to_string(),
+            failure_summary: Some(
+                "serial-console readiness was rejected before guest access could begin"
+                    .to_string(),
+            ),
+        },
+    };
+    let guest = GuestCommandRunner::default();
+    let collector = ArtifactCollector;
+    let context = VerificationExecutionContext {
+        workspace: workspace.path(),
+        artifacts_root: artifacts.path(),
+        libvirt: &libvirt,
+        guest_boundary: &guest,
+        artifact_boundary: &collector,
+    };
+
+    let view = execute_scenario(
+        &scenario,
+        VerificationRunMode::Ci,
+        "run-readiness-infra",
+        &context,
+        false,
+        false,
+    )
+    .expect("execute");
+
+    assert_eq!(view.overall_outcome, VerificationRunOutcome::InfrastructureFailure);
+    assert_eq!(
+        view.readiness_evidence
+            .as_ref()
+            .expect("readiness")
+            .rejected_records
+            .len(),
+        1
+    );
+}
+
 #[test]
 fn verification_run_humane_and_json_preserve_same_outcome_semantics() {
     let mut scenario = load_scenario_definition(&fixture_path(
@@ -946,5 +1321,9 @@ fn verification_run_humane_and_json_preserve_same_outcome_semantics() {
     assert_eq!(
         json["artifacts"]["bundle_path"],
         serde_json::Value::String(view.artifact_bundle.bundle_path.clone())
+    );
+    assert_eq!(
+        json["scenario_outcomes"][0]["readiness_evidence"]["source"],
+        "synthetic"
     );
 }

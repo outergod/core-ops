@@ -137,6 +137,24 @@ export CORE_OPS_VERIFY_VM_HOST=ulthar
 export CORE_OPS_VERIFY_CORE_OPS_BIN=target/debug/core-ops
 ```
 
+Serial-console readiness is now the primary guest-address contract for VM-backed
+verification. The harness injects a oneshot guest service through Ignition,
+waits for a `CORE_OPS_VERIFY_READY ...` record on the serial console, and uses
+the first valid current-run IPv4 as the authoritative SSH target for later
+guest-boundary work.
+
+Migration-only ARP fallback is disabled by default. Enable it explicitly only
+when validating rollout behavior:
+
+```bash
+export CORE_OPS_VERIFY_ALLOW_ARP_FALLBACK=true
+```
+
+When readiness succeeds or fails, retained artifacts now include
+`readiness-evidence.json` alongside `console-log.txt`, making it possible to
+distinguish accepted, rejected, timed-out, and fallback-used readiness states
+without inspecting host neighbor-cache state.
+
 ### Repository-Evolution and Regression Workflow
 
 Accepted scenarios may reference repository-history fixtures rather than a

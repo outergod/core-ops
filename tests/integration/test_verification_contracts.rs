@@ -5,7 +5,8 @@ use core_ops::core::types::{
 };
 use core_ops::core::verification_model::{
     build_artifact_bundle, load_scenario_definition, VerificationArtifactBundle,
-    VerificationArtifactManifestEntry, VerificationRevisionSelectionBasis, VerificationRun,
+    VerificationArtifactManifestEntry, VerificationReadinessEvidence, VerificationReadinessRecord,
+    VerificationRevisionSelectionBasis, VerificationRun,
 };
 use core_ops::io::guest::GuestCommandRunner;
 use core_ops::io::libvirt::LibvirtCommandRunner;
@@ -131,6 +132,10 @@ fn verification_run_json_output_matches_contract_shape() {
         "demo-uat-v2"
     );
     assert_eq!(parsed["scenario_outcomes"][0]["outcome"], "passed");
+    assert_eq!(
+        parsed["scenario_outcomes"][0]["readiness_evidence"]["source"],
+        "synthetic"
+    );
     let observed = parsed["scenario_outcomes"][0]["assertion_results"][0]["observed_value"]
         .as_str()
         .expect("observed_value");
@@ -172,4 +177,28 @@ fn artifact_manifest_can_be_written_for_foundational_bundle() {
         artifacts.bundle.always_collected_entries,
         vec!["console-log"]
     );
+}
+
+#[test]
+fn readiness_evidence_serialization_matches_contract_shape() {
+    let evidence = VerificationReadinessEvidence {
+        source: "serial-console".to_string(),
+        accepted_record: Some(VerificationReadinessRecord {
+            run_id: "run-123".to_string(),
+            token: "token-123".to_string(),
+            ip: "192.0.2.10".to_string(),
+            hostname: Some("vm-1".to_string()),
+            ts: Some("2026-04-07T00:00:00Z".to_string()),
+        }),
+        rejected_records: Vec::new(),
+        final_status: "accepted".to_string(),
+        failure_summary: None,
+    };
+
+    let json = serde_json::to_value(&evidence).expect("serialize evidence");
+    assert_eq!(json["source"], "serial-console");
+    assert_eq!(json["accepted_record"]["run_id"], "run-123");
+    assert_eq!(json["accepted_record"]["token"], "token-123");
+    assert_eq!(json["accepted_record"]["ip"], "192.0.2.10");
+    assert_eq!(json["final_status"], "accepted");
 }

@@ -397,6 +397,45 @@ CoreOps provides a dedicated verification entrypoint that runs declarative scena
 - Verification outputs and exit semantics are part of the public operational contract when relied upon by users or automation.
 - Corpus coverage should evolve with feature behavior, including upgrade transitions, reboot resilience, drift correction, idempotency, and failure diagnosis.
 
+## 8.1 Serial-Console Guest Readiness
+
+### Atomic Contracts
+
+- `[integration test] [public automation contract]` VM-backed verification MUST accept the first valid current-run serial-console readiness record as the authoritative guest IPv4 source. Shape: console log with stale lines then valid current-run record + verify first valid IPv4 wins.
+- `[integration test] [internal semantic rule]` Serial-console readiness MUST reject stale, mismatched, and malformed records without unblocking the run. Shape: previous-run log replay + malformed current-run record + later valid record.
+- `[integration test] [public operator contract]` Missing valid readiness within the configured window MUST end as an explicit readiness timeout distinct from behavioral CoreOps failure. Shape: env-backed scenario + no valid readiness record + inspect timeout outcome and readiness evidence.
+- `[integration test] [public operator contract]` Readiness rejection before guest access MUST surface as infrastructure-style readiness failure distinct from behavioral CoreOps failure. Shape: only malformed readiness records + inspect failure summary and machine-readable run payload.
+- `[integration test] [public automation contract]` Migration-only ARP fallback MUST remain subordinate to a valid accepted readiness record. Shape: valid readiness record present + fallback enabled + verify serial-console source remains authoritative.
+
+### User-visible / operator-visible contract
+
+The verification harness learns guest reachability from the guest itself by
+consuming a run-scoped readiness record on the serial console. Operators can
+tell from retained artifacts and run outputs whether readiness was accepted,
+rejected, timed out, or fell back during migration.
+
+### Runtime semantics
+
+- The first valid current-run readiness record wins.
+- Later matching records are ignored for guest selection and retained only as diagnostics.
+- Rejected stale and malformed records do not advance guest readiness state.
+- ARP-based discovery is an opt-in migration fallback rather than the primary contract.
+
+### Failure semantics
+
+- No valid readiness record before the deadline is a readiness timeout.
+- Malformed or mismatched readiness data is rejected explicitly.
+- Readiness acquisition failures remain distinct from later behavioral CoreOps failures.
+
+### Output contract
+
+- `readiness-evidence.json` captures accepted and rejected records plus final status.
+- Human-readable and machine-readable verification outputs surface readiness status separately from behavioral failure summaries.
+
+### Revision / upgrade implications
+
+- Marker, required fields, failure-class semantics, and readiness artifact shape are compatibility-sensitive.
+
 ## 9. Spec-Driven Candidate Scenario Generation
 
 ### Atomic Contracts

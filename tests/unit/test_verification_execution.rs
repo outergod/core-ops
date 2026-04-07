@@ -1,11 +1,13 @@
 use core_ops::core::types::VerificationRunMode;
 use core_ops::core::verification_eval::{
-    assertion_matches_no_pending_changes, build_execution_plan, should_retain_environment,
+    accept_first_valid_readiness, assertion_matches_no_pending_changes, build_execution_plan,
+    evaluate_readiness_line, is_usable_ipv4, parse_readiness_record_line,
+    should_retain_environment,
 };
 use core_ops::core::verification_model::{
     parse_scenario_definition, VerificationAssertionSpec, VerificationCoreOpsAction,
-    VerificationCoreOpsActionKind, VerificationScenarioStep, VerificationStepTarget,
-    VerificationStepType,
+    VerificationCoreOpsActionKind, VerificationReadinessExpectation, VerificationScenarioStep,
+    VerificationStepTarget, VerificationStepType, VERIFICATION_READINESS_MARKER,
 };
 
 fn scenario_fixture() -> core_ops::core::verification_model::VerificationScenarioDefinition {
@@ -159,4 +161,84 @@ fn execution_plan_renders_supported_command_surfaces_for_public_interfaces() {
             "sudo core-ops agent --repo fixtures/repos/frontend --rev demo-uat-v2 --quadlet-dir /etc/containers/systemd --systemd-unit-dir /etc/systemd/system"
         )
     );
+}
+
+#[test]
+fn parse_readiness_record_line_accepts_contract_shape() {
+    let line = "CORE_OPS_VERIFY_READY {\"run_id\":\"run-1\",\"token\":\"tok-1\",\"ip\":\"192.0.2.10\"}";
+    let record =
+        parse_readiness_record_line(line, VERIFICATION_READINESS_MARKER).expect("record");
+
+    assert_eq!(record.run_id, "run-1");
+    assert_eq!(record.token, "tok-1");
+    assert_eq!(record.ip, "192.0.2.10");
+}
+
+#[test]
+fn parse_readiness_record_line_accepts_prefixed_console_output() {
+    let line = "[    7.675390] core-ops-verify-ready[1117]: CORE_OPS_VERIFY_READY {\"run_id\":\"run-1\",\"token\":\"tok-1\",\"ip\":\"192.0.2.10\"}";
+    let record =
+        parse_readiness_record_line(line, VERIFICATION_READINESS_MARKER).expect("record");
+
+    assert_eq!(record.run_id, "run-1");
+    assert_eq!(record.token, "tok-1");
+    assert_eq!(record.ip, "192.0.2.10");
+}
+
+#[test]
+fn evaluate_readiness_line_rejects_stale_and_malformed_records() {
+    let expectation = VerificationReadinessExpectation {
+        run_id: "run-current".to_string(),
+        token: "token-current".to_string(),
+        marker: VERIFICATION_READINESS_MARKER.to_string(),
+    };
+
+    let stale = evaluate_readiness_line(
+        "CORE_OPS_VERIFY_READY {\"run_id\":\"run-old\",\"token\":\"token-old\",\"ip\":\"192.0.2.10\"}",
+        &expectation,
+    )
+    .expect_err("stale");
+    assert_eq!(
+        stale.kind,
+        core_ops::core::verification_model::VerificationReadinessRejectionKind::Stale
+    );
+
+    let malformed = evaluate_readiness_line(
+        "CORE_OPS_VERIFY_READY {\"run_id\":\"run-current\",\"token\":\"token-current\"}",
+        &expectation,
+    )
+    .expect_err("malformed");
+    assert_eq!(
+        malformed.kind,
+        core_ops::core::verification_model::VerificationReadinessRejectionKind::Malformed
+    );
+}
+
+#[test]
+fn first_valid_readiness_acceptance_is_stable() {
+    let expectation = VerificationReadinessExpectation {
+        run_id: "run-current".to_string(),
+        token: "token-current".to_string(),
+        marker: VERIFICATION_READINESS_MARKER.to_string(),
+    };
+    let first = evaluate_readiness_line(
+        "CORE_OPS_VERIFY_READY {\"run_id\":\"run-current\",\"token\":\"token-current\",\"ip\":\"192.0.2.10\"}",
+        &expectation,
+    )
+    .expect("first");
+    let accepted = accept_first_valid_readiness(&None, first.clone(), "line-one").expect("accepted");
+    let duplicate = accept_first_valid_readiness(&Some(accepted), first, "line-two")
+        .expect_err("duplicate rejected");
+
+    assert_eq!(
+        duplicate.kind,
+        core_ops::core::verification_model::VerificationReadinessRejectionKind::DuplicateCurrentRun
+    );
+}
+
+#[test]
+fn usable_ipv4_validation_rejects_unspecified_addresses() {
+    assert!(is_usable_ipv4("192.0.2.10"));
+    assert!(!is_usable_ipv4("0.0.0.0"));
+    assert!(!is_usable_ipv4("not-an-ip"));
 }

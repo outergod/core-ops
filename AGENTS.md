@@ -1,6 +1,6 @@
 # CoreOps Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-01
+Auto-generated from all feature plans. Last updated: 2026-04-07
 
 ## Active Technologies
 - Rust (stable toolchain) + Git (CLI), systemd (systemctl), Podman/Quadlet generator (001-gitops-quadlet-controller)
@@ -17,6 +17,7 @@ Auto-generated from all feature plans. Last updated: 2026-04-01
 - Files on disk for persisted provenance and deterministic reconciliation state under the runtime state directory; machine-readable interface payloads are emitted transiently by CLI/report surfaces (007-explainable-reconcile-interface)
 - Rust 2021 + Existing CoreOps Rust stack (`clap`, `miette`, (008-e2e-verification-harness)
 - Files on disk for scenario definitions, accepted scenario corpus, (008-e2e-verification-harness)
+- Files on disk for rendered ignition inputs, serial console logs, (009-serial-console-readiness)
 
 ## Project Structure
 
@@ -35,9 +36,9 @@ tests/
 Rust (stable toolchain): Follow standard conventions
 
 ## Recent Changes
+- 009-serial-console-readiness: Added Rust 2021 + Existing CoreOps Rust stack (`clap`, `miette`,
 - 008-e2e-verification-harness: Added Rust 2021 + Existing CoreOps Rust stack (`clap`, `miette`,
 - 007-explainable-reconcile-interface: Added Rust 2021 (`core-ops` 0.5.0) + `clap`, `miette`, `thiserror`, `serde`, `serde_json`, `log`, `systemd-journal-logger`, `tempfile`
-- 006-deterministic-reconcile: Added Rust (stable toolchain, edition 2021) + Existing CoreOps Rust stack: clap, thiserror, miette, log, systemd-journal-logger, serde, serde_json, tempfile; systemd and Quadlet remain the runtime integration surfaces
 
 <!-- MANUAL ADDITIONS START -->
 ## Verification Harness Playbook

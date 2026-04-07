@@ -15,6 +15,9 @@ Thumbs.db
 .idea/
 /.direnv/
 /core-ops
+/artifacts/
+/infra/repo/
+/rendered-ignition.ign
 /infra/ignition/*.bu
 /infra/ignition/*.ign
 /.agent/
