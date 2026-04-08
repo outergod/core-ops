@@ -154,6 +154,8 @@
 - **Compatibility**: [Backward-compatibility strategy and migrations]
 - **Release version policy**: [How behavior/schema/CLI/reconciliation changes
   affect versioning; canonical controller version comes from `Cargo.toml`]
+- **Changelog discipline**: [How externally visible changes update the Keep a
+  Changelog-formatted changelog before the work is considered complete]
 - **Test contract**: [Invariants, external behavior, convergence, failure tests,
   and for Rust changes the required `cargo test` and
   `cargo clippy --all-targets -- -D warnings` gates or a documented exemption]

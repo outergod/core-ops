@@ -217,3 +217,6 @@ See [LICENSE](LICENSE).
 * [CHANGELOG.md](CHANGELOG.md)
 * [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 * [docs/development.md](docs/development.md)
+
+Externally visible changes are tracked in [CHANGELOG.md](CHANGELOG.md) using
+Keep a Changelog format.

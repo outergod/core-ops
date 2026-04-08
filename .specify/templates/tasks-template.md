@@ -164,6 +164,8 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX Verify provenance/version/status output across changed flows
 - [ ] TXXX Evaluate and update release version policy for any externally
   observable, schema, CLI, reconciliation, or compatibility change
+- [ ] TXXX Update the Keep a Changelog-formatted changelog for externally
+  visible changes before marking the work complete
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
 
@@ -259,6 +261,8 @@ With multiple developers:
 - Include provenance/version/status assertions where behavior or reconciliation outcomes change
 - Include release-version-policy updates whenever behavior, schema, CLI output,
   reconciliation semantics, or compatibility changes
+- Include changelog updates whenever the work changes externally visible
+  behavior, contracts, release materials, support boundaries, or compatibility
 - For Rust changes, include `cargo test` and `cargo clippy --all-targets -- -D warnings`
   in the completion path unless an explicit temporary exception is documented
 - Verify tests fail before implementing

@@ -80,6 +80,9 @@ Changes affecting any of the following require release-version-policy review:
 - installation or verification flow promises
 - changelog format or release-history continuity
 
+Externally visible changes are not considered complete until
+`CHANGELOG.md` is updated in Keep a Changelog format.
+
 ### Authoritative Verification Environment
 
 The release gate relies on a documented authoritative verification environment.

@@ -33,6 +33,12 @@ tests/
 - `cargo test`
 - `cargo clippy --all-targets -- -D warnings`
 
+## Release Discipline
+
+- When work changes externally visible behavior, contracts, release materials,
+  support boundaries, or compatibility, agents must update `CHANGELOG.md` in
+  Keep a Changelog format before considering the work complete.
+
 ## Code Style
 
 Rust (stable toolchain): Follow standard conventions

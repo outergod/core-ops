@@ -45,6 +45,9 @@
 - Release version policy impact is assessed for any externally observable,
   schema, CLI, reconciliation, or compatibility change; the canonical
   controller version comes from `Cargo.toml`.
+- Changelog impact is assessed for any externally visible change, and release-
+  ready work is not considered complete until the Keep a Changelog-formatted
+  changelog is updated.
 - Rust changes include the required validation gate plan: `cargo test` and
   `cargo clippy --all-targets -- -D warnings`, or an explicit temporary
   exception with follow-up.

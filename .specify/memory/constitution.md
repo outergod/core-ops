@@ -1,11 +1,12 @@
 <!--
 Sync Impact Report:
-- Version change: 1.2.0 -> 1.3.0
+- Version change: 1.3.0 -> 1.4.0
 - Modified principles:
   - 9. Conservative Public Evolution -> 9. Conservative Public Evolution
   - 12. Provenance, Versioning, and Behavioral Traceability ->
     12. Provenance, Versioning, and Behavioral Traceability
 - Modified sections:
+  - Core Principles
   - Development Workflow
   - Governance
 - Added sections: None
@@ -16,6 +17,7 @@ Sync Impact Report:
   - ✅ /home/outergod/code/github.com/outergod/core-ops/.specify/templates/tasks-template.md
   - ✅ /home/outergod/code/github.com/outergod/core-ops/.specify/templates/commands/README.md
   - ✅ /home/outergod/code/github.com/outergod/core-ops/docs/development.md
+  - ✅ /home/outergod/code/github.com/outergod/core-ops/README.md
   - ✅ /home/outergod/code/github.com/outergod/core-ops/AGENTS.md
 - Follow-up TODOs: None
 -->
@@ -127,7 +129,10 @@ compare revisions, explain behavioral differences, and audit outcomes across
 environments. Local controller state MAY be persisted for safety, resumability,
 and provenance, but MUST remain derivative rather than authoritative with
 respect to desired state. The canonical controller version MUST be the package
-version declared in `Cargo.toml`.
+version declared in `Cargo.toml`. The project MUST maintain a Keep a
+Changelog-formatted changelog for externally visible changes. Any change that
+affects public behavior, contracts, release materials, support boundaries, or
+compatibility is incomplete until the changelog is updated.
 
 Rationale: When behavior diverges across hosts or revisions, operators need
 first-class evidence of what code ran, what desired state was applied, and what
@@ -143,7 +148,8 @@ outcome resulted.
 Specifications, plans, and tasks MUST document the declarative state model,
 side-effect boundaries, idempotence strategy, observability signals,
 provenance/version surfaces, compatibility impact, release version policy
-impact, and the test plan for each change.
+impact, changelog impact for externally visible changes, and the test plan for
+each change.
 
 Rust changes MUST pass the project's standard validation gates before a feature
 or fix is considered complete. At minimum, this requires `cargo test` and
@@ -174,8 +180,10 @@ lint failures is not permitted.
   persisted schemas, CLI output, reconciliation semantics, or compatibility
   update the release version policy and continue to derive the canonical
   controller version from `Cargo.toml`.
+- Compliance reviews MUST verify that externally visible changes update the
+  Keep a Changelog-formatted changelog before work is considered complete.
 - Compliance reviews MUST verify that Rust changes either pass `cargo test` and
   `cargo clippy --all-targets -- -D warnings` or record an explicit temporary
   exception with remediation.
 
-**Version**: 1.3.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-03-31
+**Version**: 1.4.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-04-08
