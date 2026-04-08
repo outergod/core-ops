@@ -24,9 +24,11 @@ fn distribution_gate_is_split_between_public_ci_and_protected_e2e() {
     }
 
     for snippet in [
-        "core-ops-verify -- run",
+        "cargo build --locked --bin core-ops --bin core-ops-verify",
+        "CORE_OPS_VERIFY_CORE_OPS_BIN=$GITHUB_WORKSPACE/target/debug/core-ops",
+        "target/debug/core-ops-verify run",
         "--accepted-dir tests/fixtures/verification/scenarios",
-        "core-ops-verify -- validate",
+        "target/debug/core-ops-verify validate",
         "test_evaluation_determinism",
         "release-gate-environment.json",
         "environment: homelab-e2e",
@@ -45,7 +47,7 @@ fn e2e_gate_workflow_validates_environment_identity_against_declared_values() {
         .expect("read e2e gate workflow");
 
     for snippet in [
-        "core-ops-verify -- validate-environment",
+        "target/debug/core-ops-verify validate-environment",
         "--fixture tests/fixtures/distribution/release-gate-environment.json",
         "--expected-name \"$CORE_OPS_VERIFY_ENVIRONMENT_NAME\"",
         "--expected-version \"$CORE_OPS_VERIFY_ENVIRONMENT_VERSION\"",
@@ -69,6 +71,25 @@ fn e2e_gate_workflow_validates_environment_identity_against_declared_values() {
             "workflow should not hardcode runtime identity: {forbidden}"
         );
     }
+}
+
+#[test]
+fn e2e_gate_builds_and_pins_core_ops_binary_before_vm_runs() {
+    let contents = fs::read_to_string(repo_root().join(".github/workflows/e2e-gate.yml"))
+        .expect("read e2e gate workflow");
+
+    for snippet in [
+        "cargo build --locked --bin core-ops --bin core-ops-verify",
+        "echo \"CORE_OPS_VERIFY_CORE_OPS_BIN=$GITHUB_WORKSPACE/target/debug/core-ops\" >> \"$GITHUB_ENV\"",
+        "target/debug/core-ops-verify run",
+    ] {
+        assert!(contents.contains(snippet), "missing workflow snippet: {snippet}");
+    }
+
+    assert!(
+        !contents.contains("cargo run --bin core-ops-verify -- run"),
+        "workflow should not resolve the guest binary implicitly from cargo run"
+    );
 }
 
 #[test]

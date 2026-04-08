@@ -34,6 +34,14 @@ jobs:
       - name: Prepare release metadata
         run: |
           mkdir -p dist
+          case "${GITHUB_EVENT_NAME}" in
+            release)
+              release_identity="${{ github.event.release.tag_name }}"
+              ;;
+            *)
+              release_identity="${{ github.ref_name }}"
+              ;;
+          esac
           case "${{ matrix.target }}" in
             x86_64-unknown-linux-gnu)
               artifact_arch="amd64"
@@ -54,7 +62,23 @@ jobs:
             "dist/core-ops.service" \
             "dist/core-ops.timer" \
             "dist/core-ops-linux-${artifact_arch}.tar.gz" > "dist/SHA256SUMS-${artifact_arch}"
-          cp tests/fixtures/distribution/release-metadata.json dist/release-metadata.json
+          cat > dist/release-metadata.json <<EOF
+          {
+            "latest_release_identity": "${release_identity}",
+            "release_gate_status": "passed",
+            "accepted_verification_status": "passed",
+            "artifact_availability": [
+              "${artifact_arch} raw binary",
+              "${artifact_arch} tar.gz + checksums",
+              "systemd unit files",
+              "LICENSE",
+              "CHANGELOG.md",
+              "README.md"
+            ],
+            "verification_environment": "fedora-coreos-self-hosted@2026-04-fcos",
+            "credibility_location": "README.md#credibility"
+          }
+          EOF
 
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4

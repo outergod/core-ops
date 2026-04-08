@@ -26,15 +26,20 @@ jobs:
         with:
           ref: ${{ inputs.pr_head_sha }}
 
+      - name: Build pinned verification binaries
+        run: |
+          cargo build --locked --bin core-ops --bin core-ops-verify
+          echo "CORE_OPS_VERIFY_CORE_OPS_BIN=$GITHUB_WORKSPACE/target/debug/core-ops" >> "$GITHUB_ENV"
+
       - name: Accepted verification corpus
         run: |
-          cargo run --bin core-ops-verify -- run \
+          target/debug/core-ops-verify run \
             --accepted-dir tests/fixtures/verification/scenarios \
             --ci --json
 
       - name: Spec and scenario conformance
         run: |
-          cargo run --bin core-ops-verify -- validate \
+          target/debug/core-ops-verify validate \
             --spec specs/010-distribution-readiness/spec.md \
             --accepted-dir tests/fixtures/verification/scenarios
 
@@ -48,7 +53,7 @@ jobs:
           : "${CORE_OPS_ACTUAL_VERIFY_ENVIRONMENT_VERSION:?must be set by protected runner configuration}"
           : "${CORE_OPS_ACTUAL_VERIFY_RUNNER_REF:?must be set by protected runner configuration}"
           : "${CORE_OPS_ACTUAL_VERIFY_SYSTEM_CLASS:?must be set by protected runner configuration}"
-          cargo run --bin core-ops-verify -- validate-environment \
+          target/debug/core-ops-verify validate-environment \
             --fixture tests/fixtures/distribution/release-gate-environment.json \
             --expected-name "$CORE_OPS_VERIFY_ENVIRONMENT_NAME" \
             --expected-version "$CORE_OPS_VERIFY_ENVIRONMENT_VERSION" \

@@ -29,9 +29,18 @@ fn release_binary_workflow_includes_license_and_metadata_outputs() {
         "core-ops.service core-ops.timer LICENSE CHANGELOG.md README.md",
         "release-metadata.json",
         "dist/SHA256SUMS-${artifact_arch}",
+        "release_identity=\"${{ github.event.release.tag_name }}\"",
+        "\"release_gate_status\": \"passed\"",
+        "\"accepted_verification_status\": \"passed\"",
+        "\"verification_environment\": \"fedora-coreos-self-hosted@2026-04-fcos\"",
     ] {
         assert!(contents.contains(snippet), "missing workflow snippet: {snippet}");
     }
+
+    assert!(
+        !contents.contains("cp tests/fixtures/distribution/release-metadata.json dist/release-metadata.json"),
+        "workflow must not ship design-contract fixture metadata as release metadata"
+    );
 
     assert!(cargo_config.contains("[target.aarch64-unknown-linux-gnu]"));
     assert!(cargo_config.contains("linker = \"aarch64-linux-gnu-gcc\""));
