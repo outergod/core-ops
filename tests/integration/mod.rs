@@ -44,4 +44,14 @@ mod test_status_state;
 // Deterministic planning assertions also cover the authoritative public plan view.
 mod test_convergence;
 mod test_deterministic_planning;
+mod test_distribution_cli_license;
+mod test_distribution_credibility;
+mod test_distribution_entrypoint;
+mod test_distribution_failures;
+mod test_distribution_history;
+mod test_distribution_installation;
+mod test_distribution_materials;
+mod test_distribution_release_artifacts;
+mod test_distribution_release_gate;
+mod test_distribution_version_visibility;
 mod test_rollback;

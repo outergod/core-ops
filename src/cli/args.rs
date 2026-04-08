@@ -1,7 +1,6 @@
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
-use crate::build_info::{BUILD_REVISION, BUILD_TREE_STATE};
+use crate::build_info::long_version_text;
 use clap::{Args, Parser, Subcommand};
 
 const PLAN_AFTER_HELP: &str = "Examples:
@@ -46,12 +45,16 @@ plan/result model and renders full dependency and metadata context.
 When `--repo` and `--rev` are omitted, explain defaults to the currently
 deployed target from persisted state.";
 
+const GLOBAL_AFTER_HELP: &str = "License:
+  GNU Affero General Public License version 3 or later (AGPLv3+)";
+
 #[derive(Parser, Debug)]
 #[command(
     name = "core-ops",
-    version = long_version(),
-    long_version = long_version(),
-    about = "GitOps controller for Quadlet, native systemd units, and mount-aware reconciliation"
+    version = long_version_text(),
+    long_version = long_version_text(),
+    about = "GitOps controller for Quadlet, native systemd units, and mount-aware reconciliation",
+    after_help = GLOBAL_AFTER_HELP
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -215,41 +218,31 @@ pub struct ExplainArgs {
     pub json: bool,
 }
 
-fn long_version() -> &'static str {
-    static LONG_VERSION: OnceLock<String> = OnceLock::new();
-    LONG_VERSION.get_or_init(|| {
-        let mut version = env!("CARGO_PKG_VERSION").to_string();
-        if let Some(revision) = BUILD_REVISION {
-            version.push_str(&format!(" ({})", short_revision(revision)));
-            if BUILD_TREE_STATE != "clean" {
-                version.push_str(&format!(" {BUILD_TREE_STATE}"));
-            }
-        } else if BUILD_TREE_STATE != "clean" {
-            version.push_str(&format!(" ({BUILD_TREE_STATE})"));
-        }
-        version
-    })
-}
-
-fn short_revision(revision: &str) -> &str {
-    &revision[..revision.len().min(8)]
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{long_version, Cli};
+    use super::{Cli, GLOBAL_AFTER_HELP};
+    use crate::build_info::{cli_license_notice, long_version_text};
     use clap::CommandFactory;
 
     #[test]
     fn long_version_includes_package_version() {
-        assert!(long_version().contains(env!("CARGO_PKG_VERSION")));
+        assert!(long_version_text().contains(env!("CARGO_PKG_VERSION")));
     }
 
     #[test]
     fn short_and_long_version_flags_share_the_same_rendered_version() {
         let command = Cli::command();
 
-        assert_eq!(command.get_version(), Some(long_version()));
-        assert_eq!(command.get_long_version(), Some(long_version()));
+        assert_eq!(command.get_version(), Some(long_version_text()));
+        assert_eq!(command.get_long_version(), Some(long_version_text()));
+    }
+
+    #[test]
+    fn help_mentions_governing_license() {
+        let mut command = Cli::command();
+        let help = command.render_long_help().to_string();
+
+        assert!(help.contains(cli_license_notice()));
+        assert!(help.contains(GLOBAL_AFTER_HELP));
     }
 }

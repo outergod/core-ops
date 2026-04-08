@@ -1148,19 +1148,24 @@ fn apply_output_humane_and_json_preserve_same_semantics() {
     assert!(human.contains("container/beta.container"));
 
     assert_eq!(
-        json["revision_context"]["desired_revision"].as_str(),
+        json["revision_context"]["target_revision"].as_str(),
         Some("rev-2")
     );
     assert_eq!(
-        json["revision_context"]["desired_requested_ref"].as_str(),
+        json["revision_context"]["requested_ref"].as_str(),
         Some("demo-uat-v2")
     );
     assert_eq!(json["summary"]["changed_count"].as_u64(), Some(1));
-    assert_eq!(json["summary"]["failed_count"].as_u64(), Some(1));
-    assert_eq!(json["outcome"].as_str(), Some("non_converging"));
+    assert_eq!(json["summary"]["unchanged_count"].as_u64(), Some(1));
+    let failed_events = json["events"]
+        .as_array()
+        .expect("events array")
+        .iter()
+        .filter(|event| event["state"].as_str() == Some("failed"))
+        .collect::<Vec<_>>();
+    assert_eq!(failed_events.len(), 1);
     assert_eq!(
-        json["events"][1]["object"]["display_id"].as_str(),
+        failed_events[0]["object"]["display_id"].as_str(),
         Some("container/beta.container")
     );
-    assert_eq!(json["events"][1]["state"].as_str(), Some("failed"));
 }

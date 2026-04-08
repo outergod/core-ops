@@ -76,13 +76,6 @@ pub fn extract_verification_inputs(spec_text: &str) -> Result<VerificationInputs
             "Verification Guidance must include at least one Upgrade Consideration",
         ));
     }
-    if required_scenario_classes.is_empty() {
-        return Err(CoreError::new(
-            FailureClass::Validation,
-            "Verification Guidance must include at least one Required Scenario Class",
-        ));
-    }
-
     Ok(VerificationInputs {
         observable_behaviors,
         invariants,
@@ -126,6 +119,12 @@ pub fn generate_candidates_from_spec(
     let inputs = extract_verification_inputs(spec_text)?;
     let behavioral_claim = inputs.observable_behaviors[0].clone();
     let scenario_classes = inputs.required_scenario_classes.clone();
+    if scenario_classes.is_empty() {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "Verification Guidance must include at least one Required Scenario Class before candidate generation",
+        ));
+    }
     let primary_class = scenario_classes[0];
 
     let mut candidate = VerificationCandidateScenario {
@@ -309,6 +308,29 @@ fn parse_scenario_class(value: &str) -> Result<VerificationScenarioClass, CoreEr
         "reboot_resilience" => Ok(VerificationScenarioClass::RebootResilience),
         "explain_apply_consistency" => Ok(VerificationScenarioClass::ExplainApplyConsistency),
         "regression_detection" => Ok(VerificationScenarioClass::RegressionDetection),
+        "release_gate_success" => Ok(VerificationScenarioClass::ReleaseGateSuccess),
+        "release_gate_failure" => Ok(VerificationScenarioClass::ReleaseGateFailure),
+        "verification_environment_identity" => {
+            Ok(VerificationScenarioClass::VerificationEnvironmentIdentity)
+        }
+        "version_identity_visibility" => {
+            Ok(VerificationScenarioClass::VersionIdentityVisibility)
+        }
+        "installation_path_validation" => {
+            Ok(VerificationScenarioClass::InstallationPathValidation)
+        }
+        "operator_verification_flow" => {
+            Ok(VerificationScenarioClass::OperatorVerificationFlow)
+        }
+        "operator_verification_reproducibility" => {
+            Ok(VerificationScenarioClass::OperatorVerificationReproducibility)
+        }
+        "cold_start_distribution_validation" => {
+            Ok(VerificationScenarioClass::ColdStartDistributionValidation)
+        }
+        "distribution_artifact_validation" => {
+            Ok(VerificationScenarioClass::DistributionArtifactValidation)
+        }
         other => Err(CoreError::new(
             FailureClass::Validation,
             format!("unsupported required scenario class `{other}`"),
@@ -320,6 +342,17 @@ fn default_action_for_class(class: VerificationScenarioClass) -> VerificationCor
     let action = match class {
         VerificationScenarioClass::ExplainApplyConsistency => VerificationCoreOpsActionKind::Explain,
         VerificationScenarioClass::RegressionDetection => VerificationCoreOpsActionKind::Plan,
+        VerificationScenarioClass::ReleaseGateSuccess
+        | VerificationScenarioClass::ReleaseGateFailure
+        | VerificationScenarioClass::VerificationEnvironmentIdentity
+        | VerificationScenarioClass::VersionIdentityVisibility
+        | VerificationScenarioClass::InstallationPathValidation
+        | VerificationScenarioClass::OperatorVerificationFlow
+        | VerificationScenarioClass::OperatorVerificationReproducibility
+        | VerificationScenarioClass::ColdStartDistributionValidation
+        | VerificationScenarioClass::DistributionArtifactValidation => {
+            VerificationCoreOpsActionKind::Status
+        }
         VerificationScenarioClass::Idempotency
         | VerificationScenarioClass::UpgradeTransition
         | VerificationScenarioClass::Convergence
@@ -347,6 +380,15 @@ fn assertion_type_for_class(class: VerificationScenarioClass) -> &'static str {
         VerificationScenarioClass::RebootResilience => "output_contains",
         VerificationScenarioClass::ExplainApplyConsistency => "output_contains",
         VerificationScenarioClass::RegressionDetection => "output_contains",
+        VerificationScenarioClass::ReleaseGateSuccess => "output_contains",
+        VerificationScenarioClass::ReleaseGateFailure => "output_contains",
+        VerificationScenarioClass::VerificationEnvironmentIdentity => "output_contains",
+        VerificationScenarioClass::VersionIdentityVisibility => "output_contains",
+        VerificationScenarioClass::InstallationPathValidation => "output_contains",
+        VerificationScenarioClass::OperatorVerificationFlow => "output_contains",
+        VerificationScenarioClass::OperatorVerificationReproducibility => "output_contains",
+        VerificationScenarioClass::ColdStartDistributionValidation => "output_contains",
+        VerificationScenarioClass::DistributionArtifactValidation => "output_contains",
     }
 }
 
@@ -359,6 +401,15 @@ fn expected_state_for_class(class: VerificationScenarioClass) -> &'static str {
         VerificationScenarioClass::RebootResilience => "recovered",
         VerificationScenarioClass::ExplainApplyConsistency => "consistent",
         VerificationScenarioClass::RegressionDetection => "stable",
+        VerificationScenarioClass::ReleaseGateSuccess => "accepted",
+        VerificationScenarioClass::ReleaseGateFailure => "failed-closed",
+        VerificationScenarioClass::VerificationEnvironmentIdentity => "identified",
+        VerificationScenarioClass::VersionIdentityVisibility => "visible",
+        VerificationScenarioClass::InstallationPathValidation => "installed",
+        VerificationScenarioClass::OperatorVerificationFlow => "verified",
+        VerificationScenarioClass::OperatorVerificationReproducibility => "reproducible",
+        VerificationScenarioClass::ColdStartDistributionValidation => "cold-start-validated",
+        VerificationScenarioClass::DistributionArtifactValidation => "published",
     }
 }
 

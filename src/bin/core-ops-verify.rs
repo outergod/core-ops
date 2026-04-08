@@ -1,7 +1,8 @@
 use clap::Parser;
 use core_ops::cli::common as cli_common;
 use core_ops::cli::verification::{
-    generate, run, VerificationCommandResult, VerifyCli, VerifyCommands,
+    generate, run, validate, validate_environment, VerificationCommandResult, VerifyCli,
+    VerifyCommands,
 };
 
 fn main() {
@@ -17,6 +18,8 @@ fn run_and_exit(cli: VerifyCli) -> Result<(), core_ops::core::errors::CoreError>
     let result = match cli.command {
         VerifyCommands::Run(args) => VerificationCommandResult::Run(Box::new(run(&args)?)),
         VerifyCommands::Generate(args) => generate(&args)?,
+        VerifyCommands::Validate(args) => validate(&args)?,
+        VerifyCommands::ValidateEnvironment(args) => validate_environment(&args)?,
     };
 
     match result {
@@ -31,6 +34,24 @@ fn run_and_exit(cli: VerifyCli) -> Result<(), core_ops::core::errors::CoreError>
             }
         }
         VerificationCommandResult::Generate {
+            human_report,
+            exit_code,
+        } => {
+            print!("{human_report}");
+            if exit_code != 0 {
+                std::process::exit(exit_code);
+            }
+        }
+        VerificationCommandResult::Validate {
+            human_report,
+            exit_code,
+        } => {
+            print!("{human_report}");
+            if exit_code != 0 {
+                std::process::exit(exit_code);
+            }
+        }
+        VerificationCommandResult::ValidateEnvironment {
             human_report,
             exit_code,
         } => {

@@ -1,6 +1,6 @@
 # CoreOps Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-07
+Auto-generated from all feature plans. Last updated: 2026-04-08
 
 ## Active Technologies
 - Rust (stable toolchain) + Git (CLI), systemd (systemctl), Podman/Quadlet generator (001-gitops-quadlet-controller)
@@ -18,6 +18,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-07
 - Rust 2021 + Existing CoreOps Rust stack (`clap`, `miette`, (008-e2e-verification-harness)
 - Files on disk for scenario definitions, accepted scenario corpus, (008-e2e-verification-harness)
 - Files on disk for rendered ignition inputs, serial console logs, (009-serial-console-readiness)
+- Rust 2021 for shipped binaries and verification tooling; Markdown/YAML/shell for public docs and automation definitions + Existing CoreOps Rust stack (`clap`, `miette`, `thiserror`, `serde`, `serde_json`, `serde_yaml`, `log`, `systemd-journal-logger`, `tempfile`, `time`), git metadata from the repository, curl-consumable binary distribution surfaces, forge-hosted automation definitions (010-distribution-readiness)
+- Files on disk for public documentation, changelog, license/code-of-conduct documents, workflow definitions, release metadata, and existing verification artifacts (010-distribution-readiness)
 
 ## Project Structure
 
@@ -31,14 +33,20 @@ tests/
 - `cargo test`
 - `cargo clippy --all-targets -- -D warnings`
 
+## Release Discipline
+
+- When work changes externally visible behavior, contracts, release materials,
+  support boundaries, or compatibility, agents must update `CHANGELOG.md` in
+  Keep a Changelog format before considering the work complete.
+
 ## Code Style
 
 Rust (stable toolchain): Follow standard conventions
 
 ## Recent Changes
+- 010-distribution-readiness: Added Rust 2021 for shipped binaries and verification tooling; Markdown/YAML/shell for public docs and automation definitions + Existing CoreOps Rust stack (`clap`, `miette`, `thiserror`, `serde`, `serde_json`, `serde_yaml`, `log`, `systemd-journal-logger`, `tempfile`, `time`), git metadata from the repository, curl-consumable binary distribution surfaces, forge-hosted automation definitions
 - 009-serial-console-readiness: Added Rust 2021 + Existing CoreOps Rust stack (`clap`, `miette`,
 - 008-e2e-verification-harness: Added Rust 2021 + Existing CoreOps Rust stack (`clap`, `miette`,
-- 007-explainable-reconcile-interface: Added Rust 2021 (`core-ops` 0.5.0) + `clap`, `miette`, `thiserror`, `serde`, `serde_json`, `log`, `systemd-journal-logger`, `tempfile`
 
 <!-- MANUAL ADDITIONS START -->
 ## Verification Harness Playbook

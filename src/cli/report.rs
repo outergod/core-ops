@@ -161,6 +161,7 @@ pub fn format_verification_run_report(view: &VerificationRunView) -> String {
         "Outcome: {}\n",
         verification_outcome_label(view.overall_outcome)
     ));
+    output.push_str(&format!("Controller: {}\n", view.controller_version));
     output.push_str(&format!("Run ID:  {}\n", view.run_id));
     output.push_str(&format!("Bundle:  {}\n", view.artifact_bundle.bundle_path));
     output.push_str(&format!(
@@ -3313,6 +3314,25 @@ fn format_scenario_classes(classes: &[VerificationScenarioClass]) -> String {
             VerificationScenarioClass::RebootResilience => "reboot_resilience",
             VerificationScenarioClass::ExplainApplyConsistency => "explain_apply_consistency",
             VerificationScenarioClass::RegressionDetection => "regression_detection",
+            VerificationScenarioClass::ReleaseGateSuccess => "release_gate_success",
+            VerificationScenarioClass::ReleaseGateFailure => "release_gate_failure",
+            VerificationScenarioClass::VerificationEnvironmentIdentity => {
+                "verification_environment_identity"
+            }
+            VerificationScenarioClass::VersionIdentityVisibility => "version_identity_visibility",
+            VerificationScenarioClass::InstallationPathValidation => {
+                "installation_path_validation"
+            }
+            VerificationScenarioClass::OperatorVerificationFlow => "operator_verification_flow",
+            VerificationScenarioClass::OperatorVerificationReproducibility => {
+                "operator_verification_reproducibility"
+            }
+            VerificationScenarioClass::ColdStartDistributionValidation => {
+                "cold_start_distribution_validation"
+            }
+            VerificationScenarioClass::DistributionArtifactValidation => {
+                "distribution_artifact_validation"
+            }
         })
         .collect::<Vec<_>>()
         .join(", ")

@@ -30,6 +30,7 @@
           envsubst
           libvirt
           virt-manager
+          multimarkdown
         ];
 
         RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";

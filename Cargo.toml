@@ -2,6 +2,7 @@
 name = "core-ops"
 version = "0.6.0"
 edition = "2021"
+license = "AGPL-3.0-or-later"
 
 [dependencies]
 clap = { version = "4.5.4", features = ["derive"] }
