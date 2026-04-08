@@ -1,0 +1,63 @@
+name: release-binary
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  release-binary:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+    env:
+      CORE_OPS_BUILD_SPEC_CONTEXT: "specs/010-distribution-readiness/spec.md"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust target
+        run: rustup target add "${{ matrix.target }}"
+
+      - name: Install aarch64 cross toolchain
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      - name: Build release binary
+        run: cargo build --release --locked --target "${{ matrix.target }}"
+
+      - name: Prepare release metadata
+        run: |
+          mkdir -p dist
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-gnu)
+              artifact_arch="amd64"
+              ;;
+            aarch64-unknown-linux-gnu)
+              artifact_arch="arm64"
+              ;;
+          esac
+          cp "target/${{ matrix.target }}/release/core-ops" "dist/core-ops-linux-${artifact_arch}"
+          cp specs/002-systemd-agent/contracts/systemd/core-ops.service dist/core-ops.service
+          cp specs/002-systemd-agent/contracts/systemd/core-ops.timer dist/core-ops.timer
+          cp LICENSE dist/LICENSE
+          cp CHANGELOG.md dist/CHANGELOG.md
+          cp README.md dist/README.md
+          tar -czf "dist/core-ops-linux-${artifact_arch}.tar.gz" -C dist \
+            "core-ops-linux-${artifact_arch}" core-ops.service core-ops.timer LICENSE CHANGELOG.md README.md
+          sha256sum "dist/core-ops-linux-${artifact_arch}" \
+            "dist/core-ops.service" \
+            "dist/core-ops.timer" \
+            "dist/core-ops-linux-${artifact_arch}.tar.gz" > "dist/SHA256SUMS-${artifact_arch}"
+          cp tests/fixtures/distribution/release-metadata.json dist/release-metadata.json
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-ops-binary-release-${{ matrix.target }}
+          path: dist/

@@ -42,6 +42,15 @@ pub enum VerificationScenarioClass {
     RebootResilience,
     ExplainApplyConsistency,
     RegressionDetection,
+    ReleaseGateSuccess,
+    ReleaseGateFailure,
+    VerificationEnvironmentIdentity,
+    VersionIdentityVisibility,
+    InstallationPathValidation,
+    OperatorVerificationFlow,
+    OperatorVerificationReproducibility,
+    ColdStartDistributionValidation,
+    DistributionArtifactValidation,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -427,6 +427,242 @@ fn cli_generate_rejects_missing_mandatory_verification_guidance() {
 }
 
 #[test]
+fn cli_validate_reports_success_when_accepted_corpus_covers_required_classes() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let spec_path = temp.path().join("valid-conformance.md");
+    std::fs::write(
+        &spec_path,
+        r#"
+# Feature Specification: Valid Conformance
+
+## Verification Guidance
+
+### Observable Behaviors
+
+- Reapplying the same revision produces no managed changes
+
+### Invariants
+
+- Idempotent applies remain stable
+
+### Idempotency Expectations
+
+- Reapplying the same revision remains stable
+
+### Failure Modes
+
+- Assertion failures remain diagnosable
+
+### Upgrade Considerations
+
+- Revision continuity remains visible
+
+### Required Scenario Classes
+
+- idempotency
+"#,
+    )
+    .expect("write spec");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_core-ops-verify"))
+        .arg("validate")
+        .arg("--spec")
+        .arg(&spec_path)
+        .arg("--accepted-dir")
+        .arg(fixture_path("tests/fixtures/verification/scenarios"))
+        .output()
+        .expect("run validate");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Verification Conformance"));
+    assert!(stdout.contains("Coverage"));
+    assert!(stdout.contains("Missing:  none"));
+    assert!(stdout.contains("Result: accepted corpus matches required scenario-class coverage"));
+}
+
+#[test]
+fn cli_validate_fails_when_required_scenario_class_is_missing() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let spec_path = temp.path().join("missing-class.md");
+    std::fs::write(
+        &spec_path,
+        r#"
+# Feature Specification: Missing Class
+
+## Verification Guidance
+
+### Observable Behaviors
+
+- Release-gate verification environment identity remains visible
+
+### Invariants
+
+- The trusted environment identity remains stable
+
+### Idempotency Expectations
+
+- Re-reading environment identity does not change it
+
+### Failure Modes
+
+- Environment drift becomes diagnosable
+
+### Upgrade Considerations
+
+- Environment contract changes remain explicit
+
+### Required Scenario Classes
+
+- verification_environment_identity
+"#,
+    )
+    .expect("write spec");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_core-ops-verify"))
+        .arg("validate")
+        .arg("--spec")
+        .arg(&spec_path)
+        .arg("--accepted-dir")
+        .arg(fixture_path("tests/fixtures/verification/scenarios"))
+        .output()
+        .expect("run validate");
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Missing:  verification_environment_identity"));
+    assert!(stdout.contains("Result: accepted corpus is missing required scenario-class coverage"));
+}
+
+#[test]
+fn cli_validate_environment_reports_success_when_fixture_matches_workflow_identity() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("release-gate-environment.json");
+    std::fs::write(
+        &fixture_path,
+        r#"{
+  "environment_name": "fedora-coreos-self-hosted",
+  "system_class": "Fedora CoreOS",
+  "runner_definition_ref": "self-hosted-fcos-runner-v1",
+  "version_marker": "2026-04-fcos",
+  "reproducibility_notes": "Pinned FCOS stream plus documented runner contract",
+  "drift_detection_basis": "runner definition ref and version marker must match maintained project materials"
+}"#,
+    )
+    .expect("write fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_core-ops-verify"))
+        .arg("validate-environment")
+        .arg("--fixture")
+        .arg(&fixture_path)
+        .arg("--expected-name")
+        .arg("fedora-coreos-self-hosted")
+        .arg("--expected-version")
+        .arg("2026-04-fcos")
+        .arg("--actual-name")
+        .arg("fedora-coreos-self-hosted")
+        .arg("--actual-version")
+        .arg("2026-04-fcos")
+        .arg("--actual-runner-ref")
+        .arg("self-hosted-fcos-runner-v1")
+        .arg("--actual-system-class")
+        .arg("Fedora CoreOS")
+        .output()
+        .expect("run validate-environment");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Verification Environment Identity"));
+    assert!(
+        stdout.contains("Result: workflow and runtime environment identity match the maintained contract")
+    );
+}
+
+#[test]
+fn cli_validate_environment_fails_when_workflow_identity_drifts() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("release-gate-environment.json");
+    std::fs::write(
+        &fixture_path,
+        r#"{
+  "environment_name": "fedora-coreos-self-hosted",
+  "system_class": "Fedora CoreOS",
+  "runner_definition_ref": "self-hosted-fcos-runner-v1",
+  "version_marker": "2026-04-fcos",
+  "reproducibility_notes": "Pinned FCOS stream plus documented runner contract",
+  "drift_detection_basis": "runner definition ref and version marker must match maintained project materials"
+}"#,
+    )
+    .expect("write fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_core-ops-verify"))
+        .arg("validate-environment")
+        .arg("--fixture")
+        .arg(&fixture_path)
+        .arg("--expected-name")
+        .arg("fedora-coreos-self-hosted")
+        .arg("--expected-version")
+        .arg("2026-05-fcos")
+        .output()
+        .expect("run validate-environment");
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Mismatches"));
+    assert!(stdout.contains("version_marker fixture=`2026-04-fcos` workflow=`2026-05-fcos`"));
+    assert!(stdout.contains(
+        "Result: workflow or runtime environment identity does not match the maintained contract"
+    ));
+}
+
+#[test]
+fn cli_validate_environment_fails_when_runtime_identity_drifts() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let fixture_path = temp.path().join("release-gate-environment.json");
+    std::fs::write(
+        &fixture_path,
+        r#"{
+  "environment_name": "fedora-coreos-self-hosted",
+  "system_class": "Fedora CoreOS",
+  "runner_definition_ref": "self-hosted-fcos-runner-v1",
+  "version_marker": "2026-04-fcos",
+  "reproducibility_notes": "Pinned FCOS stream plus documented runner contract",
+  "drift_detection_basis": "runner definition ref and version marker must match maintained project materials"
+}"#,
+    )
+    .expect("write fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_core-ops-verify"))
+        .arg("validate-environment")
+        .arg("--fixture")
+        .arg(&fixture_path)
+        .arg("--expected-name")
+        .arg("fedora-coreos-self-hosted")
+        .arg("--expected-version")
+        .arg("2026-04-fcos")
+        .arg("--actual-name")
+        .arg("fedora-coreos-self-hosted")
+        .arg("--actual-version")
+        .arg("2026-04-fcos")
+        .arg("--actual-runner-ref")
+        .arg("self-hosted-fcos-runner-v2")
+        .arg("--actual-system-class")
+        .arg("Fedora CoreOS")
+        .output()
+        .expect("run validate-environment");
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Mismatches"));
+    assert!(stdout.contains(
+        "runner_definition_ref fixture=`self-hosted-fcos-runner-v1` runtime=`self-hosted-fcos-runner-v2`"
+    ));
+    assert!(stdout.contains(
+        "Result: workflow or runtime environment identity does not match the maintained contract"
+    ));
+}
+
+#[test]
 fn cli_verification_run_can_verify_command_surface_and_timing_assertions() {
     let workspace = tempfile::tempdir().expect("workspace");
     let artifacts = tempfile::tempdir().expect("artifacts");

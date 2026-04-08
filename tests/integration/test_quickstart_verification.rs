@@ -47,3 +47,17 @@ fn quickstart_mentions_repository_evolution_and_regression_authoring() {
     assert!(contents.contains("semantic step actions"));
     assert!(contents.contains("Verification Guidance"));
 }
+
+#[test]
+fn distribution_quickstart_mentions_fresh_install_and_operator_verification_flow() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let quickstart = root.join("specs/010-distribution-readiness/quickstart.md");
+    let contents = fs::read_to_string(&quickstart).expect("read distribution quickstart");
+
+    assert!(contents.contains("Fresh Fedora CoreOS system"));
+    assert!(contents.contains("No undeclared host preparation"));
+    assert!(contents.contains("Download the current published CoreOps binary artifact"));
+    assert!(contents.contains("Run the documented first command"));
+    assert!(contents.contains("Execute the documented minimal operator verification flow"));
+    assert!(contents.contains("Version identity is visible and consistent across declared surfaces"));
+}

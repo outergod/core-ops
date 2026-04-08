@@ -2,6 +2,7 @@ use crate::cli::report::{
     format_verification_coverage_report, format_verification_run_json,
     format_verification_run_report, format_verification_suite_report,
 };
+use crate::build_info::long_version_text;
 use crate::core::boundaries::{
     VerificationArtifactBoundary, VerificationGuestBoundary, VerificationLibvirtBoundary,
 };
@@ -28,6 +29,7 @@ use crate::io::guest::GuestCommandRunner;
 use crate::io::libvirt::LibvirtCommandRunner;
 use crate::io::verification_artifacts::{write_diagnostic_artifacts, ArtifactCollector};
 use clap::{Args, Parser, Subcommand};
+use serde::Deserialize;
 use std::io::{self, Write};
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -58,11 +60,21 @@ pub enum VerificationCommandResult {
         human_report: String,
         exit_code: i32,
     },
+    Validate {
+        human_report: String,
+        exit_code: i32,
+    },
+    ValidateEnvironment {
+        human_report: String,
+        exit_code: i32,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "core-ops-verify",
+    version = long_version_text(),
+    long_version = long_version_text(),
     about = "Dedicated end-to-end verification entrypoint for CoreOps development and CI"
 )]
 pub struct VerifyCli {
@@ -75,6 +87,8 @@ pub enum VerifyCommands {
     #[command(after_help = VERIFY_AFTER_HELP)]
     Run(VerifyRunArgs),
     Generate(VerifyGenerateArgs),
+    Validate(VerifyValidateArgs),
+    ValidateEnvironment(VerifyValidateEnvironmentArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -130,6 +144,55 @@ pub struct VerifyGenerateArgs {
     /// Optional directory to write generated candidate YAML files into.
     #[arg(long)]
     pub output_dir: Option<std::path::PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct VerifyValidateArgs {
+    /// Path to the feature specification used as the conformance source.
+    #[arg(long)]
+    pub spec: std::path::PathBuf,
+    /// Directory containing accepted scenario YAML files.
+    #[arg(long)]
+    pub accepted_dir: std::path::PathBuf,
+}
+
+#[derive(Parser, Debug, Clone)]
+#[command(
+    name = "core-ops-verify validate-environment",
+    about = "Validate release-gate verification environment identity against the maintained contract"
+)]
+pub struct VerifyValidateEnvironmentArgs {
+    /// Path to the maintained release-gate environment identity contract.
+    #[arg(long)]
+    pub fixture: std::path::PathBuf,
+    /// Expected environment name declared by the current workflow.
+    #[arg(long)]
+    pub expected_name: String,
+    /// Expected version marker declared by the current workflow.
+    #[arg(long)]
+    pub expected_version: String,
+    /// Actual environment name observed on the protected runner.
+    #[arg(long)]
+    pub actual_name: Option<String>,
+    /// Actual version marker observed on the protected runner.
+    #[arg(long)]
+    pub actual_version: Option<String>,
+    /// Actual runner definition reference observed on the protected runner.
+    #[arg(long)]
+    pub actual_runner_ref: Option<String>,
+    /// Actual system class observed on the protected runner.
+    #[arg(long)]
+    pub actual_system_class: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseGateEnvironmentIdentity {
+    environment_name: String,
+    system_class: String,
+    runner_definition_ref: String,
+    version_marker: String,
+    reproducibility_notes: String,
+    drift_detection_basis: String,
 }
 
 pub struct VerificationExecutionContext<'a> {
@@ -476,6 +539,168 @@ pub fn generate(args: &VerifyGenerateArgs) -> Result<VerificationCommandResult, 
     rendered.push_str(&format_verification_coverage_report(&coverage));
 
     Ok(VerificationCommandResult::Generate {
+        human_report: rendered,
+        exit_code,
+    })
+}
+
+pub fn validate(args: &VerifyValidateArgs) -> Result<VerificationCommandResult, CoreError> {
+    let spec_text = std::fs::read_to_string(&args.spec).map_err(|err| {
+        CoreError::new(
+            FailureClass::Validation,
+            format!("failed to read spec {}: {err}", args.spec.display()),
+        )
+    })?;
+    let accepted = load_accepted_corpus(&args.accepted_dir)?;
+    let coverage = build_coverage_report(&spec_text, &accepted)?;
+
+    let mut rendered = String::new();
+    rendered.push_str("Verification Conformance\n────────────────────────\n");
+    rendered.push_str(&format!("Spec:     {}\n", args.spec.display()));
+    rendered.push_str(&format!("Corpus:   {}\n", args.accepted_dir.display()));
+    rendered.push_str(&format!("Accepted: {}\n", accepted.len()));
+    rendered.push_str(&format_verification_coverage_report(&coverage));
+
+    let exit_code = if coverage.missing_classes.is_empty() {
+        rendered.push_str("\nResult: accepted corpus matches required scenario-class coverage\n");
+        0
+    } else {
+        rendered.push_str(
+            "\nResult: accepted corpus is missing required scenario-class coverage\n",
+        );
+        1
+    };
+
+    Ok(VerificationCommandResult::Validate {
+        human_report: rendered,
+        exit_code,
+    })
+}
+
+pub fn validate_environment(
+    args: &VerifyValidateEnvironmentArgs,
+) -> Result<VerificationCommandResult, CoreError> {
+    let fixture_text = std::fs::read_to_string(&args.fixture).map_err(|err| {
+        CoreError::new(
+            FailureClass::Validation,
+            format!("failed to read environment fixture {}: {err}", args.fixture.display()),
+        )
+    })?;
+    let identity: ReleaseGateEnvironmentIdentity =
+        serde_json::from_str(&fixture_text).map_err(|err| {
+            CoreError::new(
+                FailureClass::Validation,
+                format!(
+                    "failed to parse environment fixture {}: {err}",
+                    args.fixture.display()
+                ),
+            )
+        })?;
+
+    let mut mismatches = Vec::new();
+    if identity.environment_name != args.expected_name {
+        mismatches.push(format!(
+            "environment_name fixture=`{}` workflow=`{}`",
+            identity.environment_name, args.expected_name
+        ));
+    }
+    if identity.version_marker != args.expected_version {
+        mismatches.push(format!(
+            "version_marker fixture=`{}` workflow=`{}`",
+            identity.version_marker, args.expected_version
+        ));
+    }
+    if let Some(actual_name) = args.actual_name.as_deref() {
+        if identity.environment_name != actual_name {
+            mismatches.push(format!(
+                "environment_name fixture=`{}` runtime=`{}`",
+                identity.environment_name, actual_name
+            ));
+        }
+    }
+    if let Some(actual_version) = args.actual_version.as_deref() {
+        if identity.version_marker != actual_version {
+            mismatches.push(format!(
+                "version_marker fixture=`{}` runtime=`{}`",
+                identity.version_marker, actual_version
+            ));
+        }
+    }
+    if let Some(actual_runner_ref) = args.actual_runner_ref.as_deref() {
+        if identity.runner_definition_ref != actual_runner_ref {
+            mismatches.push(format!(
+                "runner_definition_ref fixture=`{}` runtime=`{}`",
+                identity.runner_definition_ref, actual_runner_ref
+            ));
+        }
+    }
+    if let Some(actual_system_class) = args.actual_system_class.as_deref() {
+        if identity.system_class != actual_system_class {
+            mismatches.push(format!(
+                "system_class fixture=`{}` runtime=`{}`",
+                identity.system_class, actual_system_class
+            ));
+        }
+    }
+    if identity.runner_definition_ref.trim().is_empty() {
+        mismatches.push("runner_definition_ref must not be empty".to_string());
+    }
+    if identity.drift_detection_basis.trim().is_empty() {
+        mismatches.push("drift_detection_basis must not be empty".to_string());
+    }
+    if identity.reproducibility_notes.trim().is_empty() {
+        mismatches.push("reproducibility_notes must not be empty".to_string());
+    }
+    if identity.system_class.trim().is_empty() {
+        mismatches.push("system_class must not be empty".to_string());
+    }
+
+    let mut rendered = String::new();
+    rendered.push_str("Verification Environment Identity\n───────────────────────────────\n");
+    rendered.push_str(&format!("Fixture:           {}\n", args.fixture.display()));
+    rendered.push_str(&format!("Environment name:  {}\n", identity.environment_name));
+    rendered.push_str(&format!("System class:      {}\n", identity.system_class));
+    rendered.push_str(&format!(
+        "Runner ref:        {}\n",
+        identity.runner_definition_ref
+    ));
+    rendered.push_str(&format!("Version marker:    {}\n", identity.version_marker));
+    rendered.push_str(&format!(
+        "Expected name:     {}\nExpected version:  {}\n",
+        args.expected_name, args.expected_version
+    ));
+    if let Some(actual_name) = args.actual_name.as_deref() {
+        rendered.push_str(&format!("Actual name:       {}\n", actual_name));
+    }
+    if let Some(actual_version) = args.actual_version.as_deref() {
+        rendered.push_str(&format!("Actual version:    {}\n", actual_version));
+    }
+    if let Some(actual_runner_ref) = args.actual_runner_ref.as_deref() {
+        rendered.push_str(&format!("Actual runner ref: {}\n", actual_runner_ref));
+    }
+    if let Some(actual_system_class) = args.actual_system_class.as_deref() {
+        rendered.push_str(&format!("Actual system:     {}\n", actual_system_class));
+    }
+
+    let exit_code = if mismatches.is_empty() {
+        rendered.push_str(
+            "\nResult: workflow and runtime environment identity match the maintained contract\n",
+        );
+        0
+    } else {
+        rendered.push_str("\nMismatches\n──────────\n");
+        for mismatch in &mismatches {
+            rendered.push_str("- ");
+            rendered.push_str(mismatch);
+            rendered.push('\n');
+        }
+        rendered.push_str(
+            "\nResult: workflow or runtime environment identity does not match the maintained contract\n",
+        );
+        1
+    };
+
+    Ok(VerificationCommandResult::ValidateEnvironment {
         human_report: rendered,
         exit_code,
     })

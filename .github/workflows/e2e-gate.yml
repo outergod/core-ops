@@ -1,0 +1,58 @@
+name: e2e-gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number"
+        required: true
+      pr_head_sha:
+        description: "PR head SHA"
+        required: true
+
+jobs:
+  e2e-gate:
+    runs-on: [self-hosted, core-ops]
+    environment: homelab-e2e
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      CORE_OPS_BUILD_SPEC_CONTEXT: "specs/010-distribution-readiness/spec.md"
+      CORE_OPS_VERIFY_ENVIRONMENT_NAME: "fedora-coreos-self-hosted"
+      CORE_OPS_VERIFY_ENVIRONMENT_VERSION: "2026-04-fcos"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.pr_head_sha }}
+
+      - name: Accepted verification corpus
+        run: |
+          cargo run --bin core-ops-verify -- run \
+            --accepted-dir tests/fixtures/verification/scenarios \
+            --ci --json
+
+      - name: Spec and scenario conformance
+        run: |
+          cargo run --bin core-ops-verify -- validate \
+            --spec specs/010-distribution-readiness/spec.md \
+            --accepted-dir tests/fixtures/verification/scenarios
+
+      - name: Determinism check
+        run: |
+          cargo test test_evaluation_determinism
+
+      - name: Verification environment identity
+        run: |
+          : "${CORE_OPS_ACTUAL_VERIFY_ENVIRONMENT_NAME:?must be set by protected runner configuration}"
+          : "${CORE_OPS_ACTUAL_VERIFY_ENVIRONMENT_VERSION:?must be set by protected runner configuration}"
+          : "${CORE_OPS_ACTUAL_VERIFY_RUNNER_REF:?must be set by protected runner configuration}"
+          : "${CORE_OPS_ACTUAL_VERIFY_SYSTEM_CLASS:?must be set by protected runner configuration}"
+          cargo run --bin core-ops-verify -- validate-environment \
+            --fixture tests/fixtures/distribution/release-gate-environment.json \
+            --expected-name "$CORE_OPS_VERIFY_ENVIRONMENT_NAME" \
+            --expected-version "$CORE_OPS_VERIFY_ENVIRONMENT_VERSION" \
+            --actual-name "$CORE_OPS_ACTUAL_VERIFY_ENVIRONMENT_NAME" \
+            --actual-version "$CORE_OPS_ACTUAL_VERIFY_ENVIRONMENT_VERSION" \
+            --actual-runner-ref "$CORE_OPS_ACTUAL_VERIFY_RUNNER_REF" \
+            --actual-system-class "$CORE_OPS_ACTUAL_VERIFY_SYSTEM_CLASS"

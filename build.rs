@@ -8,19 +8,25 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CORE_OPS_BUILD_REVISION");
     println!("cargo:rerun-if-env-changed=CORE_OPS_BUILD_TIME");
     println!("cargo:rerun-if-env-changed=CORE_OPS_TREE_STATE");
+    println!("cargo:rerun-if-env-changed=CORE_OPS_BUILD_SPEC_CONTEXT");
 
     let revision = env_or_git_revision();
     let build_time = env_or_build_time();
     let tree_state = env_or_tree_state().unwrap_or_else(|| "unknown".to_string());
+    let spec_context = std::env::var("CORE_OPS_BUILD_SPEC_CONTEXT")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
 
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let contents = format!(
         "pub const BUILD_REVISION: Option<&str> = {revision};\n\
          pub const BUILD_TIME: Option<&str> = {build_time};\n\
-         pub const BUILD_TREE_STATE: &str = {tree_state:?};\n",
+         pub const BUILD_TREE_STATE: &str = {tree_state:?};\n\
+         pub const BUILD_SPEC_CONTEXT: Option<&str> = {spec_context};\n",
         revision = option_literal(revision.as_deref()),
         build_time = option_literal(build_time.as_deref()),
         tree_state = tree_state,
+        spec_context = option_literal(spec_context.as_deref()),
     );
     fs::write(out_dir.join("build_info.rs"), contents).expect("write build_info.rs");
 }

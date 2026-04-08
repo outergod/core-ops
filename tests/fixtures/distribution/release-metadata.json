@@ -1,0 +1,13 @@
+{
+  "latest_release_identity": "0.6.0-dev",
+  "release_gate_status": "design-contract",
+  "accepted_verification_status": "design-contract",
+  "artifact_availability": [
+    "x86_64 raw binary",
+    "aarch64 raw binary",
+    "x86_64 tar.gz + checksums",
+    "aarch64 tar.gz + checksums"
+  ],
+  "verification_environment": "fedora-coreos-self-hosted@2026-04-fcos",
+  "credibility_location": "README.md#credibility"
+}

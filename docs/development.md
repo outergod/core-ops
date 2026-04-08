@@ -20,6 +20,146 @@ Rust changes are not considered complete until both `cargo test` and
 `cargo clippy --all-targets -- -D warnings` pass, unless a temporary exception
 is explicitly documented with follow-up work.
 
+## Distribution Readiness
+
+The current outside-consumption scope is binary-only distribution.
+
+- Public entrypoint: `README.md`
+- License: `LICENSE` (AGPLv3+)
+- Community policy: `CODE_OF_CONDUCT.md`
+- Release history: `CHANGELOG.md`
+- Public CI workflow: `.github/workflows/ci.yml`
+- Protected authoritative E2E gate: `.github/workflows/e2e-gate.yml`
+- Binary publication workflow: `.github/workflows/release-binary.yml`
+
+## Spec-Driven Development
+
+CoreOps uses Spec Kit and a spec-driven development workflow for feature work.
+The intended flow is:
+
+1. write or refine a feature spec under `specs/<feature>/spec.md`
+2. derive plan, contracts, data-model, and quickstart artifacts under the same
+   feature directory
+3. generate or maintain a task list under `specs/<feature>/tasks.md`
+4. implement against those artifacts
+5. validate behavior with the appropriate mix of:
+   - integration tests
+   - accepted verification scenarios where the VM-backed harness can prove the
+     contract directly
+   - workflow or documentation contract tests for release/process concerns
+
+This repository does not treat every feature as an accepted-scenario feature by
+default. Use the VM-backed accepted corpus when a feature changes CoreOps
+behavior or guest-environment contracts that the verification harness can prove
+directly. Use integration and workflow contract tests when the feature is
+primarily about public documentation, release orchestration, or contributor
+process.
+
+Primary Spec Kit artifacts live under `specs/<feature>/`:
+
+- `spec.md`
+- `plan.md`
+- `research.md`
+- `data-model.md`
+- `contracts/`
+- `quickstart.md`
+- `tasks.md`
+
+The `.specify/` directory contains the local Spec Kit templates, helper
+scripts, and workflow scaffolding used to create and maintain those artifacts.
+
+### Release Version Policy Expectations
+
+Changes affecting any of the following require release-version-policy review:
+
+- public entrypoint structure
+- credibility surface values or location
+- visible CLI or diagnostic version identity
+- release-gate semantics
+- authoritative verification-environment identity
+- installation or verification flow promises
+- changelog format or release-history continuity
+
+### Authoritative Verification Environment
+
+The release gate relies on a documented authoritative verification environment.
+That environment must be:
+
+- documented
+- reproducible
+- versioned sufficiently to detect drift
+
+The maintained contract for this feature is captured in:
+
+- `tests/fixtures/distribution/release-gate-environment.json`
+
+The protected self-hosted runner must provide the runtime identity values below
+through runner-controlled configuration rather than workflow YAML:
+
+- `CORE_OPS_ACTUAL_VERIFY_ENVIRONMENT_NAME`
+- `CORE_OPS_ACTUAL_VERIFY_ENVIRONMENT_VERSION`
+- `CORE_OPS_ACTUAL_VERIFY_RUNNER_REF`
+- `CORE_OPS_ACTUAL_VERIFY_SYSTEM_CLASS`
+
+`e2e-gate.yml` may declare the expected contract values used for comparison,
+but the `ACTUAL` values must come from the protected runner environment so the
+identity check can detect runner drift instead of only repository-config drift.
+
+### When To Update Release-Gate Conformance
+
+Future feature work MUST review release-gate conformance whenever it changes
+public verification claims, release promises, or accepted-scenario structure.
+
+Update spec and scenario conformance checks when a feature changes any of:
+
+- accepted scenario classes or scenario taxonomy
+- scenario schema or required scenario-definition fields
+- behavioral assertions or the meaning of accepted verification claims
+- release-readiness criteria that the accepted corpus is meant to prove
+- public verification guidance that changes what counts as valid accepted
+  coverage
+
+In those cases, the feature should evaluate whether it needs to:
+
+- add or update accepted scenarios
+- add or update required scenario classes in the spec
+- tighten or extend corpus validation checks
+- update release-gate workflow steps that enforce scenario/spec conformance
+
+### When To Update Verification Environment Identity
+
+Future feature work MUST review authoritative verification-environment identity
+whenever it changes what environment is trusted for release gating or how drift
+is detected.
+
+Update `tests/fixtures/distribution/release-gate-environment.json` and related
+release-gate expectations when a feature changes any of:
+
+- the authoritative runner image, stream, or system class
+- the self-hosted runner definition or host-selection model
+- the hypervisor, virtualization, or execution boundary used for authoritative
+  verification
+- the version marker used to identify the trusted environment
+- the documented basis used to detect runner drift over time
+
+In those cases, the feature should evaluate whether it needs to:
+
+- update the environment identity fixture
+- update release-gate workflow steps that surface or verify environment identity
+- update specs that name the authoritative verification environment
+- add or update tests that assert drift-detectable environment identity
+
+### Validation Follow-Up
+
+If `cargo test` or `cargo clippy --all-targets -- -D warnings` require
+follow-up during this feature, record the temporary issue and remediation here
+under this subsection rather than in the task list itself.
+
+- 2026-04-08: `cargo test` passed for the distribution-readiness change set.
+  No follow-up required.
+- 2026-04-08: `cargo clippy --all-targets -- -D warnings` passed for the same
+  change set. No follow-up required.
+
 ## Systemd Agent Configuration
 
 The CoreOps host agent is designed to run as a oneshot service triggered by a timer.

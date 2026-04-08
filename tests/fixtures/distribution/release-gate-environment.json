@@ -1,0 +1,8 @@
+{
+  "environment_name": "fedora-coreos-self-hosted",
+  "system_class": "Fedora CoreOS",
+  "runner_definition_ref": "self-hosted-fcos-runner-v1",
+  "version_marker": "2026-04-fcos",
+  "reproducibility_notes": "Pinned FCOS stream plus documented runner contract",
+  "drift_detection_basis": "runner definition ref and version marker must match maintained project materials"
+}
