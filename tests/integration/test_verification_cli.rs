@@ -427,6 +427,55 @@ fn cli_generate_rejects_missing_mandatory_verification_guidance() {
 }
 
 #[test]
+fn cli_generate_rejects_verification_guidance_without_required_scenario_classes() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let spec_path = temp.path().join("missing-required-classes.md");
+    std::fs::write(
+        &spec_path,
+        r#"
+# Feature Specification: Missing Required Classes
+
+## Verification Guidance
+
+### Observable Behaviors
+
+- Reapplying the same revision produces no managed changes
+
+### Invariants
+
+- Idempotent applies remain stable
+
+### Idempotency Expectations
+
+- Reapplying the same revision remains stable
+
+### Failure Modes
+
+- Assertion failures remain diagnosable
+
+### Upgrade Considerations
+
+- Revision continuity remains visible
+"#,
+    )
+    .expect("write spec");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_core-ops-verify"))
+        .arg("generate")
+        .arg("--spec")
+        .arg(&spec_path)
+        .arg("--accepted-dir")
+        .arg(fixture_path("tests/fixtures/verification/scenarios"))
+        .output()
+        .expect("run generate");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Verification Guidance must include at least one Required"));
+    assert!(stderr.contains("Scenario Class before candidate generation"));
+}
+
+#[test]
 fn cli_validate_reports_success_when_accepted_corpus_covers_required_classes() {
     let temp = tempfile::tempdir().expect("tempdir");
     let spec_path = temp.path().join("valid-conformance.md");

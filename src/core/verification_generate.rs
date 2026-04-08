@@ -119,6 +119,12 @@ pub fn generate_candidates_from_spec(
     let inputs = extract_verification_inputs(spec_text)?;
     let behavioral_claim = inputs.observable_behaviors[0].clone();
     let scenario_classes = inputs.required_scenario_classes.clone();
+    if scenario_classes.is_empty() {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "Verification Guidance must include at least one Required Scenario Class before candidate generation",
+        ));
+    }
     let primary_class = scenario_classes[0];
 
     let mut candidate = VerificationCandidateScenario {
