@@ -182,6 +182,7 @@ pub fn generate_candidates_from_spec(
                 failure_message: format!("Derived behavior failed: {behavioral_claim}"),
                 artifact_hints: inputs.failure_modes.clone(),
             }],
+            expected_outcome: None,
             policy_overrides: None,
         },
         generation_inputs: build_generation_inputs(&inputs),

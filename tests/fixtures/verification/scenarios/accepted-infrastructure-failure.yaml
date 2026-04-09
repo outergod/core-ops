@@ -34,3 +34,4 @@ assertions:
     target: boot
     expected_state: "0"
     failure_message: Infrastructure-failure scenario did not boot the disposable guest successfully before the command-boundary failure.
+expected_outcome: infrastructure_failure

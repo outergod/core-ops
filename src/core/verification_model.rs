@@ -241,6 +241,8 @@ pub struct VerificationScenarioDefinition {
     pub fixtures: VerificationFixtureSet,
     pub steps: Vec<VerificationScenarioStep>,
     pub assertions: Vec<VerificationAssertionSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_outcome: Option<VerificationRunOutcome>,
     #[serde(default)]
     pub policy_overrides: Option<VerificationHarnessPolicyOverride>,
 }

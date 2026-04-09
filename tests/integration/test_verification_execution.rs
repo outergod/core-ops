@@ -899,6 +899,136 @@ fn env_backed_setup_error_tears_down_guest_when_retention_is_disabled() {
     assert_eq!(destroy_calls.load(Ordering::SeqCst), 1);
 }
 
+#[derive(Default)]
+struct InfrastructureFailureGuestBoundary;
+
+impl VerificationGuestBoundary for InfrastructureFailureGuestBoundary {
+    fn wait_ready(
+        &self,
+        guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        timeout: &str,
+    ) -> Result<core_ops::core::verification_model::GuestCommandOutput, CoreError> {
+        Ok(core_ops::core::verification_model::GuestCommandOutput {
+            status_code: 0,
+            stdout: format!("{} ready within {timeout}", guest.guest_name),
+            stderr: String::new(),
+        })
+    }
+
+    fn run_command(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        command: &str,
+        _timeout: Option<&str>,
+    ) -> Result<core_ops::core::verification_model::GuestCommandOutput, CoreError> {
+        Ok(core_ops::core::verification_model::GuestCommandOutput {
+            status_code: 1,
+            stdout: format!("{command}: missing"),
+            stderr: String::new(),
+        })
+    }
+
+    fn copy_to_guest(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        _local_path: &std::path::Path,
+        _remote_path: &str,
+        _recursive: bool,
+        _executable: bool,
+    ) -> Result<(), CoreError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn expected_infrastructure_failure_counts_as_passed_scenario() {
+    let mut scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+    scenario.scenario_id = "expected-infrastructure-failure".to_string();
+    scenario.title = "Expected infrastructure failure passes contract".to_string();
+    scenario.description =
+        "A guest command failure counts as passed when infrastructure failure is expected."
+            .to_string();
+    scenario.steps = vec![
+        VerificationScenarioStep {
+            step_id: "boot".to_string(),
+            step_type: VerificationStepType::Boot,
+            target: VerificationStepTarget::Guest,
+            action: None,
+            command: None,
+            legacy_command_or_action: None,
+            expected_exit_behavior: None,
+            timeout_override: None,
+        },
+        VerificationScenarioStep {
+            step_id: "missing-guest-command".to_string(),
+            step_type: VerificationStepType::GuestCommand,
+            target: VerificationStepTarget::Guest,
+            action: None,
+            command: Some("sudo /core-ops-verification/definitely-missing-command".to_string()),
+            legacy_command_or_action: None,
+            expected_exit_behavior: None,
+            timeout_override: None,
+        },
+    ];
+    scenario.assertions = vec![build_assertion(
+        "boot-succeeded",
+        "step_exit_code_is",
+        "boot",
+        "0",
+        "Infrastructure-failure scenario did not boot successfully.",
+    )];
+    scenario.expected_outcome = Some(VerificationRunOutcome::InfrastructureFailure);
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let libvirt = ReadinessOutcomeLibvirtBoundary {
+        evidence: VerificationReadinessEvidence {
+            source: "serial-console".to_string(),
+            accepted_record: Some(
+                core_ops::core::verification_model::VerificationReadinessRecord {
+                    run_id: "run-current".to_string(),
+                    token: "token-current".to_string(),
+                    ip: "192.0.2.40".to_string(),
+                    hostname: None,
+                    ts: None,
+                },
+            ),
+            rejected_records: Vec::new(),
+            final_status: "accepted".to_string(),
+            failure_summary: None,
+        },
+    };
+    let guest = InfrastructureFailureGuestBoundary;
+    let collector = ArtifactCollector;
+    let context = VerificationExecutionContext {
+        workspace: workspace.path(),
+        artifacts_root: artifacts.path(),
+        libvirt: &libvirt,
+        guest_boundary: &guest,
+        artifact_boundary: &collector,
+    };
+
+    let view = execute_scenario(
+        &scenario,
+        VerificationRunMode::Ci,
+        "run-expected-infra-failure",
+        &context,
+        false,
+        false,
+    )
+    .expect("execute");
+
+    assert_eq!(view.overall_outcome, VerificationRunOutcome::Passed);
+    assert_eq!(view.failure_summary, None);
+    assert!(view
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("expected scenario outcome `infrastructure_failure` observed as designed")));
+}
+
 fn write_scenario_fixture(path: std::path::PathBuf, scenario: &core_ops::core::verification_model::VerificationScenarioDefinition) {
     let contents = serde_yaml::to_string(scenario).expect("serialize scenario");
     fs::write(path, contents).expect("write scenario fixture");
