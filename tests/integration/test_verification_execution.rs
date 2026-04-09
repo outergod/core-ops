@@ -1092,6 +1092,42 @@ fn serial_console_readiness_retries_transient_console_read_failures() {
 }
 
 #[test]
+fn serial_console_readiness_tolerates_non_utf8_console_bytes() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let console = workspace.path().join("console.log");
+    let mut bytes = Vec::from(&b"\x1b[0;32mgarbage-prefix\xff\xfe\r\n"[..]);
+    bytes.extend_from_slice(
+        b"CORE_OPS_VERIFY_READY {\"run_id\":\"run-current\",\"token\":\"token-current\",\"ip\":\"192.0.2.34\"}\n",
+    );
+    std::fs::write(&console, bytes).expect("write console");
+
+    let libvirt = LibvirtCommandRunner {
+        env_backed: true,
+        ..LibvirtCommandRunner::default()
+    };
+    let guest = build_readiness_guest(workspace.path(), &console);
+    let scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+
+    let acquisition = libvirt
+        .acquire_guest_readiness(&scenario, &guest)
+        .expect("readiness acquisition");
+
+    assert_eq!(acquisition.evidence.final_status, "accepted");
+    assert_eq!(
+        acquisition
+            .evidence
+            .accepted_record
+            .as_ref()
+            .expect("accepted")
+            .ip,
+        "192.0.2.34"
+    );
+}
+
+#[test]
 fn serial_console_readiness_precedes_fallback_when_valid_record_exists() {
     let workspace = tempfile::tempdir().expect("workspace");
     let console = workspace.path().join("console.log");
