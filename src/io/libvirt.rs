@@ -590,12 +590,14 @@ impl LibvirtCommandRunner {
             }
             return Ok(String::from_utf8_lossy(&output.stdout).to_string());
         }
-        fs::read_to_string(log_path).map_err(|err| {
-            CoreError::new(
-                FailureClass::Apply,
-                format!("failed to read local guest serial console log {log_path}: {err}"),
-            )
-        })
+        fs::read(log_path)
+            .map(|bytes| String::from_utf8_lossy(&bytes).to_string())
+            .map_err(|err| {
+                CoreError::new(
+                    FailureClass::Apply,
+                    format!("failed to read local guest serial console log {log_path}: {err}"),
+                )
+            })
     }
 }
 
