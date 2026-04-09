@@ -30,6 +30,8 @@ fn distribution_gate_is_split_between_public_ci_and_protected_e2e() {
         "CORE_OPS_VERIFY_BIN=${target_dir}/debug/core-ops-verify",
         "\"$CORE_OPS_VERIFY_BIN\" run",
         "--accepted-dir tests/fixtures/verification/scenarios",
+        "--workspace-root /run/core-ops/verification/workspace",
+        "--artifacts-dir /run/core-ops/verification/artifacts",
         "\"$CORE_OPS_VERIFY_BIN\" validate",
         "test_evaluation_determinism",
         "release-gate-environment.json",

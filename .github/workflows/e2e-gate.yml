@@ -37,6 +37,8 @@ jobs:
         run: |
           "$CORE_OPS_VERIFY_BIN" run \
             --accepted-dir tests/fixtures/verification/scenarios \
+            --workspace-root /run/core-ops/verification/workspace \
+            --artifacts-dir /run/core-ops/verification/artifacts \
             --ci --json
 
       - name: Spec and scenario conformance
