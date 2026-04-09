@@ -1,7 +1,7 @@
 # CoreOps
 
 <p align="center">
-  <img src="docs/core-ops.svg" alt="CoreOps logo" width="320">
+  <img src="docs/core-ops.svg" alt="CoreOps logo" width="160">
 </p>
 
 <p align="center">
