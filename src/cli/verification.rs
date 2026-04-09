@@ -428,6 +428,49 @@ fn accepted_corpus_scenario_workspace(
     suite_workspace_root.join(scenario_run_id)
 }
 
+fn apply_expected_outcome_contract(
+    expected_outcome: Option<VerificationRunOutcome>,
+    actual_outcome: VerificationRunOutcome,
+    assertion_results: &[VerificationAssertionResult],
+    actual_failure_summary: Option<String>,
+    warnings: &mut Vec<String>,
+) -> (VerificationRunOutcome, Option<String>) {
+    let Some(expected_outcome) = expected_outcome else {
+        return (actual_outcome, actual_failure_summary);
+    };
+
+    if actual_outcome == expected_outcome {
+        let assertions_failed = assertion_results.iter().any(|result| {
+            result.status == crate::core::types::VerificationAssertionStatus::Failed
+        });
+        if assertions_failed {
+            return (
+                VerificationRunOutcome::AssertionFailure,
+                Some(format!(
+                    "scenario observed expected outcome `{}` but one or more verification assertions failed",
+                    verification_run_outcome_label(expected_outcome)
+                )),
+            );
+        }
+        if expected_outcome != VerificationRunOutcome::Passed {
+            warnings.push(format!(
+                "expected scenario outcome `{}` observed as designed",
+                verification_run_outcome_label(expected_outcome)
+            ));
+        }
+        return (VerificationRunOutcome::Passed, None);
+    }
+
+    (
+        VerificationRunOutcome::AssertionFailure,
+        Some(format!(
+            "scenario expected outcome `{}` but observed `{}`",
+            verification_run_outcome_label(expected_outcome),
+            verification_run_outcome_label(actual_outcome)
+        )),
+    )
+}
+
 fn render_verbose_run_context(
     scenario: &VerificationScenarioDefinition,
     run_id: &str,
@@ -929,9 +972,9 @@ pub fn execute_scenario(
             result.observed_value = result.observed_value.as_deref().map(strip_ansi_escapes);
         }
 
-        let overall_outcome = classify_scenario_outcome(&step_results, &assertion_results);
+        let actual_outcome = classify_scenario_outcome(&step_results, &assertion_results);
         let mut diagnostic_warnings = Vec::new();
-        if guest.env_backed && overall_outcome != VerificationRunOutcome::Passed {
+        if guest.env_backed && actual_outcome != VerificationRunOutcome::Passed {
             if let Err(err) = collect_env_backed_failure_diagnostics(
                 context.guest_boundary,
                 &guest,
@@ -943,7 +986,7 @@ pub fn execute_scenario(
                 ));
             }
         }
-        let failure_summary = match overall_outcome {
+        let actual_failure_summary = match actual_outcome {
             VerificationRunOutcome::Passed => None,
             VerificationRunOutcome::AssertionFailure => {
                 if assertion_results.iter().any(|result| {
@@ -966,6 +1009,13 @@ pub fn execute_scenario(
             VerificationRunOutcome::Timeout => Some("verification timed out".to_string()),
             VerificationRunOutcome::HarnessError => Some("verification harness error".to_string()),
         };
+        let (overall_outcome, failure_summary) = apply_expected_outcome_contract(
+            scenario.expected_outcome,
+            actual_outcome,
+            &assertion_results,
+            actual_failure_summary,
+            &mut diagnostic_warnings,
+        );
         let bundle_workspace = artifact_workspace.join("artifacts");
         let enrichment = write_diagnostic_artifacts(
             &bundle_workspace,
@@ -2163,6 +2213,16 @@ fn run_local_command(command: &mut Command, context: &str) -> Result<(), CoreErr
 
 fn shell_escape(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn verification_run_outcome_label(outcome: VerificationRunOutcome) -> &'static str {
+    match outcome {
+        VerificationRunOutcome::Passed => "passed",
+        VerificationRunOutcome::AssertionFailure => "assertion_failure",
+        VerificationRunOutcome::InfrastructureFailure => "infrastructure_failure",
+        VerificationRunOutcome::Timeout => "timeout",
+        VerificationRunOutcome::HarnessError => "harness_error",
+    }
 }
 
 fn render_command(command: &Command) -> String {
