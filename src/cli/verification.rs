@@ -346,7 +346,7 @@ fn run_accepted_corpus(
     let artifact_boundary = ArtifactCollector;
     for scenario in &scenarios {
         let scenario_run_id = format!("{run_id}-{}", scenario.scenario_id);
-        let workspace = suite_workspace_root.join(&scenario.scenario_id);
+        let workspace = accepted_corpus_scenario_workspace(&suite_workspace_root, &scenario_run_id);
         if args.verbose {
             eprintln!(
                 "{}",
@@ -419,6 +419,13 @@ fn run_accepted_corpus(
         emit_json: args.json,
         exit_code,
     })
+}
+
+fn accepted_corpus_scenario_workspace(
+    suite_workspace_root: &Path,
+    scenario_run_id: &str,
+) -> std::path::PathBuf {
+    suite_workspace_root.join(scenario_run_id)
 }
 
 fn render_verbose_run_context(
@@ -2082,4 +2089,29 @@ fn next_run_id(scenario_id: &str) -> String {
         .expect("time")
         .as_nanos();
     format!("run-{nanos}-{scenario_id}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::accepted_corpus_scenario_workspace;
+    use std::path::Path;
+
+    #[test]
+    fn accepted_corpus_workspace_uses_scenario_run_id_for_unique_suffix() {
+        let suite_workspace_root = Path::new("/tmp/core-ops-verification/run-accepted-corpus");
+        let workspace = accepted_corpus_scenario_workspace(
+            suite_workspace_root,
+            "run-1775730069233117462-accepted-infrastructure-failure",
+        );
+
+        assert_eq!(
+            workspace.file_name().and_then(|name| name.to_str()),
+            Some("run-1775730069233117462-accepted-infrastructure-failure")
+        );
+        assert!(
+            workspace
+                .to_string_lossy()
+                .contains("run-1775730069233117462-accepted-infrastructure-failure")
+        );
+    }
 }
