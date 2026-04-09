@@ -34,3 +34,4 @@ assertions:
     target: boot
     expected_state: "0"
     failure_message: Timeout-classification scenario did not boot the disposable guest successfully before the timeout step.
+expected_outcome: timeout
