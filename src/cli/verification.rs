@@ -1499,26 +1499,42 @@ fn write_env_backed_debug_artifacts(
     }
 
     if guest.env_backed {
-        let console_path = bundle_root.join("console-log.txt");
-        let console_log = fetch_serial_console_log(guest)?;
-        std::fs::write(&console_path, console_log).map_err(|err| {
-            CoreError::new(
-                FailureClass::Apply,
-                format!("failed to write {}: {err}", console_path.display()),
-            )
-        })?;
-
-        let qemu_launch_path = bundle_root.join("qemu-launch-log.txt");
-        let qemu_launch_log = fetch_qemu_launch_log(guest)?;
-        std::fs::write(&qemu_launch_path, qemu_launch_log).map_err(|err| {
-            CoreError::new(
-                FailureClass::Apply,
-                format!("failed to write {}: {err}", qemu_launch_path.display()),
-            )
-        })?;
+        write_optional_env_debug_artifact(
+            guest,
+            &bundle_root.join("console-log.txt"),
+            fetch_serial_console_log,
+            "guest serial console log",
+        )?;
+        write_optional_env_debug_artifact(
+            guest,
+            &bundle_root.join("qemu-launch-log.txt"),
+            fetch_qemu_launch_log,
+            "qemu launch log",
+        )?;
     }
 
     Ok(())
+}
+
+fn write_optional_env_debug_artifact(
+    guest: &crate::core::verification_model::LibvirtGuestHandle,
+    path: &Path,
+    fetcher: fn(&crate::core::verification_model::LibvirtGuestHandle) -> Result<String, CoreError>,
+    description: &str,
+) -> Result<(), CoreError> {
+    let content = match fetcher(guest) {
+        Ok(content) => content,
+        Err(err) => format!(
+            "{description} unavailable during debug artifact collection: {}",
+            err.message
+        ),
+    };
+    std::fs::write(path, content).map_err(|err| {
+        CoreError::new(
+            FailureClass::Apply,
+            format!("failed to write {}: {err}", path.display()),
+        )
+    })
 }
 
 fn copy_debug_file(source: &str, dest: &Path) -> Result<(), CoreError> {
@@ -1618,7 +1634,7 @@ fn fetch_hypervisor_file(
         command.output().map_err(|err| {
             CoreError::new(
                 FailureClass::Apply,
-                format!("failed to fetch {description} over ssh: {err}"),
+                format_launch_error(&command, &format!("fetch {description} over ssh"), &err),
             )
         })?
     } else {
@@ -1658,14 +1674,19 @@ fn read_local_hypervisor_file(
                     sudo.output().map_err(|err| {
                         CoreError::new(
                             FailureClass::Apply,
-                            format!("failed to read local {description}: {err}"),
+                            format_launch_error(
+                                &sudo,
+                                &format!("read local {description}"),
+                                &err,
+                            ),
                         )
                     })
                 }
                 Err(cat_err) => Err(CoreError::new(
                     FailureClass::Apply,
                     format!(
-                        "failed to read local {description}: direct read failed with {read_err}; cat failed with {cat_err}"
+                        "failed to read local {description}: direct read failed with {read_err}; {}",
+                        format_launch_error(&command, &format!("read local {description}"), &cat_err)
                     ),
                 )),
             }
@@ -1692,6 +1713,18 @@ fn commandless_output(stdout: Vec<u8>) -> std::process::Output {
     {
         let _ = stdout;
         unreachable!("commandless_output is only used in unix verification environments")
+    }
+}
+
+fn format_launch_error(command: &Command, context: &str, err: &std::io::Error) -> String {
+    let rendered = render_command(command);
+    let executable = command.get_program().to_string_lossy();
+    if err.kind() == std::io::ErrorKind::NotFound {
+        format!(
+            "failed to launch {context}: executable `{executable}` not found while running {rendered}: {err}"
+        )
+    } else {
+        format!("failed to launch {context}: {rendered}: {err}")
     }
 }
 
@@ -2106,10 +2139,7 @@ fn resolve_core_ops_binary() -> Result<std::path::PathBuf, CoreError> {
 
 fn run_local_command(command: &mut Command, context: &str) -> Result<(), CoreError> {
     let output = command.output().map_err(|err| {
-        CoreError::new(
-            FailureClass::Apply,
-            format!("failed to launch {context}: {err}"),
-        )
+        CoreError::new(FailureClass::Apply, format_launch_error(command, context, &err))
     })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -2135,6 +2165,15 @@ fn shell_escape(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+fn render_command(command: &Command) -> String {
+    let mut rendered = command.get_program().to_string_lossy().to_string();
+    for arg in command.get_args() {
+        rendered.push(' ');
+        rendered.push_str(&shell_escape(&arg.to_string_lossy()));
+    }
+    rendered
+}
+
 fn next_run_id(scenario_id: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2145,8 +2184,15 @@ fn next_run_id(scenario_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{accepted_corpus_scenario_workspace, read_local_hypervisor_file};
+    use super::{
+        accepted_corpus_scenario_workspace, format_launch_error, read_local_hypervisor_file,
+        write_optional_env_debug_artifact,
+    };
+    use crate::core::errors::CoreError;
+    use crate::core::types::FailureClass;
+    use crate::core::verification_model::LibvirtGuestHandle;
     use std::path::Path;
+    use std::process::Command;
 
     #[test]
     fn accepted_corpus_workspace_uses_scenario_run_id_for_unique_suffix() {
@@ -2180,5 +2226,57 @@ mod tests {
         assert!(output.status.success());
         assert_eq!(String::from_utf8_lossy(&output.stdout), "console output\n");
         assert!(output.stderr.is_empty());
+    }
+
+    #[test]
+    fn format_launch_error_identifies_missing_executable() {
+        let mut command = Command::new("virt-install");
+        command.arg("--connect").arg("qemu:///system");
+        let err = std::io::Error::from(std::io::ErrorKind::NotFound);
+
+        let message = format_launch_error(&command, "launch guest", &err);
+
+        assert!(message.contains("executable `virt-install` not found"));
+        assert!(message.contains("virt-install '--connect' 'qemu:///system'"));
+    }
+
+    #[test]
+    fn optional_env_debug_artifact_writes_placeholder_when_fetch_fails() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let path = workspace.path().join("console-log.txt");
+        let guest = LibvirtGuestHandle {
+            guest_name: "guest".to_string(),
+            domain_name: "domain".to_string(),
+            ssh_target: "core@192.0.2.10".to_string(),
+            connection_uri: "qemu:///system".to_string(),
+            workspace_root: workspace.path().display().to_string(),
+            env_backed: true,
+            network_mode: Some("dhcp".to_string()),
+            vm_host: None,
+            ssh_user: Some("core".to_string()),
+            ignition_path: None,
+            local_butane_path: None,
+            local_ignition_path: None,
+            volume_name: None,
+            assigned_ip: None,
+            lease_path: None,
+            rendered_network_config: None,
+            serial_log_path: None,
+            qemu_launch_log_path: None,
+            readiness_payload: None,
+            readiness_evidence: None,
+        };
+
+        write_optional_env_debug_artifact(
+            &guest,
+            &path,
+            |_| Err(CoreError::new(FailureClass::Apply, "boom")),
+            "guest serial console log",
+        )
+        .expect("write placeholder");
+
+        let contents = std::fs::read_to_string(&path).expect("read placeholder");
+        assert!(contents.contains("guest serial console log unavailable during debug artifact collection"));
+        assert!(contents.contains("boom"));
     }
 }
