@@ -431,6 +431,7 @@ fn accepted_corpus_scenario_workspace(
 fn apply_expected_outcome_contract(
     expected_outcome: Option<VerificationRunOutcome>,
     actual_outcome: VerificationRunOutcome,
+    assertion_results: &[VerificationAssertionResult],
     actual_failure_summary: Option<String>,
     warnings: &mut Vec<String>,
 ) -> (VerificationRunOutcome, Option<String>) {
@@ -439,6 +440,18 @@ fn apply_expected_outcome_contract(
     };
 
     if actual_outcome == expected_outcome {
+        let assertions_failed = assertion_results.iter().any(|result| {
+            result.status == crate::core::types::VerificationAssertionStatus::Failed
+        });
+        if assertions_failed {
+            return (
+                VerificationRunOutcome::AssertionFailure,
+                Some(format!(
+                    "scenario observed expected outcome `{}` but one or more verification assertions failed",
+                    verification_run_outcome_label(expected_outcome)
+                )),
+            );
+        }
         if expected_outcome != VerificationRunOutcome::Passed {
             warnings.push(format!(
                 "expected scenario outcome `{}` observed as designed",
@@ -999,6 +1012,7 @@ pub fn execute_scenario(
         let (overall_outcome, failure_summary) = apply_expected_outcome_contract(
             scenario.expected_outcome,
             actual_outcome,
+            &assertion_results,
             actual_failure_summary,
             &mut diagnostic_warnings,
         );

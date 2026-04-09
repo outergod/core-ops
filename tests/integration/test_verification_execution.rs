@@ -1032,6 +1032,98 @@ fn expected_infrastructure_failure_counts_as_passed_scenario() {
         .any(|warning| warning.contains("expected scenario outcome `infrastructure_failure` observed as designed")));
 }
 
+#[test]
+fn expected_outcome_does_not_hide_failed_assertions() {
+    let mut scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+    scenario.scenario_id = "expected-infrastructure-failure-with-bad-assertion".to_string();
+    scenario.title = "Expected infrastructure failure still honors assertions".to_string();
+    scenario.description =
+        "Expected outcome contracts must not hide failed assertions.".to_string();
+    scenario.steps = vec![
+        VerificationScenarioStep {
+            step_id: "boot".to_string(),
+            step_type: VerificationStepType::Boot,
+            target: VerificationStepTarget::Guest,
+            action: None,
+            command: None,
+            legacy_command_or_action: None,
+            expected_exit_behavior: None,
+            timeout_override: None,
+        },
+        VerificationScenarioStep {
+            step_id: "missing-guest-command".to_string(),
+            step_type: VerificationStepType::GuestCommand,
+            target: VerificationStepTarget::Guest,
+            action: None,
+            command: Some("sudo /core-ops-verification/definitely-missing-command".to_string()),
+            legacy_command_or_action: None,
+            expected_exit_behavior: None,
+            timeout_override: None,
+        },
+    ];
+    scenario.assertions = vec![build_assertion(
+        "boot-fails-on-purpose",
+        "step_exit_code_is",
+        "boot",
+        "1",
+        "This assertion is intentionally wrong.",
+    )];
+    scenario.expected_outcome = Some(VerificationRunOutcome::InfrastructureFailure);
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let libvirt = ReadinessOutcomeLibvirtBoundary {
+        evidence: VerificationReadinessEvidence {
+            source: "serial-console".to_string(),
+            accepted_record: Some(
+                core_ops::core::verification_model::VerificationReadinessRecord {
+                    run_id: "run-current".to_string(),
+                    token: "token-current".to_string(),
+                    ip: "192.0.2.41".to_string(),
+                    hostname: None,
+                    ts: None,
+                },
+            ),
+            rejected_records: Vec::new(),
+            final_status: "accepted".to_string(),
+            failure_summary: None,
+        },
+    };
+    let guest = InfrastructureFailureGuestBoundary;
+    let collector = ArtifactCollector;
+    let context = VerificationExecutionContext {
+        workspace: workspace.path(),
+        artifacts_root: artifacts.path(),
+        libvirt: &libvirt,
+        guest_boundary: &guest,
+        artifact_boundary: &collector,
+    };
+    let temp_binary = tempfile::NamedTempFile::new().expect("temp binary");
+    std::env::set_var("CORE_OPS_VERIFY_CORE_OPS_BIN", temp_binary.path());
+
+    let view = execute_scenario(
+        &scenario,
+        VerificationRunMode::Ci,
+        "run-expected-infra-failure-bad-assertion",
+        &context,
+        false,
+        false,
+    )
+    .expect("execute");
+    std::env::remove_var("CORE_OPS_VERIFY_CORE_OPS_BIN");
+
+    assert_eq!(view.overall_outcome, VerificationRunOutcome::AssertionFailure);
+    assert_eq!(
+        view.failure_summary.as_deref(),
+        Some(
+            "scenario observed expected outcome `infrastructure_failure` but one or more verification assertions failed"
+        )
+    );
+}
+
 fn write_scenario_fixture(path: std::path::PathBuf, scenario: &core_ops::core::verification_model::VerificationScenarioDefinition) {
     let contents = serde_yaml::to_string(scenario).expect("serialize scenario");
     fs::write(path, contents).expect("write scenario fixture");
