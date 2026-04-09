@@ -1622,14 +1622,7 @@ fn fetch_hypervisor_file(
             )
         })?
     } else {
-        let mut command = Command::new("sudo");
-        command.arg("cat").arg(log_path);
-        command.output().map_err(|err| {
-            CoreError::new(
-                FailureClass::Apply,
-                format!("failed to read local {description}: {err}"),
-            )
-        })?
+        read_local_hypervisor_file(log_path, description)?
     };
 
     if !output.status.success() {
@@ -1641,6 +1634,65 @@ fn fetch_hypervisor_file(
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn read_local_hypervisor_file(
+    log_path: &str,
+    description: &str,
+) -> Result<std::process::Output, CoreError> {
+    match std::fs::read(log_path) {
+        Ok(bytes) => Ok(commandless_output(bytes)),
+        Err(read_err)
+            if matches!(
+                read_err.kind(),
+                std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::Other
+            ) =>
+        {
+            let mut command = Command::new("cat");
+            command.arg(log_path);
+            match command.output() {
+                Ok(output) => Ok(output),
+                Err(cat_err) if cat_err.kind() == std::io::ErrorKind::PermissionDenied => {
+                    let mut sudo = Command::new("sudo");
+                    sudo.arg("cat").arg(log_path);
+                    sudo.output().map_err(|err| {
+                        CoreError::new(
+                            FailureClass::Apply,
+                            format!("failed to read local {description}: {err}"),
+                        )
+                    })
+                }
+                Err(cat_err) => Err(CoreError::new(
+                    FailureClass::Apply,
+                    format!(
+                        "failed to read local {description}: direct read failed with {read_err}; cat failed with {cat_err}"
+                    ),
+                )),
+            }
+        }
+        Err(read_err) => Err(CoreError::new(
+            FailureClass::Apply,
+            format!("failed to read local {description}: {read_err}"),
+        )),
+    }
+}
+
+fn commandless_output(stdout: Vec<u8>) -> std::process::Output {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout,
+            stderr: Vec::new(),
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = stdout;
+        unreachable!("commandless_output is only used in unix verification environments")
+    }
 }
 
 fn augment_early_env_backed_error(
@@ -2093,7 +2145,7 @@ fn next_run_id(scenario_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::accepted_corpus_scenario_workspace;
+    use super::{accepted_corpus_scenario_workspace, read_local_hypervisor_file};
     use std::path::Path;
 
     #[test]
@@ -2113,5 +2165,20 @@ mod tests {
                 .to_string_lossy()
                 .contains("run-1775730069233117462-accepted-infrastructure-failure")
         );
+    }
+
+    #[test]
+    fn local_hypervisor_file_read_does_not_require_sudo_when_file_is_readable() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let log_path = workspace.path().join("console.log");
+        std::fs::write(&log_path, "console output\n").expect("write log");
+
+        let output =
+            read_local_hypervisor_file(log_path.to_str().expect("utf8 path"), "console log")
+                .expect("read local log");
+
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "console output\n");
+        assert!(output.stderr.is_empty());
     }
 }
