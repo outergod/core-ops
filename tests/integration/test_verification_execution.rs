@@ -1040,6 +1040,157 @@ fn expected_infrastructure_failure_counts_as_passed_scenario() {
         .any(|warning| warning.contains("expected scenario outcome `infrastructure_failure` observed as designed")));
 }
 
+#[derive(Default)]
+struct RebootDisconnectGuestBoundary;
+
+impl VerificationGuestBoundary for RebootDisconnectGuestBoundary {
+    fn wait_ready(
+        &self,
+        guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        timeout: &str,
+    ) -> Result<core_ops::core::verification_model::GuestCommandOutput, CoreError> {
+        Ok(core_ops::core::verification_model::GuestCommandOutput {
+            status_code: 0,
+            stdout: format!("{} ready within {timeout}", guest.guest_name),
+            stderr: String::new(),
+        })
+    }
+
+    fn run_command(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        command: &str,
+        _timeout: Option<&str>,
+    ) -> Result<core_ops::core::verification_model::GuestCommandOutput, CoreError> {
+        if command.contains("reboot") {
+            Ok(core_ops::core::verification_model::GuestCommandOutput {
+                status_code: 255,
+                stdout: "connection closed for reboot".to_string(),
+                stderr: String::new(),
+            })
+        } else {
+            Ok(core_ops::core::verification_model::GuestCommandOutput {
+                status_code: 0,
+                stdout: "ok".to_string(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    fn copy_to_guest(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        _local_path: &std::path::Path,
+        _remote_path: &str,
+        _recursive: bool,
+        _executable: bool,
+    ) -> Result<(), CoreError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn reboot_step_tolerates_expected_disconnect_exit_code() {
+    let _env_guard = core_ops_bin_env_lock().lock().expect("env lock");
+    let mut scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+    scenario.scenario_id = "reboot-disconnect".to_string();
+    scenario.title = "Reboot disconnect remains recoverable".to_string();
+    scenario.description = "A reboot SSH disconnect should not fail the scenario by itself.".to_string();
+    scenario.steps = vec![
+        VerificationScenarioStep {
+            step_id: "boot".to_string(),
+            step_type: VerificationStepType::Boot,
+            target: VerificationStepTarget::Guest,
+            action: None,
+            command: None,
+            legacy_command_or_action: None,
+            expected_exit_behavior: None,
+            timeout_override: None,
+        },
+        VerificationScenarioStep {
+            step_id: "reboot".to_string(),
+            step_type: VerificationStepType::Reboot,
+            target: VerificationStepTarget::Guest,
+            action: None,
+            command: Some("sudo systemctl reboot".to_string()),
+            legacy_command_or_action: None,
+            expected_exit_behavior: None,
+            timeout_override: None,
+        },
+        VerificationScenarioStep {
+            step_id: "wait-ready".to_string(),
+            step_type: VerificationStepType::WaitReady,
+            target: VerificationStepTarget::Guest,
+            action: None,
+            command: None,
+            legacy_command_or_action: None,
+            expected_exit_behavior: None,
+            timeout_override: None,
+        },
+    ];
+    scenario.assertions = vec![build_assertion(
+        "wait-ready-succeeded",
+        "step_exit_code_is",
+        "wait-ready",
+        "0",
+        "Guest did not become ready after reboot.",
+    )];
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let libvirt = ReadinessOutcomeLibvirtBoundary {
+        evidence: VerificationReadinessEvidence {
+            source: "serial-console".to_string(),
+            accepted_record: Some(
+                core_ops::core::verification_model::VerificationReadinessRecord {
+                    run_id: "run-current".to_string(),
+                    token: "token-current".to_string(),
+                    ip: "192.0.2.42".to_string(),
+                    hostname: None,
+                    ts: None,
+                },
+            ),
+            rejected_records: Vec::new(),
+            final_status: "accepted".to_string(),
+            failure_summary: None,
+        },
+    };
+    let guest = RebootDisconnectGuestBoundary;
+    let collector = ArtifactCollector;
+    let context = VerificationExecutionContext {
+        workspace: workspace.path(),
+        artifacts_root: artifacts.path(),
+        libvirt: &libvirt,
+        guest_boundary: &guest,
+        artifact_boundary: &collector,
+    };
+    let temp_binary = tempfile::NamedTempFile::new().expect("temp binary");
+    std::env::set_var("CORE_OPS_VERIFY_CORE_OPS_BIN", temp_binary.path());
+
+    let view = execute_scenario(
+        &scenario,
+        VerificationRunMode::Ci,
+        "run-reboot-disconnect",
+        &context,
+        false,
+        false,
+    )
+    .expect("execute");
+    std::env::remove_var("CORE_OPS_VERIFY_CORE_OPS_BIN");
+
+    assert_eq!(view.overall_outcome, VerificationRunOutcome::Passed);
+    let reboot_step = view
+        .step_results
+        .iter()
+        .find(|step| step.step_id == "reboot")
+        .expect("reboot step");
+    assert_eq!(reboot_step.status, core_ops::core::types::VerificationStepStatus::Passed);
+    assert_eq!(reboot_step.exit_code, Some(255));
+}
+
 #[test]
 fn expected_outcome_does_not_hide_failed_assertions() {
     let _env_guard = core_ops_bin_env_lock().lock().expect("env lock");
