@@ -22,10 +22,16 @@ use std::fs;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
+    Mutex, OnceLock,
 };
 
 fn fixture_path(relative: &str) -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(relative)
+}
+
+fn core_ops_bin_env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
 }
 
 #[test]
@@ -861,6 +867,7 @@ impl VerificationGuestBoundary for SetupFailureGuestBoundary {
 
 #[test]
 fn env_backed_setup_error_tears_down_guest_when_retention_is_disabled() {
+    let _env_guard = core_ops_bin_env_lock().lock().expect("env lock");
     let scenario = load_scenario_definition(&fixture_path(
         "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
     ))
@@ -942,6 +949,7 @@ impl VerificationGuestBoundary for InfrastructureFailureGuestBoundary {
 
 #[test]
 fn expected_infrastructure_failure_counts_as_passed_scenario() {
+    let _env_guard = core_ops_bin_env_lock().lock().expect("env lock");
     let mut scenario = load_scenario_definition(&fixture_path(
         "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
     ))
@@ -1034,6 +1042,7 @@ fn expected_infrastructure_failure_counts_as_passed_scenario() {
 
 #[test]
 fn expected_outcome_does_not_hide_failed_assertions() {
+    let _env_guard = core_ops_bin_env_lock().lock().expect("env lock");
     let mut scenario = load_scenario_definition(&fixture_path(
         "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
     ))
