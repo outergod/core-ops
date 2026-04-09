@@ -142,7 +142,7 @@ impl LibvirtCommandRunner {
         let output = command.output().map_err(|err| {
             CoreError::new(
                 FailureClass::Apply,
-                format!("failed to launch {context}: {rendered}: {err}"),
+                format_launch_error(command, context, &rendered, &err),
             )
         })?;
         if !output.status.success() {
@@ -571,7 +571,12 @@ impl LibvirtCommandRunner {
             let output = command.output().map_err(|err| {
                 CoreError::new(
                     FailureClass::Apply,
-                    format!("failed to fetch guest serial console log over ssh: {err}"),
+                    format_launch_error(
+                        &command,
+                        "fetch guest serial console log over ssh",
+                        &render_command(&command),
+                        &err,
+                    ),
                 )
             })?;
             if !output.status.success() {
@@ -1085,4 +1090,39 @@ fn render_command(command: &Command) -> String {
         rendered.push_str(&shell_escape(&arg.to_string_lossy()));
     }
     rendered
+}
+
+fn format_launch_error(
+    command: &Command,
+    context: &str,
+    rendered: &str,
+    err: &std::io::Error,
+) -> String {
+    let executable = command.get_program().to_string_lossy();
+    if err.kind() == std::io::ErrorKind::NotFound {
+        format!(
+            "failed to launch {context}: executable `{executable}` not found while running {rendered}: {err}"
+        )
+    } else {
+        format!("failed to launch {context}: {rendered}: {err}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_launch_error;
+    use std::process::Command;
+
+    #[test]
+    fn launch_error_identifies_missing_executable() {
+        let mut command = Command::new("virt-install");
+        command.arg("--name").arg("demo");
+        let rendered = "virt-install '--name' 'demo'";
+        let err = std::io::Error::from(std::io::ErrorKind::NotFound);
+
+        let message = format_launch_error(&command, "launch guest", rendered, &err);
+
+        assert!(message.contains("executable `virt-install` not found"));
+        assert!(message.contains(rendered));
+    }
 }
