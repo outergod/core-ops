@@ -25,10 +25,12 @@ fn distribution_gate_is_split_between_public_ci_and_protected_e2e() {
 
     for snippet in [
         "cargo build --locked --bin core-ops --bin core-ops-verify",
-        "CORE_OPS_VERIFY_CORE_OPS_BIN=$GITHUB_WORKSPACE/target/debug/core-ops",
-        "target/debug/core-ops-verify run",
+        "target_dir=\"${CARGO_TARGET_DIR:-$GITHUB_WORKSPACE/target}\"",
+        "CORE_OPS_VERIFY_CORE_OPS_BIN=${target_dir}/debug/core-ops",
+        "CORE_OPS_VERIFY_BIN=${target_dir}/debug/core-ops-verify",
+        "\"$CORE_OPS_VERIFY_BIN\" run",
         "--accepted-dir tests/fixtures/verification/scenarios",
-        "target/debug/core-ops-verify validate",
+        "\"$CORE_OPS_VERIFY_BIN\" validate",
         "test_evaluation_determinism",
         "release-gate-environment.json",
         "environment: homelab-e2e",
@@ -47,7 +49,7 @@ fn e2e_gate_workflow_validates_environment_identity_against_declared_values() {
         .expect("read e2e gate workflow");
 
     for snippet in [
-        "target/debug/core-ops-verify validate-environment",
+        "\"$CORE_OPS_VERIFY_BIN\" validate-environment",
         "--fixture tests/fixtures/distribution/release-gate-environment.json",
         "--expected-name \"$CORE_OPS_VERIFY_ENVIRONMENT_NAME\"",
         "--expected-version \"$CORE_OPS_VERIFY_ENVIRONMENT_VERSION\"",
@@ -80,8 +82,10 @@ fn e2e_gate_builds_and_pins_core_ops_binary_before_vm_runs() {
 
     for snippet in [
         "cargo build --locked --bin core-ops --bin core-ops-verify",
-        "echo \"CORE_OPS_VERIFY_CORE_OPS_BIN=$GITHUB_WORKSPACE/target/debug/core-ops\" >> \"$GITHUB_ENV\"",
-        "target/debug/core-ops-verify run",
+        "target_dir=\"${CARGO_TARGET_DIR:-$GITHUB_WORKSPACE/target}\"",
+        "echo \"CORE_OPS_VERIFY_CORE_OPS_BIN=${target_dir}/debug/core-ops\" >> \"$GITHUB_ENV\"",
+        "echo \"CORE_OPS_VERIFY_BIN=${target_dir}/debug/core-ops-verify\" >> \"$GITHUB_ENV\"",
+        "\"$CORE_OPS_VERIFY_BIN\" run",
     ] {
         assert!(contents.contains(snippet), "missing workflow snippet: {snippet}");
     }
