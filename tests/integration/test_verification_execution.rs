@@ -1010,6 +1010,8 @@ fn expected_infrastructure_failure_counts_as_passed_scenario() {
         guest_boundary: &guest,
         artifact_boundary: &collector,
     };
+    let temp_binary = tempfile::NamedTempFile::new().expect("temp binary");
+    std::env::set_var("CORE_OPS_VERIFY_CORE_OPS_BIN", temp_binary.path());
 
     let view = execute_scenario(
         &scenario,
@@ -1020,6 +1022,7 @@ fn expected_infrastructure_failure_counts_as_passed_scenario() {
         false,
     )
     .expect("execute");
+    std::env::remove_var("CORE_OPS_VERIFY_CORE_OPS_BIN");
 
     assert_eq!(view.overall_outcome, VerificationRunOutcome::Passed);
     assert_eq!(view.failure_summary, None);
