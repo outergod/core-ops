@@ -100,6 +100,15 @@ pub fn load_release_fragment(
             )
         },
     )?;
+    if front_matter.summary.trim().is_empty() {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            format!(
+                "release fragment {} has a blank summary; a non-empty summary is required",
+                path.display()
+            ),
+        ));
+    }
     let relative = path
         .strip_prefix(repo_root)
         .unwrap_or(path)

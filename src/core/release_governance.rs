@@ -508,7 +508,15 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
         });
     }
 
-    None
+    Some(ChangeAssessment {
+        classification: ReleaseClassification::Releasable,
+        minimum_bump: Some(match change.kind {
+            RepoChangeKind::Added => ReleaseIntent::Minor,
+            RepoChangeKind::Deleted | RepoChangeKind::Renamed => ReleaseIntent::Major,
+            RepoChangeKind::Modified => ReleaseIntent::Patch,
+        }),
+        rule_id: "unclassified_path_releasable_default",
+    })
 }
 
 fn is_always_exempt_path(path: &str) -> bool {
