@@ -1,6 +1,8 @@
+use std::process::Command;
+
 use crate::integration::release_governance_support::{
     add_fragment, head, init_repo, run_release_validate, run_release_validate_with_head_ref,
-    write_file,
+    run_git, write_file,
 };
 
 fn write_fragment_with_blank_summary(root: &std::path::Path, change_id: &str) {
@@ -11,6 +13,54 @@ fn write_fragment_with_blank_summary(root: &std::path::Path, change_id: &str) {
             "---\nchange_id: {change_id}\nrelease_intent: patch\nsummary: \"\"\nscope: governance\nrelease_preparation: false\n---\n"
         ),
     );
+}
+
+#[test]
+fn head_ref_without_base_ref_is_rejected() {
+    let repo = init_repo();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_core-ops-release"))
+        .current_dir(repo.path())
+        .arg("validate")
+        .arg("--repo-root")
+        .arg(repo.path())
+        .arg("--head-ref")
+        .arg("HEAD")
+        .output()
+        .expect("run validate");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--head-ref requires --base-ref"),
+        "expected rejection message, got: {stderr}"
+    );
+}
+
+#[test]
+fn untracked_working_tree_files_are_excluded_from_ref_to_ref_validation() {
+    let repo = init_repo();
+    let base = head(repo.path());
+
+    // Commit only a docs change — this is the PR being validated (exempt).
+    write_file(repo.path(), "docs/note.md", "# note\n");
+    run_git(repo.path(), &["add", "docs/note.md"]);
+    run_git(repo.path(), &["commit", "-m", "add docs note"]);
+    let head_ref = head(repo.path());
+
+    // Add a releasable untracked file to the working tree (not committed).
+    // With the bug, this file would be included in the diff and force a
+    // releasable classification; with the fix it must be ignored.
+    write_file(repo.path(), "flake.nix", "{ outputs = {}; }\n");
+
+    let output = run_release_validate_with_head_ref(repo.path(), &base, &head_ref, true);
+    assert!(
+        output.status.success(),
+        "untracked files must not affect ref-to-ref validation; stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(parsed["effective_classification"], "exempt");
 }
 
 #[test]

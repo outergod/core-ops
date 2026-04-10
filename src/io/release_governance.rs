@@ -215,8 +215,17 @@ pub fn load_repo_changes(
     base_ref: Option<&str>,
     head_ref: Option<&str>,
 ) -> Result<Vec<RepoChange>, CoreError> {
+    if head_ref.is_some() && base_ref.is_none() {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            "--head-ref requires --base-ref; provide both to validate a specific commit range",
+        ));
+    }
+
     if let Some(base_ref) = base_ref {
         let mut changes = if let Some(head_ref) = head_ref {
+            // Explicit ref-to-ref range: changed files come only from the diff
+            // between the two commits; working-tree untracked files are excluded.
             parse_name_status_output(&run_git(
                 repo_root,
                 &[
@@ -227,21 +236,25 @@ pub fn load_repo_changes(
                 ],
             )?)?
         } else {
-            parse_name_status_output(&run_git(
+            // base_ref against working tree: include untracked files so that
+            // new files not yet staged are still classified.
+            let mut changes = parse_name_status_output(&run_git(
                 repo_root,
                 &["diff", "--name-status", "--find-renames", base_ref],
-            )?)?
+            )?)?;
+            let untracked =
+                run_git(repo_root, &["ls-files", "--others", "--exclude-standard"])?;
+            for line in untracked.lines().filter(|line| !line.trim().is_empty()) {
+                changes.push(RepoChange {
+                    path: line.trim().to_string(),
+                    previous_path: None,
+                    kind: RepoChangeKind::Added,
+                    before_contents: None,
+                    after_contents: None,
+                });
+            }
+            changes
         };
-        let untracked = run_git(repo_root, &["ls-files", "--others", "--exclude-standard"])?;
-        for line in untracked.lines().filter(|line| !line.trim().is_empty()) {
-            changes.push(RepoChange {
-                path: line.trim().to_string(),
-                previous_path: None,
-                kind: RepoChangeKind::Added,
-                before_contents: None,
-                after_contents: None,
-            });
-        }
         enrich_repo_changes(repo_root, Some(base_ref), head_ref, &mut changes)?;
         return Ok(changes);
     }
