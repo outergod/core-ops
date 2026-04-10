@@ -5,6 +5,7 @@ pub mod libvirt;
 pub mod lock;
 pub mod observed;
 pub mod quadlet;
+pub mod release_governance;
 pub mod repo;
 pub mod state;
 pub mod systemd;

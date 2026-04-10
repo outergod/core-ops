@@ -7,15 +7,11 @@ versioning for public release policy decisions.
 
 ## [Unreleased]
 
-### Added
-
-- Distribution-readiness planning and public outside-consumption contracts
-- Serial-console readiness and accepted verification corpus expansion
-
+<!-- core-ops-release:start -->
 ### Changed
 
-- Public release identity, version visibility, and verification expectations
-  are being formalized for outside consumption
+- Add the core-ops-release helper binary for machine-checkable SemVer and changelog governance
+<!-- core-ops-release:end -->
 
 ## [0.6.0] - 2026-04-07
 

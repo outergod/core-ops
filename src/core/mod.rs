@@ -5,6 +5,7 @@ pub mod errors;
 pub mod evaluate;
 pub mod planner;
 pub mod reconcile;
+pub mod release_governance;
 pub mod retry;
 pub mod types;
 pub mod unit;

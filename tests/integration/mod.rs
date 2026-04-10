@@ -1,4 +1,5 @@
 pub mod env_lock;
+pub mod release_governance_support;
 mod test_agent_lock;
 mod test_agent_service;
 mod test_apply_report;
@@ -54,4 +55,10 @@ mod test_distribution_materials;
 mod test_distribution_release_artifacts;
 mod test_distribution_release_gate;
 mod test_distribution_version_visibility;
+mod test_release_governance_changelog;
+mod test_release_governance_docs;
+mod test_release_governance_exemptions;
+mod test_release_governance_semver;
+mod test_release_governance_validation;
+mod test_release_governance_workflow;
 mod test_rollback;

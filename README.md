@@ -82,7 +82,7 @@ a container is not a supported consumption method.
 
 | Signal | Current Value |
 |--------|---------------|
-| Latest release identity | `0.6.0-dev` |
+| Latest release identity | `0.7.0-dev` |
 | Release-gate status | `design-contract` |
 | Accepted verification status | `design-contract` |
 | Published artifacts | `x86_64 raw binary`, `aarch64 raw binary`, `x86_64 tar.gz + checksums`, `aarch64 tar.gz + checksums` |
@@ -180,7 +180,14 @@ A build is only considered distribution-ready once the release gate passes.
 The verification environment is versioned to detect drift over time.
 
 Releasable changes are expected to carry explicit SemVer intent, update the
-canonical version in `Cargo.toml`, and keep `CHANGELOG.md` current.
+canonical version in `Cargo.toml`, update a checked-in release fragment at
+`changes/<change-id>.md`, and keep `CHANGELOG.md` current.
+
+Maintainers and CI validate this contract through the dedicated helper binary:
+
+```bash
+cargo run --bin core-ops-release -- validate
+```
 
 ---
 

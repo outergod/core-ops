@@ -85,10 +85,21 @@ updated together:
 
 - `Cargo.toml`
 - `CHANGELOG.md` in Keep a Changelog format
-- the machine-checkable release-intent artifact used by CI
+- the machine-checkable release-intent artifact used by CI at
+  `changes/<change-id>.md`
 
 The required SemVer bump must be classified as `patch`, `minor`, or `major`
 according to the highest-impact change in the PR.
+
+Intentional metadata-only release preparation must be declared with
+`release_preparation: true` in the checked-in release fragment.
+
+Release-governance validation runs through the dedicated maintainer helper
+binary:
+
+```bash
+cargo run --bin core-ops-release -- validate
+```
 
 ### Authoritative Verification Environment
 
