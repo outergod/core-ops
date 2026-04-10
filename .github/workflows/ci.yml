@@ -14,10 +14,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build
-        run: cargo build --locked
+        run: cargo build --locked --bin core-ops --bin core-ops-verify --bin core-ops-release
 
       - name: Test
         run: cargo test
 
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
+
+      - name: Release Governance
+        run: cargo run --bin core-ops-release -- validate --base-ref HEAD^

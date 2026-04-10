@@ -1,6 +1,6 @@
 # CoreOps Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-08
+Auto-generated from all feature plans. Last updated: 2026-04-10
 
 ## Active Technologies
 - Rust (stable toolchain) + Git (CLI), systemd (systemctl), Podman/Quadlet generator (001-gitops-quadlet-controller)
@@ -20,6 +20,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-08
 - Files on disk for rendered ignition inputs, serial console logs, (009-serial-console-readiness)
 - Rust 2021 for shipped binaries and verification tooling; Markdown/YAML/shell for public docs and automation definitions + Existing CoreOps Rust stack (`clap`, `miette`, `thiserror`, `serde`, `serde_json`, `serde_yaml`, `log`, `systemd-journal-logger`, `tempfile`, `time`), git metadata from the repository, curl-consumable binary distribution surfaces, forge-hosted automation definitions (010-distribution-readiness)
 - Files on disk for public documentation, changelog, license/code-of-conduct documents, workflow definitions, release metadata, and existing verification artifacts (010-distribution-readiness)
+- Rust 2021 (stable toolchain) for validation logic; Markdown/YAML and GitHub Actions workflow definitions for repo-facing governance surfaces + Existing CoreOps Rust stack (`clap`, `serde_json`, `serde_yaml`, `miette`, `thiserror`, `tempfile`) plus standard library filesystem and process facilities; no new dependency is assumed in Phase 0/1 (011-semver-changelog-governance)
+- Files on disk in the repository (`Cargo.toml`, `CHANGELOG.md`, release fragment files, workflow/test fixtures, specification artifacts) (011-semver-changelog-governance)
 
 ## Project Structure
 
@@ -39,20 +41,23 @@ tests/
   support boundaries, or compatibility, agents must update `CHANGELOG.md` in
   Keep a Changelog format before considering the work complete.
 - Releasable work must also update the canonical package version in
-  `Cargo.toml` and the repository's machine-checkable release-intent artifact.
+  `Cargo.toml` and the repository's machine-checkable release-intent artifact
+  at `changes/<change-id>.md`.
 - Agents must choose the SemVer bump (`patch`, `minor`, or `major`) according
   to the highest-impact change in the work set and treat PRs missing version,
   changelog, or release-intent updates as incomplete unless an explicit
   machine-checkable exemption applies.
+- Intentional metadata-only release preparation must be declared with
+  `release_preparation: true` in the checked-in release fragment.
 
 ## Code Style
 
 Rust (stable toolchain): Follow standard conventions
 
 ## Recent Changes
+- 011-semver-changelog-governance: Added Rust 2021 (stable toolchain) for validation logic; Markdown/YAML and GitHub Actions workflow definitions for repo-facing governance surfaces + Existing CoreOps Rust stack (`clap`, `serde_json`, `serde_yaml`, `miette`, `thiserror`, `tempfile`) plus standard library filesystem and process facilities; no new dependency is assumed in Phase 0/1
 - 010-distribution-readiness: Added Rust 2021 for shipped binaries and verification tooling; Markdown/YAML/shell for public docs and automation definitions + Existing CoreOps Rust stack (`clap`, `miette`, `thiserror`, `serde`, `serde_json`, `serde_yaml`, `log`, `systemd-journal-logger`, `tempfile`, `time`), git metadata from the repository, curl-consumable binary distribution surfaces, forge-hosted automation definitions
 - 009-serial-console-readiness: Added Rust 2021 + Existing CoreOps Rust stack (`clap`, `miette`,
-- 008-e2e-verification-harness: Added Rust 2021 + Existing CoreOps Rust stack (`clap`, `miette`,
 
 <!-- MANUAL ADDITIONS START -->
 ## Verification Harness Playbook

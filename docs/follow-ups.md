@@ -47,3 +47,27 @@ Deferred implementation work and discoveries that should be revisited after the 
   - Add dependency-aware restart scheduling for config-file changes in the executable planner path.
   - Add a regression test proving that a changed config file for a container-backed service leads to a real `RestartUnit` action and observable service restart.
   - Tighten apply reporting so terminal `restarted` status is sourced from real execution events or completed runtime actions, not only deterministic plan classification.
+
+## Unify CI Validation And Release Publication
+
+- Status: Deferred follow-up after semver-changelog-governance merge
+- Area: GitHub Actions workflow lifecycle for PR validation vs release publication
+- Discovery:
+  - The current release-governance feature adds machine-checkable SemVer, fragment, and changelog validation to pull requests via `core-ops-release`.
+  - The repository still keeps release publication in a separate `release-binary.yml` workflow shape, while `ci.yml` now owns the authoritative governance check.
+  - Publishing real GitHub Releases from pull-request workflows is the wrong boundary for the current governance model:
+    - PRs should validate and produce preview artifacts
+    - only trusted trunk state should publish canonical releases
+  - GitHub Actions `GITHUB_TOKEN` behavior also makes chained `release`-triggered workflows a poor fit when the release is created by another workflow in the same repository.
+- Desired follow-up:
+  - Merge binary-build and release publication behavior into the trusted CI workflow surface.
+  - Keep pull requests limited to validation and workflow-artifact publication only.
+  - Publish the canonical GitHub Release only on `push` to `master`, using the version already validated in `Cargo.toml`.
+  - Retire the separate `release-binary.yml` workflow once the unified flow is in place.
+- Likely implementation direction:
+  - Extend `ci.yml` so PR runs build `core-ops`, `core-ops-verify`, and `core-ops-release`, run governance validation, and upload non-release workflow artifacts.
+  - Add a release job gated to `push` on `refs/heads/master` that creates or updates the `v<version>` tag/release and attaches the built assets.
+  - Decide and document the duplicate-version policy explicitly:
+    - fail when the tag already exists
+    - or skip publication with a clear reason
+  - Update distribution-readiness fixtures and tests so they assert the unified workflow contract instead of a separate release workflow.

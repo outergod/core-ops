@@ -2,6 +2,7 @@ use crate::core::planner::{
     dependency_edges_for_object, dependent_refs, direct_prerequisite_refs, managed_object_ref,
     object_kind_by_id,
 };
+use crate::core::release_governance::{GovernanceEvaluationResult, GovernanceStatus, ReleaseClassification, ReleaseIntent};
 use crate::core::types::{
     ApplyOutputView, ApplyPhaseEvent, ApplyPhaseKind, Cause, CauseKind, DependencyEdgeView,
     DependencyRelation, DeterministicActionClass, DeterministicConvergenceRecord,
@@ -286,6 +287,138 @@ pub fn format_verification_run_json(view: &VerificationRunView) -> String {
         }
     })
     .to_string()
+}
+
+pub fn format_release_governance_report(result: &GovernanceEvaluationResult) -> String {
+    let mut output = String::new();
+    output.push_str("Release Governance\n");
+    output.push_str("──────────────────\n");
+    output.push_str(&format!(
+        "Outcome: {}\n",
+        match result.overall_status {
+            GovernanceStatus::Passed => "passed",
+            GovernanceStatus::Failed => "failed",
+        }
+    ));
+    output.push_str(&format!(
+        "Classification: {}\n",
+        match result.effective_classification {
+            ReleaseClassification::Exempt => "exempt",
+            ReleaseClassification::Releasable => "releasable",
+        }
+    ));
+    output.push_str(&format!(
+        "Required bump: {}\n",
+        result
+            .effective_bump
+            .map(|intent| intent.label())
+            .unwrap_or("none")
+    ));
+    output.push_str(&format!(
+        "Declared bump: {}\n",
+        result
+            .declared_bump
+            .map(|intent| intent.label())
+            .unwrap_or("none")
+    ));
+    output.push_str(&format!(
+        "Version bump: {}\n",
+        result
+            .version_bump
+            .map(|intent| intent.label())
+            .unwrap_or("none")
+    ));
+    output.push_str(&format!(
+        "Metadata-only: {}\n",
+        if result.metadata_only { "yes" } else { "no" }
+    ));
+    output.push_str(&format!(
+        "Release preparation: {}\n",
+        if result.release_preparation {
+            "true"
+        } else {
+            "false"
+        }
+    ));
+    output.push_str(&format!(
+        "CHANGELOG aligned: {}\n",
+        if result.changelog_aligned { "yes" } else { "no" }
+    ));
+
+    if !result.changed_paths.is_empty() {
+        output.push_str("Changed Paths:\n");
+        for path in &result.changed_paths {
+            output.push_str(&format!("  - {path}\n"));
+        }
+    }
+    if !result.changed_fragment_paths.is_empty() {
+        output.push_str("Changed Fragments:\n");
+        for path in &result.changed_fragment_paths {
+            output.push_str(&format!("  - {path}\n"));
+        }
+    }
+    if !result.applied_rules.is_empty() {
+        output.push_str("Applied Rules:\n");
+        for rule in &result.applied_rules {
+            output.push_str(&format!("  - {rule}\n"));
+        }
+    }
+    if !result.missing_artifacts.is_empty() {
+        output.push_str("Missing Artifacts:\n");
+        for artifact in &result.missing_artifacts {
+            output.push_str(&format!("  - {artifact}\n"));
+        }
+    }
+    if !result.mismatch_reasons.is_empty() {
+        output.push_str("Mismatches:\n");
+        for reason in &result.mismatch_reasons {
+            output.push_str(&format!("  - {reason}\n"));
+        }
+    }
+    output
+}
+
+pub fn format_release_governance_json(result: &GovernanceEvaluationResult) -> String {
+    serde_json::json!({
+        "view_kind": "release_governance",
+        "overall_status": match result.overall_status {
+            GovernanceStatus::Passed => "passed",
+            GovernanceStatus::Failed => "failed",
+        },
+        "effective_classification": match result.effective_classification {
+            ReleaseClassification::Exempt => "exempt",
+            ReleaseClassification::Releasable => "releasable",
+        },
+        "effective_bump": result.effective_bump.map(ReleaseIntent::label),
+        "declared_bump": result.declared_bump.map(ReleaseIntent::label),
+        "version_bump": result.version_bump.map(ReleaseIntent::label),
+        "missing_artifacts": &result.missing_artifacts,
+        "mismatch_reasons": &result.mismatch_reasons,
+        "applied_rules": &result.applied_rules,
+        "changed_paths": &result.changed_paths,
+        "changed_fragment_paths": &result.changed_fragment_paths,
+        "release_preparation": result.release_preparation,
+        "metadata_only": result.metadata_only,
+        "changelog_aligned": result.changelog_aligned,
+    })
+    .to_string()
+}
+
+pub fn format_release_governance_changelog_report(
+    output_path: &std::path::Path,
+    aligned: bool,
+    wrote: bool,
+) -> String {
+    if wrote {
+        format!(
+            "Generated changelog written to {}\n",
+            output_path.display()
+        )
+    } else if aligned {
+        format!("CHANGELOG aligned: {}\n", output_path.display())
+    } else {
+        format!("CHANGELOG not aligned: {}\n", output_path.display())
+    }
 }
 
 pub fn format_verification_suite_report(

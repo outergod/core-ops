@@ -1,6 +1,6 @@
 [package]
 name = "core-ops"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 
@@ -27,3 +27,7 @@ path = "src/main.rs"
 [[bin]]
 name = "core-ops-verify"
 path = "src/bin/core-ops-verify.rs"
+
+[[bin]]
+name = "core-ops-release"
+path = "src/bin/core-ops-release.rs"
