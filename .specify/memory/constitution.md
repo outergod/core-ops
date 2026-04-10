@@ -1,24 +1,25 @@
 <!--
 Sync Impact Report:
-- Version change: 1.3.0 -> 1.4.0
+- Version change: 1.4.0 -> 1.5.0
 - Modified principles:
-  - 9. Conservative Public Evolution -> 9. Conservative Public Evolution
   - 12. Provenance, Versioning, and Behavioral Traceability ->
     12. Provenance, Versioning, and Behavioral Traceability
+  - 13. Release Governance and Intent -> 13. Release Governance and Intent
 - Modified sections:
   - Core Principles
   - Development Workflow
   - Governance
-- Added sections: None
+- Added sections:
+  - Principle 13. Release Governance and Intent
 - Removed sections: None
 - Templates requiring updates:
   - ✅ /home/outergod/code/github.com/outergod/core-ops/.specify/templates/plan-template.md
   - ✅ /home/outergod/code/github.com/outergod/core-ops/.specify/templates/spec-template.md
   - ✅ /home/outergod/code/github.com/outergod/core-ops/.specify/templates/tasks-template.md
   - ✅ /home/outergod/code/github.com/outergod/core-ops/.specify/templates/commands/README.md
+  - ✅ /home/outergod/code/github.com/outergod/core-ops/AGENTS.md
   - ✅ /home/outergod/code/github.com/outergod/core-ops/docs/development.md
   - ✅ /home/outergod/code/github.com/outergod/core-ops/README.md
-  - ✅ /home/outergod/code/github.com/outergod/core-ops/AGENTS.md
 - Follow-up TODOs: None
 -->
 # CoreOps Constitution
@@ -129,14 +130,29 @@ compare revisions, explain behavioral differences, and audit outcomes across
 environments. Local controller state MAY be persisted for safety, resumability,
 and provenance, but MUST remain derivative rather than authoritative with
 respect to desired state. The canonical controller version MUST be the package
-version declared in `Cargo.toml`. The project MUST maintain a Keep a
-Changelog-formatted changelog for externally visible changes. Any change that
-affects public behavior, contracts, release materials, support boundaries, or
-compatibility is incomplete until the changelog is updated.
+version declared in `Cargo.toml`.
 
 Rationale: When behavior diverges across hosts or revisions, operators need
 first-class evidence of what code ran, what desired state was applied, and what
 outcome resulted.
+
+### 13. Release Governance and Intent
+Every releasable change MUST declare explicit release intent and MUST keep trunk
+intentionally releasable. A releasable change is any change that affects public
+behavior, contracts, release materials, support boundaries, compatibility,
+workflow-enforced release behavior, or accepted verification semantics.
+Releasable work is incomplete until all of the following are updated together:
+
+- the canonical version in `Cargo.toml`
+- `CHANGELOG.md` in Keep a Changelog format
+- a machine-checkable release-intent artifact sufficient for CI validation
+
+The effective version bump MUST follow Semantic Versioning and MUST use the
+highest applicable bump in the change set: `major` > `minor` > `patch`.
+Exemptions MUST be explicit, narrow, and machine-checkable.
+
+Rationale: Automated releases and agent-authored changes are safe only when
+release intent is explicit, reviewable, and enforced before merge.
 
 ## Additional Constraints
 
@@ -148,8 +164,13 @@ outcome resulted.
 Specifications, plans, and tasks MUST document the declarative state model,
 side-effect boundaries, idempotence strategy, observability signals,
 provenance/version surfaces, compatibility impact, release version policy
-impact, changelog impact for externally visible changes, and the test plan for
-each change.
+impact, changelog impact for externally visible changes, release-intent
+artifact impact for releasable work, and the test plan for each change.
+
+Releasable changes MUST update `Cargo.toml`, `CHANGELOG.md`, and the
+machine-checkable release-intent artifact in the same change set unless an
+explicit exemption rule applies. PRs missing any required release-governance
+artifact are invalid and MUST be rejected by CI.
 
 Rust changes MUST pass the project's standard validation gates before a feature
 or fix is considered complete. At minimum, this requires `cargo test` and
@@ -176,14 +197,14 @@ lint failures is not permitted.
 - Compliance reviews MUST verify that reconciliation status and provenance
   surfaces remain machine-readable, version-comparable, and behaviorally
   explanatory.
-- Compliance reviews MUST verify that changes affecting external behavior,
-  persisted schemas, CLI output, reconciliation semantics, or compatibility
-  update the release version policy and continue to derive the canonical
-  controller version from `Cargo.toml`.
-- Compliance reviews MUST verify that externally visible changes update the
-  Keep a Changelog-formatted changelog before work is considered complete.
+- Compliance reviews MUST verify that releasable changes update the SemVer
+  impact assessment, continue to derive the canonical controller version from
+  `Cargo.toml`, update `CHANGELOG.md`, and include a machine-checkable
+  release-intent artifact.
+- Compliance reviews MUST reject unspecified exemptions from release-governance
+  requirements.
 - Compliance reviews MUST verify that Rust changes either pass `cargo test` and
   `cargo clippy --all-targets -- -D warnings` or record an explicit temporary
   exception with remediation.
 
-**Version**: 1.4.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-04-08
+**Version**: 1.5.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-04-10
