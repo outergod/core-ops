@@ -1,18 +1,13 @@
-name: e2e-gate
+name: E2E Gate
 
 on:
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: "Pull request number"
-        required: true
-      pr_head_sha:
-        description: "PR head SHA"
-        required: true
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   e2e-gate:
-    runs-on: [self-hosted, core-ops]
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: [self-hosted, protected-e2e]
     environment: homelab-e2e
     permissions:
       contents: read
@@ -24,7 +19,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.pr_head_sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
 
       - name: Build pinned verification binaries
         run: |
