@@ -2274,13 +2274,11 @@ fn is_expected_reboot_exit_code(output: &GuestCommandOutput) -> bool {
 
 fn reboot_disconnect_marker_present(stdout: &str, stderr: &str) -> bool {
     let combined = format!("{stdout}\n{stderr}").to_ascii_lowercase();
-    const MARKERS: [&str; 6] = [
+    const MARKERS: [&str; 4] = [
         "connection closed",
-        "connection reset",
-        "broken pipe",
-        "connection to ",
+        "closed by remote host",
+        "shared connection to ",
         "client_loop: send disconnect",
-        "remote host closed",
     ];
     MARKERS.iter().any(|marker| combined.contains(marker))
 }

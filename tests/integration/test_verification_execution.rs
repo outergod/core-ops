@@ -1497,6 +1497,163 @@ fn reboot_step_does_not_treat_generic_ssh_255_as_success() {
 }
 
 #[derive(Default)]
+struct RebootResetFailureGuestBoundary;
+
+impl VerificationGuestBoundary for RebootResetFailureGuestBoundary {
+    fn wait_ready(
+        &self,
+        guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        timeout: &str,
+    ) -> Result<core_ops::core::verification_model::GuestCommandOutput, CoreError> {
+        Ok(core_ops::core::verification_model::GuestCommandOutput {
+            status_code: 0,
+            stdout: format!("{} ready within {timeout}", guest.guest_name),
+            stderr: String::new(),
+        })
+    }
+
+    fn run_command(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        command: &str,
+        _timeout: Option<&str>,
+    ) -> Result<core_ops::core::verification_model::GuestCommandOutput, CoreError> {
+        if command.trim() == "sudo systemctl reboot" {
+            Ok(core_ops::core::verification_model::GuestCommandOutput {
+                status_code: 255,
+                stdout: String::new(),
+                stderr: "Connection reset by 192.0.2.45 port 22".to_string(),
+            })
+        } else {
+            Ok(core_ops::core::verification_model::GuestCommandOutput {
+                status_code: 0,
+                stdout: "ok".to_string(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    fn copy_to_guest(
+        &self,
+        _guest: &core_ops::core::verification_model::LibvirtGuestHandle,
+        _local_path: &std::path::Path,
+        _remote_path: &str,
+        _recursive: bool,
+        _executable: bool,
+    ) -> Result<(), CoreError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn reboot_step_does_not_treat_connection_reset_255_as_success() {
+    let _env_guard = core_ops_bin_env_lock().lock().expect("env lock");
+    let mut scenario = load_scenario_definition(&fixture_path(
+        "tests/fixtures/verification/scenarios/minimal-accepted.yaml",
+    ))
+    .expect("scenario");
+    scenario.scenario_id = "reboot-reset-failure".to_string();
+    scenario.title = "Connection reset is not treated as reboot success".to_string();
+    scenario.description =
+        "A reboot step must not pass when ssh exits 255 with a transport reset message."
+            .to_string();
+    scenario.steps = vec![
+        VerificationScenarioStep {
+            step_id: "boot".to_string(),
+            step_type: VerificationStepType::Boot,
+            target: VerificationStepTarget::Guest,
+            action: None,
+            command: None,
+            legacy_command_or_action: None,
+            expected_exit_behavior: None,
+            timeout_override: None,
+        },
+        VerificationScenarioStep {
+            step_id: "reboot".to_string(),
+            step_type: VerificationStepType::Reboot,
+            target: VerificationStepTarget::Guest,
+            action: None,
+            command: Some("sudo systemctl reboot".to_string()),
+            legacy_command_or_action: None,
+            expected_exit_behavior: None,
+            timeout_override: None,
+        },
+        VerificationScenarioStep {
+            step_id: "wait-ready".to_string(),
+            step_type: VerificationStepType::WaitReady,
+            target: VerificationStepTarget::Guest,
+            action: None,
+            command: None,
+            legacy_command_or_action: None,
+            expected_exit_behavior: None,
+            timeout_override: None,
+        },
+    ];
+    scenario.assertions = vec![build_assertion(
+        "wait-ready-succeeded",
+        "step_exit_code_is",
+        "wait-ready",
+        "0",
+        "Guest did not become ready after reboot.",
+    )];
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let libvirt = ReadinessOutcomeLibvirtBoundary {
+        evidence: VerificationReadinessEvidence {
+            source: "serial-console".to_string(),
+            accepted_record: Some(
+                core_ops::core::verification_model::VerificationReadinessRecord {
+                    run_id: "run-current".to_string(),
+                    token: "token-current".to_string(),
+                    ip: "192.0.2.46".to_string(),
+                    hostname: None,
+                    ts: None,
+                },
+            ),
+            rejected_records: Vec::new(),
+            final_status: "accepted".to_string(),
+            failure_summary: None,
+        },
+    };
+    let guest = RebootResetFailureGuestBoundary;
+    let collector = ArtifactCollector;
+    let context = VerificationExecutionContext {
+        workspace: workspace.path(),
+        artifacts_root: artifacts.path(),
+        libvirt: &libvirt,
+        guest_boundary: &guest,
+        artifact_boundary: &collector,
+    };
+    let temp_binary = tempfile::NamedTempFile::new().expect("temp binary");
+    std::env::set_var("CORE_OPS_VERIFY_CORE_OPS_BIN", temp_binary.path());
+
+    let view = execute_scenario(
+        &scenario,
+        VerificationRunMode::Ci,
+        "run-reboot-reset-failure",
+        &context,
+        false,
+        false,
+    )
+    .expect("execute");
+    std::env::remove_var("CORE_OPS_VERIFY_CORE_OPS_BIN");
+
+    assert_eq!(view.overall_outcome, VerificationRunOutcome::InfrastructureFailure);
+    let reboot_step = view
+        .step_results
+        .iter()
+        .find(|step| step.step_id == "reboot")
+        .expect("reboot step");
+    assert_eq!(reboot_step.status, core_ops::core::types::VerificationStepStatus::Failed);
+    assert_eq!(reboot_step.exit_code, Some(255));
+    assert_eq!(
+        reboot_step.stderr.as_deref(),
+        Some("Connection reset by 192.0.2.45 port 22")
+    );
+}
+
+#[derive(Default)]
 struct RebootTimeoutGuestBoundary;
 
 impl VerificationGuestBoundary for RebootTimeoutGuestBoundary {
