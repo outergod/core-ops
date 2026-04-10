@@ -2,6 +2,16 @@ use crate::integration::release_governance_support::{
     add_fragment, head, init_repo, run_release_validate, write_file,
 };
 
+fn write_binary_file(root: &std::path::Path, relative: &str) {
+    let path = root.join(relative);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create parent");
+    }
+    // Write a minimal PNG header (non-UTF-8 bytes) to simulate a binary file.
+    let png_header: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    std::fs::write(path, png_header).expect("write binary file");
+}
+
 fn full_release_metadata(repo_path: &std::path::Path, change_id: &str, intent: &str, summary: &str) {
     let before_version = "0.6.0";
     let after_version = "0.6.1";
@@ -56,6 +66,18 @@ fn metadata_only_changes_fail_without_release_preparation() {
     assert!(!output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("metadata-only changes require release_preparation: true"));
+}
+
+#[test]
+fn binary_file_in_exempt_path_does_not_cause_governance_error() {
+    let repo = init_repo();
+    let base = head(repo.path());
+    write_binary_file(repo.path(), "docs/diagram.png");
+
+    let output = run_release_validate(repo.path(), &base, true);
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(parsed["effective_classification"], "exempt");
 }
 
 #[test]

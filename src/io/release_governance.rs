@@ -289,12 +289,13 @@ fn load_change_contents(
     if !path.exists() {
         return Ok(None);
     }
-    fs::read_to_string(&path).map(Some).map_err(|err| {
+    let bytes = fs::read(&path).map_err(|err| {
         CoreError::new(
             FailureClass::Validation,
             format!("failed to read {}: {err}", path.display()),
         )
-    })
+    })?;
+    Ok(String::from_utf8(bytes).ok())
 }
 
 fn load_cargo_version_before(
