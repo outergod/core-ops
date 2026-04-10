@@ -12,6 +12,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Build
         run: cargo build --locked --bin core-ops --bin core-ops-verify --bin core-ops-release

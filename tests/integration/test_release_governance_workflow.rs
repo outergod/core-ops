@@ -14,6 +14,7 @@ fn ci_workflow_exposes_stable_release_governance_check() {
         "core-ops-release",
         "Release Governance",
         "cargo run --bin core-ops-release -- validate",
+        "fetch-depth: 2",
     ] {
         assert!(contents.contains(snippet), "missing workflow snippet: {snippet}");
     }
