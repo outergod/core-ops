@@ -179,6 +179,9 @@ A build is only considered distribution-ready once the release gate passes.
 
 The verification environment is versioned to detect drift over time.
 
+Releasable changes are expected to carry explicit SemVer intent, update the
+canonical version in `Cargo.toml`, and keep `CHANGELOG.md` current.
+
 ---
 
 ## Target Audience

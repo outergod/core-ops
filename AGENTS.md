@@ -38,6 +38,12 @@ tests/
 - When work changes externally visible behavior, contracts, release materials,
   support boundaries, or compatibility, agents must update `CHANGELOG.md` in
   Keep a Changelog format before considering the work complete.
+- Releasable work must also update the canonical package version in
+  `Cargo.toml` and the repository's machine-checkable release-intent artifact.
+- Agents must choose the SemVer bump (`patch`, `minor`, or `major`) according
+  to the highest-impact change in the work set and treat PRs missing version,
+  changelog, or release-intent updates as incomplete unless an explicit
+  machine-checkable exemption applies.
 
 ## Code Style
 

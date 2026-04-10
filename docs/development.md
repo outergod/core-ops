@@ -80,8 +80,15 @@ Changes affecting any of the following require release-version-policy review:
 - installation or verification flow promises
 - changelog format or release-history continuity
 
-Externally visible changes are not considered complete until
-`CHANGELOG.md` is updated in Keep a Changelog format.
+Releasable changes are not considered complete until all of the following are
+updated together:
+
+- `Cargo.toml`
+- `CHANGELOG.md` in Keep a Changelog format
+- the machine-checkable release-intent artifact used by CI
+
+The required SemVer bump must be classified as `patch`, `minor`, or `major`
+according to the highest-impact change in the PR.
 
 ### Authoritative Verification Environment
 

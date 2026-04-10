@@ -162,8 +162,12 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
 - [ ] TXXX [P] Run `cargo clippy --all-targets -- -D warnings` or document the approved temporary exception
 - [ ] TXXX Verify provenance/version/status output across changed flows
-- [ ] TXXX Evaluate and update release version policy for any externally
-  observable, schema, CLI, reconciliation, or compatibility change
+- [ ] TXXX Evaluate and record the highest required SemVer bump (`patch`,
+  `minor`, or `major`) for any releasable change
+- [ ] TXXX Update the machine-checkable release-intent artifact for releasable
+  work
+- [ ] TXXX Update `Cargo.toml` to the required release version for releasable
+  work
 - [ ] TXXX Update the Keep a Changelog-formatted changelog for externally
   visible changes before marking the work complete
 - [ ] TXXX Security hardening
@@ -261,6 +265,8 @@ With multiple developers:
 - Include provenance/version/status assertions where behavior or reconciliation outcomes change
 - Include release-version-policy updates whenever behavior, schema, CLI output,
   reconciliation semantics, or compatibility changes
+- Include release-intent artifact and `Cargo.toml` updates whenever work is
+  releasable
 - Include changelog updates whenever the work changes externally visible
   behavior, contracts, release materials, support boundaries, or compatibility
 - For Rust changes, include `cargo test` and `cargo clippy --all-targets -- -D warnings`
