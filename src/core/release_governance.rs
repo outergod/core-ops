@@ -395,7 +395,44 @@ fn resolve_changed_fragment<'a>(
 }
 
 fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
-    if is_always_exempt_path(&change.path) {
+    // For renames, assess source path as a deletion and destination as an
+    // addition, then return whichever is more impactful. This prevents an
+    // exempt destination from masking a releasable source removal.
+    if change.kind == RepoChangeKind::Renamed {
+        if let Some(prev) = change.previous_path.as_deref() {
+            let source = assess_path(prev, RepoChangeKind::Deleted, None);
+            let dest = assess_path(&change.path, RepoChangeKind::Added, None);
+            return take_higher_impact(source, dest);
+        }
+    }
+    assess_path(&change.path, change.kind, Some(change))
+}
+
+fn take_higher_impact(
+    a: Option<ChangeAssessment>,
+    b: Option<ChangeAssessment>,
+) -> Option<ChangeAssessment> {
+    match (a, b) {
+        (None, b) => b,
+        (a, None) => a,
+        (Some(a), Some(b)) => Some(if assessment_dominates(&a, &b) { a } else { b }),
+    }
+}
+
+fn assessment_dominates(a: &ChangeAssessment, b: &ChangeAssessment) -> bool {
+    if a.classification != b.classification {
+        return a.classification == ReleaseClassification::Releasable;
+    }
+    let rank = |bump: Option<ReleaseIntent>| bump.map(rank_for_intent).unwrap_or(0);
+    rank(a.minimum_bump) >= rank(b.minimum_bump)
+}
+
+fn assess_path(
+    path: &str,
+    kind: RepoChangeKind,
+    change: Option<&RepoChange>,
+) -> Option<ChangeAssessment> {
+    if is_always_exempt_path(path) {
         return Some(ChangeAssessment {
             classification: ReleaseClassification::Exempt,
             minimum_bump: None,
@@ -403,7 +440,7 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
         });
     }
 
-    if change.path.starts_with("tests/fixtures/verification/scenarios/") {
+    if path.starts_with("tests/fixtures/verification/scenarios/") {
         return Some(ChangeAssessment {
             classification: ReleaseClassification::Releasable,
             minimum_bump: Some(ReleaseIntent::Patch),
@@ -411,9 +448,7 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
         });
     }
 
-    if change.path.starts_with("tests/fixtures/provenance_state/")
-        && change.path.ends_with(".json")
-    {
+    if path.starts_with("tests/fixtures/provenance_state/") && path.ends_with(".json") {
         return Some(ChangeAssessment {
             classification: ReleaseClassification::Releasable,
             minimum_bump: Some(ReleaseIntent::Patch),
@@ -421,9 +456,7 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
         });
     }
 
-    if change.path.starts_with("tests/fixtures/verification/artifacts/")
-        && change.path.ends_with(".json")
-    {
+    if path.starts_with("tests/fixtures/verification/artifacts/") && path.ends_with(".json") {
         return Some(ChangeAssessment {
             classification: ReleaseClassification::Releasable,
             minimum_bump: Some(ReleaseIntent::Patch),
@@ -431,10 +464,10 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
         });
     }
 
-    if change.path.starts_with("src/") {
+    if path.starts_with("src/") {
         return Some(ChangeAssessment {
             classification: ReleaseClassification::Releasable,
-            minimum_bump: match change.kind {
+            minimum_bump: match kind {
                 RepoChangeKind::Added => Some(ReleaseIntent::Minor),
                 RepoChangeKind::Deleted | RepoChangeKind::Renamed => Some(ReleaseIntent::Major),
                 RepoChangeKind::Modified => Some(ReleaseIntent::Patch),
@@ -443,10 +476,10 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
         });
     }
 
-    if change.path.starts_with(".github/workflows/") {
+    if path.starts_with(".github/workflows/") {
         return Some(ChangeAssessment {
             classification: ReleaseClassification::Releasable,
-            minimum_bump: match change.kind {
+            minimum_bump: match kind {
                 RepoChangeKind::Added => Some(ReleaseIntent::Minor),
                 RepoChangeKind::Deleted | RepoChangeKind::Renamed => Some(ReleaseIntent::Major),
                 RepoChangeKind::Modified => Some(ReleaseIntent::Patch),
@@ -455,11 +488,9 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
         });
     }
 
-    if change.path.starts_with("tests/fixtures/distribution/")
-        && change.path.ends_with(".json")
-    {
-        if change.path == "tests/fixtures/distribution/release-metadata.json"
-            && is_release_metadata_version_sync(change)
+    if path.starts_with("tests/fixtures/distribution/") && path.ends_with(".json") {
+        if path == "tests/fixtures/distribution/release-metadata.json"
+            && change.map_or(false, is_release_metadata_version_sync)
         {
             return Some(ChangeAssessment {
                 classification: ReleaseClassification::Exempt,
@@ -474,8 +505,8 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
         });
     }
 
-    if change.path.starts_with("tests/integration/test_distribution_")
-        || change.path.starts_with("tests/integration/test_verification_")
+    if path.starts_with("tests/integration/test_distribution_")
+        || path.starts_with("tests/integration/test_verification_")
     {
         return Some(ChangeAssessment {
             classification: ReleaseClassification::Releasable,
@@ -484,10 +515,10 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
         });
     }
 
-    if change.path == "README.md" {
+    if path == "README.md" {
         return Some(ChangeAssessment {
             classification: ReleaseClassification::Releasable,
-            minimum_bump: Some(match change.kind {
+            minimum_bump: Some(match kind {
                 RepoChangeKind::Deleted | RepoChangeKind::Renamed => ReleaseIntent::Major,
                 RepoChangeKind::Added => ReleaseIntent::Minor,
                 RepoChangeKind::Modified => ReleaseIntent::Patch,
@@ -496,10 +527,10 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
         });
     }
 
-    if change.path.starts_with("tests/")
-        || change.path.starts_with("specs/")
-        || change.path.starts_with("docs/")
-        || change.path == "AGENTS.md"
+    if path.starts_with("tests/")
+        || path.starts_with("specs/")
+        || path.starts_with("docs/")
+        || path == "AGENTS.md"
     {
         return Some(ChangeAssessment {
             classification: ReleaseClassification::Exempt,
@@ -510,7 +541,7 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
 
     Some(ChangeAssessment {
         classification: ReleaseClassification::Releasable,
-        minimum_bump: Some(match change.kind {
+        minimum_bump: Some(match kind {
             RepoChangeKind::Added => ReleaseIntent::Minor,
             RepoChangeKind::Deleted | RepoChangeKind::Renamed => ReleaseIntent::Major,
             RepoChangeKind::Modified => ReleaseIntent::Patch,

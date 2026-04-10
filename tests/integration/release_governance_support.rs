@@ -101,6 +101,28 @@ pub fn run_release_validate(root: &Path, base_ref: &str, json: bool) -> Output {
     command.output().expect("run release validate")
 }
 
+pub fn run_release_validate_with_head_ref(
+    root: &Path,
+    base_ref: &str,
+    head_ref: &str,
+    json: bool,
+) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_core-ops-release"));
+    command
+        .current_dir(root)
+        .arg("validate")
+        .arg("--repo-root")
+        .arg(root)
+        .arg("--base-ref")
+        .arg(base_ref)
+        .arg("--head-ref")
+        .arg(head_ref);
+    if json {
+        command.arg("--json");
+    }
+    command.output().expect("run release validate")
+}
+
 pub fn run_release_changelog_write(root: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_core-ops-release"))
         .current_dir(root)

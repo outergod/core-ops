@@ -23,22 +23,50 @@ pub fn load_governance_repository_input(
         })
         .map(|change| change.path.clone())
         .collect::<Vec<_>>();
-    let fragments = load_release_fragments(repo_root)?;
+
+    // When head_ref is provided the caller has specified an explicit commit to
+    // validate.  Read the governance source files (fragments, Cargo.toml,
+    // CHANGELOG.md) from that ref so that the check reflects the same revision
+    // as the diff, not whatever happens to be in the working tree.
+    let (fragments, cargo_version_after, changelog_contents) = if let Some(head_ref) = head_ref {
+        let fragments = load_release_fragments_at_ref(repo_root, head_ref)?;
+        let cargo_toml =
+            run_git(repo_root, &["show", &format!("{head_ref}:Cargo.toml")]).map_err(|err| {
+                CoreError::new(
+                    FailureClass::Validation,
+                    format!("failed to read Cargo.toml at {head_ref}: {err}"),
+                )
+            })?;
+        let cargo_version_after = parse_cargo_version(&cargo_toml)?;
+        let changelog_contents = run_git(repo_root, &["show", &format!("{head_ref}:CHANGELOG.md")])
+            .map_err(|err| {
+                CoreError::new(
+                    FailureClass::Validation,
+                    format!("failed to read CHANGELOG.md at {head_ref}: {err}"),
+                )
+            })?;
+        (fragments, cargo_version_after, changelog_contents)
+    } else {
+        let fragments = load_release_fragments(repo_root)?;
+        let cargo_version_after = parse_cargo_version(
+            &fs::read_to_string(repo_root.join("Cargo.toml")).map_err(|err| {
+                CoreError::new(
+                    FailureClass::Validation,
+                    format!("failed to read Cargo.toml: {err}"),
+                )
+            })?,
+        )?;
+        let changelog_contents =
+            fs::read_to_string(repo_root.join("CHANGELOG.md")).map_err(|err| {
+                CoreError::new(
+                    FailureClass::Validation,
+                    format!("failed to read CHANGELOG.md: {err}"),
+                )
+            })?;
+        (fragments, cargo_version_after, changelog_contents)
+    };
+
     let cargo_version_before = load_cargo_version_before(repo_root, base_ref, head_ref)?;
-    let cargo_version_after = parse_cargo_version(
-        &fs::read_to_string(repo_root.join("Cargo.toml")).map_err(|err| {
-            CoreError::new(
-                FailureClass::Validation,
-                format!("failed to read Cargo.toml: {err}"),
-            )
-        })?,
-    )?;
-    let changelog_contents = fs::read_to_string(repo_root.join("CHANGELOG.md")).map_err(|err| {
-        CoreError::new(
-            FailureClass::Validation,
-            format!("failed to read CHANGELOG.md: {err}"),
-        )
-    })?;
 
     Ok(GovernanceRepositoryInput {
         changed_files,
@@ -78,6 +106,48 @@ pub fn load_release_fragments(repo_root: &Path) -> Result<Vec<ReleaseFragment>, 
         fragments.push(load_release_fragment(repo_root, &path)?);
     }
     fragments.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(fragments)
+}
+
+fn load_release_fragments_at_ref(
+    repo_root: &Path,
+    git_ref: &str,
+) -> Result<Vec<ReleaseFragment>, CoreError> {
+    let tree = match run_git(repo_root, &["ls-tree", "--name-only", git_ref, "changes/"]) {
+        Ok(output) => output,
+        Err(_) => return Ok(Vec::new()),
+    };
+    let mut fragments = Vec::new();
+    for path in tree.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if !path.ends_with(".md") || path == "changes/README.md" {
+            continue;
+        }
+        let contents = run_git(repo_root, &["show", &format!("{git_ref}:{path}")])?;
+        let (front_matter_str, body) = split_front_matter(&contents)?;
+        let front_matter =
+            serde_yaml::from_str::<ReleaseFragmentFrontMatter>(front_matter_str).map_err(
+                |err| {
+                    CoreError::new(
+                        FailureClass::Validation,
+                        format!("invalid release fragment {path}: {err}"),
+                    )
+                },
+            )?;
+        if front_matter.summary.trim().is_empty() {
+            return Err(CoreError::new(
+                FailureClass::Validation,
+                format!(
+                    "release fragment {path} has a blank summary; a non-empty summary is required"
+                ),
+            ));
+        }
+        fragments.push(ReleaseFragment {
+            path: path.replace('\\', "/").to_string(),
+            front_matter,
+            body: body.trim().to_string(),
+        });
+    }
+    fragments.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(fragments)
 }
 

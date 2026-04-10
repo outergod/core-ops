@@ -1,5 +1,6 @@
 use crate::integration::release_governance_support::{
-    add_fragment, head, init_repo, run_release_validate, write_file,
+    add_fragment, head, init_repo, run_release_validate, run_release_validate_with_head_ref,
+    write_file,
 };
 
 fn write_fragment_with_blank_summary(root: &std::path::Path, change_id: &str) {
@@ -9,6 +10,43 @@ fn write_fragment_with_blank_summary(root: &std::path::Path, change_id: &str) {
         &format!(
             "---\nchange_id: {change_id}\nrelease_intent: patch\nsummary: \"\"\nscope: governance\nrelease_preparation: false\n---\n"
         ),
+    );
+}
+
+#[test]
+fn head_ref_governance_files_take_precedence_over_working_tree() {
+    let repo = init_repo();
+    let base = head(repo.path());
+
+    // Commit a src change without any release metadata — this becomes head_ref.
+    write_file(
+        repo.path(),
+        "src/lib.rs",
+        "pub fn baseline() -> &'static str { \"changed\" }\n",
+    );
+    crate::integration::release_governance_support::run_git(repo.path(), &["add", "src/lib.rs"]);
+    crate::integration::release_governance_support::run_git(
+        repo.path(),
+        &["commit", "-m", "change src without metadata"],
+    );
+    let head_without_metadata = head(repo.path());
+
+    // Put valid metadata in the working tree only (not committed).
+    add_fragment(repo.path(), "working-tree-fragment", "patch", "Working tree only", false);
+    write_file(
+        repo.path(),
+        "Cargo.toml",
+        "[package]\nname = \"fixture\"\nversion = \"0.6.1\"\nedition = \"2021\"\n",
+    );
+
+    // Validate against the committed head (which lacks metadata).
+    // If governance reads from the working tree the test would incorrectly pass;
+    // with the fix it must fail because the committed head has no metadata.
+    let output =
+        run_release_validate_with_head_ref(repo.path(), &base, &head_without_metadata, false);
+    assert!(
+        !output.status.success(),
+        "governance must fail: head_ref commit lacks release metadata"
     );
 }
 

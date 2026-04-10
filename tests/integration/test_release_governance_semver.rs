@@ -1,6 +1,32 @@
 use crate::integration::release_governance_support::{
-    add_fragment, head, init_repo, run_release_validate, write_file,
+    add_fragment, head, init_repo, run_release_validate, run_release_validate_with_head_ref,
+    write_file,
 };
+
+#[test]
+fn rename_from_releasable_to_exempt_path_requires_major_bump() {
+    let repo = init_repo();
+    let base = head(repo.path());
+
+    // Rename src/lib.rs → docs/lib.md. The source (Rust source deletion) is
+    // Major; the destination (markdown doc) is exempt. The rename must be
+    // classified as Major releasable, not exempt.
+    std::fs::create_dir_all(repo.path().join("docs")).expect("create docs dir");
+    std::fs::rename(repo.path().join("src/lib.rs"), repo.path().join("docs/lib.md"))
+        .expect("rename file");
+    crate::integration::release_governance_support::run_git(repo.path(), &["add", "."]);
+    crate::integration::release_governance_support::run_git(
+        repo.path(),
+        &["commit", "-m", "rename src to docs"],
+    );
+    let head_ref = head(repo.path());
+
+    let output = run_release_validate_with_head_ref(repo.path(), &base, &head_ref, true);
+    assert!(!output.status.success());
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(parsed["effective_classification"], "releasable");
+    assert_eq!(parsed["effective_bump"], "major");
+}
 
 #[test]
 fn validate_fails_when_additive_change_declares_patch() {
