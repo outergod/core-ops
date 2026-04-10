@@ -390,7 +390,7 @@ fn load_change_contents(
             ));
         }
 
-        return Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()));
+        return Ok(String::from_utf8(output.stdout).ok());
     }
 
     let path = repo_root.join(relative_path);

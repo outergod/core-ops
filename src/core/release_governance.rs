@@ -190,8 +190,17 @@ pub fn evaluate_release_governance(
 
     if input.changed_fragment_paths.len() > 1 {
         mismatch_reasons.push(
-            "exactly one changed release fragment is allowed per releasable change set".to_string(),
+            "exactly one changed release fragment is allowed per change set".to_string(),
         );
+    }
+
+    // A listed fragment path that cannot be resolved (e.g. renamed out of changes/)
+    // is treated as a missing release-intent artifact rather than a hard error.
+    if !input.changed_fragment_paths.is_empty()
+        && input.changed_fragment_paths.len() == 1
+        && fragment.is_none()
+    {
+        missing_artifacts.push(input.changed_fragment_paths[0].clone());
     }
 
     if effective_classification == ReleaseClassification::Releasable && declared_bump.is_none() {
@@ -377,16 +386,7 @@ fn resolve_changed_fragment<'a>(
         return Ok(None);
     }
     let path = &changed_fragment_paths[0];
-    fragments
-        .iter()
-        .find(|fragment| &fragment.path == path)
-        .map(Some)
-        .ok_or_else(|| {
-            CoreError::new(
-                FailureClass::Validation,
-                format!("changed fragment {path} could not be loaded"),
-            )
-        })
+    Ok(fragments.iter().find(|fragment| &fragment.path == path))
 }
 
 fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
@@ -537,7 +537,10 @@ fn assess_path(
 fn is_always_exempt_path(path: &str) -> bool {
     path.starts_with("docs/")
         || path.starts_with("specs/")
-        || path.ends_with(".md") && path != "README.md" && path != "CHANGELOG.md"
+        || (path.ends_with(".md")
+            && path != "README.md"
+            && path != "CHANGELOG.md"
+            && !path.starts_with("changes/"))
 }
 
 pub fn is_metadata_path(path: &str) -> bool {
