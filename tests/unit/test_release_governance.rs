@@ -38,6 +38,33 @@ fn parses_cargo_version_from_package_table_not_dependencies() {
 }
 
 #[test]
+fn parse_cargo_version_handles_no_spaces_around_equals() {
+    let contents = "[package]\nname=\"fixture\"\nversion=\"0.6.0\"\n";
+    assert_eq!(
+        parse_cargo_version(contents).expect("parse version"),
+        "0.6.0".to_string()
+    );
+}
+
+#[test]
+fn parse_cargo_version_handles_extra_spaces_around_equals() {
+    let contents = "[package]\nname = \"fixture\"\nversion  =  \"0.6.0\"\n";
+    assert_eq!(
+        parse_cargo_version(contents).expect("parse version"),
+        "0.6.0".to_string()
+    );
+}
+
+#[test]
+fn parse_cargo_version_handles_tab_indented_keys() {
+    let contents = "[package]\n\tname = \"fixture\"\n\tversion = \"0.6.0\"\n";
+    assert_eq!(
+        parse_cargo_version(contents).expect("parse version"),
+        "0.6.0".to_string()
+    );
+}
+
+#[test]
 fn parse_cargo_version_fails_when_package_table_is_absent() {
     let contents = "[dependencies]\nsome-crate = { version = \"1.2.3\" }\n";
     assert!(parse_cargo_version(contents).is_err());

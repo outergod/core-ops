@@ -301,31 +301,23 @@ pub fn classify_version_bump(
 }
 
 pub fn parse_cargo_version(contents: &str) -> Result<String, CoreError> {
-    let mut in_package = false;
-    let mut value = None;
-    for line in contents.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[package]" {
-            in_package = true;
-            continue;
-        }
-        if trimmed.starts_with('[') {
-            in_package = false;
-            continue;
-        }
-        if in_package {
-            if let Some(rest) = trimmed.strip_prefix("version = ") {
-                value = Some(rest.trim().trim_matches('"').to_string());
-                break;
-            }
-        }
-    }
-    let value = value.ok_or_else(|| {
+    let manifest: toml::Value = toml::from_str(contents).map_err(|err| {
         CoreError::new(
             FailureClass::Validation,
-            "unable to locate package version in Cargo.toml",
+            format!("failed to parse Cargo.toml: {err}"),
         )
     })?;
+    let value = manifest
+        .get("package")
+        .and_then(|pkg| pkg.get("version"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            CoreError::new(
+                FailureClass::Validation,
+                "unable to locate package version in Cargo.toml",
+            )
+        })?
+        .to_string();
     parse_semver_triplet(&value)?;
     Ok(value)
 }
