@@ -19,9 +19,9 @@ use crate::core::verification_generate::{
     render_candidate_yaml,
 };
 use crate::core::verification_model::{
-    load_scenario_definition, VerificationAssertionResult, VerificationReadinessAcquisition,
-    VerificationReadinessEvidence, VerificationRevisionSelectionBasis, VerificationRun,
-    VerificationRunView, VerificationRuntimeBindings,
+    load_scenario_definition, GuestCommandOutput, VerificationAssertionResult,
+    VerificationReadinessAcquisition, VerificationReadinessEvidence,
+    VerificationRevisionSelectionBasis, VerificationRun, VerificationRunView, VerificationRuntimeBindings,
     VerificationScenarioDefinition, VerificationScenarioOutcome, VerificationStepResult,
     VerificationStepType,
 };
@@ -908,8 +908,7 @@ pub fn execute_scenario(
                 }
                 VerificationStepType::CoreopsAction
                 | VerificationStepType::GuestCommand
-                | VerificationStepType::MutateState
-                | VerificationStepType::Reboot => {
+                | VerificationStepType::MutateState => {
                     let command = step.command_or_action.as_deref().unwrap_or("noop");
                     let started = Instant::now();
                     match context.guest_boundary.run_command(
@@ -919,6 +918,46 @@ pub fn execute_scenario(
                     ) {
                         Ok(output) => {
                             let status = if output.status_code == 0 {
+                                VerificationStepStatus::Passed
+                            } else {
+                                VerificationStepStatus::Failed
+                            };
+                            VerificationStepResult {
+                                step_id: step.step_id.clone(),
+                                step_type: step.step_type,
+                                status,
+                                details: Some(output.stdout.clone()),
+                                command: Some(command.to_string()),
+                                exit_code: Some(output.status_code),
+                                stdout: Some(output.stdout),
+                                stderr: Some(output.stderr),
+                                duration_ms: Some(started.elapsed().as_millis() as u64),
+                            }
+                        }
+                        Err(err) if err.class == FailureClass::Transient => VerificationStepResult {
+                            step_id: step.step_id.clone(),
+                            step_type: step.step_type,
+                            status: VerificationStepStatus::TimedOut,
+                            details: Some(err.message),
+                            command: Some(command.to_string()),
+                            exit_code: None,
+                            stdout: None,
+                            stderr: None,
+                            duration_ms: Some(started.elapsed().as_millis() as u64),
+                        },
+                        Err(err) => return Err(err),
+                    }
+                }
+                VerificationStepType::Reboot => {
+                    let command = step.command_or_action.as_deref().unwrap_or("noop");
+                    let started = Instant::now();
+                    match context.guest_boundary.run_command(
+                        &guest,
+                        command,
+                        Some(step.effective_timeout.as_str()),
+                    ) {
+                        Ok(output) => {
+                            let status = if is_expected_reboot_exit_code(&output) {
                                 VerificationStepStatus::Passed
                             } else {
                                 VerificationStepStatus::Failed
@@ -2223,6 +2262,25 @@ fn verification_run_outcome_label(outcome: VerificationRunOutcome) -> &'static s
         VerificationRunOutcome::Timeout => "timeout",
         VerificationRunOutcome::HarnessError => "harness_error",
     }
+}
+
+fn is_expected_reboot_exit_code(output: &GuestCommandOutput) -> bool {
+    match output.status_code {
+        0 => true,
+        255 => reboot_disconnect_marker_present(&output.stdout, &output.stderr),
+        _ => false,
+    }
+}
+
+fn reboot_disconnect_marker_present(stdout: &str, stderr: &str) -> bool {
+    let combined = format!("{stdout}\n{stderr}").to_ascii_lowercase();
+    const MARKERS: [&str; 4] = [
+        "connection closed",
+        "closed by remote host",
+        "shared connection to ",
+        "client_loop: send disconnect",
+    ];
+    MARKERS.iter().any(|marker| combined.contains(marker))
 }
 
 fn render_command(command: &Command) -> String {

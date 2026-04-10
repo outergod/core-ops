@@ -36,7 +36,11 @@ fn distribution_gate_is_split_between_public_ci_and_protected_e2e() {
         "test_evaluation_determinism",
         "release-gate-environment.json",
         "environment: homelab-e2e",
-        "workflow_dispatch",
+        "pull_request_target:",
+        "types: [opened, synchronize, reopened, ready_for_review]",
+        "if: ${{ !github.event.pull_request.draft }}",
+        "ref: ${{ github.event.pull_request.head.sha }}",
+        "persist-credentials: false",
     ] {
         assert!(
             e2e_contents.contains(snippet),

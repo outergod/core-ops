@@ -48,3 +48,4 @@ assertions:
     target: apply
     expected_state: "mount/var-lib-immich-media.mount"
     failure_message: Mount-blocked apply did not attribute the failure to the managed mount unit.
+expected_outcome: assertion_failure

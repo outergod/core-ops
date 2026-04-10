@@ -74,3 +74,4 @@ assertions:
     target: check-status-last-applied
     expected_state: "not-promoted"
     failure_message: Failed verification run did not preserve a non-promoted last_applied_revision marker.
+expected_outcome: assertion_failure
