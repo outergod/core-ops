@@ -400,6 +400,26 @@ fn assess_change(change: &RepoChange) -> Option<ChangeAssessment> {
         });
     }
 
+    if change.path.starts_with("tests/fixtures/provenance_state/")
+        && change.path.ends_with(".json")
+    {
+        return Some(ChangeAssessment {
+            classification: ReleaseClassification::Releasable,
+            minimum_bump: Some(ReleaseIntent::Patch),
+            rule_id: "contract_fixture_provenance_state",
+        });
+    }
+
+    if change.path.starts_with("tests/fixtures/verification/artifacts/")
+        && change.path.ends_with(".json")
+    {
+        return Some(ChangeAssessment {
+            classification: ReleaseClassification::Releasable,
+            minimum_bump: Some(ReleaseIntent::Patch),
+            rule_id: "contract_fixture_verification_artifact",
+        });
+    }
+
     if change.path.starts_with("src/") {
         return Some(ChangeAssessment {
             classification: ReleaseClassification::Releasable,
