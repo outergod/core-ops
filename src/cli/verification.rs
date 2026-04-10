@@ -19,9 +19,9 @@ use crate::core::verification_generate::{
     render_candidate_yaml,
 };
 use crate::core::verification_model::{
-    load_scenario_definition, VerificationAssertionResult, VerificationReadinessAcquisition,
-    VerificationReadinessEvidence, VerificationRevisionSelectionBasis, VerificationRun,
-    VerificationRunView, VerificationRuntimeBindings,
+    load_scenario_definition, GuestCommandOutput, VerificationAssertionResult,
+    VerificationReadinessAcquisition, VerificationReadinessEvidence,
+    VerificationRevisionSelectionBasis, VerificationRun, VerificationRunView, VerificationRuntimeBindings,
     VerificationScenarioDefinition, VerificationScenarioOutcome, VerificationStepResult,
     VerificationStepType,
 };
@@ -957,7 +957,7 @@ pub fn execute_scenario(
                         Some(step.effective_timeout.as_str()),
                     ) {
                         Ok(output) => {
-                            let status = if is_expected_reboot_exit_code(output.status_code) {
+                            let status = if is_expected_reboot_exit_code(&output) {
                                 VerificationStepStatus::Passed
                             } else {
                                 VerificationStepStatus::Failed
@@ -2264,8 +2264,25 @@ fn verification_run_outcome_label(outcome: VerificationRunOutcome) -> &'static s
     }
 }
 
-fn is_expected_reboot_exit_code(status_code: i32) -> bool {
-    matches!(status_code, 0 | 255)
+fn is_expected_reboot_exit_code(output: &GuestCommandOutput) -> bool {
+    match output.status_code {
+        0 => true,
+        255 => reboot_disconnect_marker_present(&output.stdout, &output.stderr),
+        _ => false,
+    }
+}
+
+fn reboot_disconnect_marker_present(stdout: &str, stderr: &str) -> bool {
+    let combined = format!("{stdout}\n{stderr}").to_ascii_lowercase();
+    const MARKERS: [&str; 6] = [
+        "connection closed",
+        "connection reset",
+        "broken pipe",
+        "connection to ",
+        "client_loop: send disconnect",
+        "remote host closed",
+    ];
+    MARKERS.iter().any(|marker| combined.contains(marker))
 }
 
 fn render_command(command: &Command) -> String {
