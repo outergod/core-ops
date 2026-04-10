@@ -956,15 +956,33 @@ pub fn execute_scenario(
                         command,
                         Some(step.effective_timeout.as_str()),
                     ) {
-                        Ok(output) => VerificationStepResult {
+                        Ok(output) => {
+                            let status = if is_expected_reboot_exit_code(output.status_code) {
+                                VerificationStepStatus::Passed
+                            } else {
+                                VerificationStepStatus::Failed
+                            };
+                            VerificationStepResult {
+                                step_id: step.step_id.clone(),
+                                step_type: step.step_type,
+                                status,
+                                details: Some(output.stdout.clone()),
+                                command: Some(command.to_string()),
+                                exit_code: Some(output.status_code),
+                                stdout: Some(output.stdout),
+                                stderr: Some(output.stderr),
+                                duration_ms: Some(started.elapsed().as_millis() as u64),
+                            }
+                        }
+                        Err(err) if err.class == FailureClass::Transient => VerificationStepResult {
                             step_id: step.step_id.clone(),
                             step_type: step.step_type,
-                            status: VerificationStepStatus::Passed,
-                            details: Some(output.stdout.clone()),
+                            status: VerificationStepStatus::TimedOut,
+                            details: Some(err.message),
                             command: Some(command.to_string()),
-                            exit_code: Some(output.status_code),
-                            stdout: Some(output.stdout),
-                            stderr: Some(output.stderr),
+                            exit_code: None,
+                            stdout: None,
+                            stderr: None,
                             duration_ms: Some(started.elapsed().as_millis() as u64),
                         },
                         Err(err) => return Err(err),
@@ -2244,6 +2262,10 @@ fn verification_run_outcome_label(outcome: VerificationRunOutcome) -> &'static s
         VerificationRunOutcome::Timeout => "timeout",
         VerificationRunOutcome::HarnessError => "harness_error",
     }
+}
+
+fn is_expected_reboot_exit_code(status_code: i32) -> bool {
+    matches!(status_code, 0 | 255)
 }
 
 fn render_command(command: &Command) -> String {
