@@ -207,13 +207,13 @@ pub fn evaluate_release_governance(
 
     if effective_classification == ReleaseClassification::Releasable {
         match (declared_bump, effective_bump) {
-            (Some(declared), Some(required)) if declared != required => mismatch_reasons.push(
-                format!(
+            (Some(declared), Some(required)) if declared != required => {
+                mismatch_reasons.push(format!(
                     "declared release intent {} does not match required {}",
                     declared.label(),
                     required.label()
-                ),
-            ),
+                ))
+            }
             (None, Some(required)) => mismatch_reasons.push(format!(
                 "required release intent {} is missing from the changed fragment",
                 required.label()
@@ -235,7 +235,8 @@ pub fn evaluate_release_governance(
         }
     }
 
-    let rendered_changelog = render_generated_changelog(&input.changelog_contents, &input.fragments)?;
+    let rendered_changelog =
+        render_generated_changelog(&input.changelog_contents, &input.fragments)?;
     let changelog_aligned = rendered_changelog == input.changelog_contents;
     if effective_classification == ReleaseClassification::Releasable && !changelog_aligned {
         mismatch_reasons.push(
@@ -341,7 +342,9 @@ pub fn render_generated_changelog(
     })?;
 
     let after_unreleased = &existing_contents[unreleased_start + "## [Unreleased]".len()..];
-    let next_section_offset = after_unreleased.find("\n## [").unwrap_or(after_unreleased.len());
+    let next_section_offset = after_unreleased
+        .find("\n## [")
+        .unwrap_or(after_unreleased.len());
     let next_section = unreleased_start + "## [Unreleased]".len() + next_section_offset;
 
     let prefix = &existing_contents[..unreleased_start];
@@ -490,7 +493,7 @@ fn assess_path(
 
     if path.starts_with("tests/fixtures/distribution/") && path.ends_with(".json") {
         if path == "tests/fixtures/distribution/release-metadata.json"
-            && change.map_or(false, is_release_metadata_version_sync)
+            && change.is_some_and(is_release_metadata_version_sync)
         {
             return Some(ChangeAssessment {
                 classification: ReleaseClassification::Exempt,
@@ -577,7 +580,8 @@ fn is_release_metadata_version_sync(change: &RepoChange) -> bool {
         return false;
     };
 
-    let (Some(before_object), Some(after_object)) = (before_json.as_object(), after_json.as_object())
+    let (Some(before_object), Some(after_object)) =
+        (before_json.as_object(), after_json.as_object())
     else {
         return false;
     };
