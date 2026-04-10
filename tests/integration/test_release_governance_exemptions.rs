@@ -81,6 +81,27 @@ fn binary_file_in_exempt_path_does_not_cause_governance_error() {
 }
 
 #[test]
+fn workflow_only_change_is_exempt_without_release_metadata() {
+    let repo = init_repo();
+    let base = head(repo.path());
+    // Modify the committed CI workflow file (formatting-only housekeeping).
+    write_file(
+        repo.path(),
+        ".github/workflows/ci.yml",
+        "# formatting-only edit\nname: PR CI\non:\n  pull_request:\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: cargo test\n",
+    );
+
+    let output = run_release_validate(repo.path(), &base, true);
+    assert!(
+        output.status.success(),
+        "workflow-only edits must not require release metadata; stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(parsed["effective_classification"], "exempt");
+}
+
+#[test]
 fn provenance_state_json_fixture_is_releasable() {
     let repo = init_repo();
     let base = head(repo.path());

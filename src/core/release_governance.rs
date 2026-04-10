@@ -471,18 +471,6 @@ fn assess_path(
         });
     }
 
-    if path.starts_with(".github/workflows/") {
-        return Some(ChangeAssessment {
-            classification: ReleaseClassification::Releasable,
-            minimum_bump: match kind {
-                RepoChangeKind::Added => Some(ReleaseIntent::Minor),
-                RepoChangeKind::Deleted | RepoChangeKind::Renamed => Some(ReleaseIntent::Major),
-                RepoChangeKind::Modified => Some(ReleaseIntent::Patch),
-            },
-            rule_id: "workflow_release_or_verification_surface",
-        });
-    }
-
     if path.starts_with("tests/fixtures/distribution/") && path.ends_with(".json") {
         if path == "tests/fixtures/distribution/release-metadata.json"
             && change.is_some_and(is_release_metadata_version_sync)
@@ -525,6 +513,7 @@ fn assess_path(
     if path.starts_with("tests/")
         || path.starts_with("specs/")
         || path.starts_with("docs/")
+        || path.starts_with(".github/")
         || path == "AGENTS.md"
     {
         return Some(ChangeAssessment {

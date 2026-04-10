@@ -16,6 +16,36 @@ fn write_fragment_with_blank_summary(root: &std::path::Path, change_id: &str) {
 }
 
 #[test]
+fn renaming_fragment_out_of_changes_is_not_treated_as_exempt() {
+    let repo = init_repo();
+
+    // Commit a fragment into the repo so it exists at the base ref.
+    add_fragment(repo.path(), "spec-011", "patch", "Initial fragment", false);
+    run_git(repo.path(), &["add", "changes/spec-011.md"]);
+    run_git(repo.path(), &["commit", "-m", "add fragment"]);
+    let base = head(repo.path());
+
+    // Rename the fragment out of changes/ — this removes a release-intent
+    // artifact. Without the fix this is invisible (destination is docs/*.md,
+    // which is exempt) and governance would pass as exempt.
+    std::fs::create_dir_all(repo.path().join("docs")).expect("create docs dir");
+    std::fs::rename(
+        repo.path().join("changes/spec-011.md"),
+        repo.path().join("docs/spec-011.md"),
+    )
+    .expect("rename fragment");
+    run_git(repo.path(), &["add", "."]);
+    run_git(repo.path(), &["commit", "-m", "move fragment to docs"]);
+    let head_ref = head(repo.path());
+
+    let output = run_release_validate_with_head_ref(repo.path(), &base, &head_ref, false);
+    assert!(
+        !output.status.success(),
+        "renaming a fragment out of changes/ must not pass governance as exempt"
+    );
+}
+
+#[test]
 fn head_ref_without_base_ref_is_rejected() {
     let repo = init_repo();
 

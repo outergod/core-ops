@@ -16,12 +16,28 @@ pub fn load_governance_repository_input(
     let changed_files = load_repo_changes(repo_root, base_ref, head_ref)?;
     let changed_fragment_paths = changed_files
         .iter()
-        .filter(|change| {
-            change.path.starts_with("changes/")
+        .filter_map(|change| {
+            // Destination path covers additions, modifications, and renames into changes/.
+            if change.path.starts_with("changes/")
                 && change.path.ends_with(".md")
                 && change.path != "changes/README.md"
+            {
+                return Some(change.path.clone());
+            }
+            // For renames out of changes/, track the source path so that removing
+            // a release-intent artifact is not silently treated as no fragment change.
+            if change.kind == RepoChangeKind::Renamed {
+                if let Some(prev) = &change.previous_path {
+                    if prev.starts_with("changes/")
+                        && prev.ends_with(".md")
+                        && prev != "changes/README.md"
+                    {
+                        return Some(prev.clone());
+                    }
+                }
+            }
+            None
         })
-        .map(|change| change.path.clone())
         .collect::<Vec<_>>();
 
     // When head_ref is provided the caller has specified an explicit commit to
