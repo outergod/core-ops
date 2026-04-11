@@ -14,6 +14,12 @@ versioning for public release policy decisions.
 - Unified CI validation and release publication into a single ci.yml workflow
 <!-- core-ops-release:end -->
 
+## [0.7.0] - 2026-04-11
+
+### Changed
+
+- Add the `core-ops-release` helper binary for machine-checkable SemVer and changelog governance
+
 ## [0.6.0] - 2026-04-07
 
 ### Added
