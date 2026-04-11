@@ -80,18 +80,18 @@ a container is not a supported consumption method.
 
 ## Credibility
 
-| Signal | Current Value |
-|--------|---------------|
-| Latest release identity | `0.7.0-dev` |
-| Release-gate status | `design-contract` |
-| Accepted verification status | `design-contract` |
+[![CI](https://github.com/outergod/core-ops/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/outergod/core-ops/actions/workflows/ci.yml)
+[![E2E Gate](https://github.com/outergod/core-ops/actions/workflows/e2e-gate.yml/badge.svg)](https://github.com/outergod/core-ops/actions/workflows/e2e-gate.yml)
+[![Latest Release](https://img.shields.io/github/v/release/outergod/core-ops)](https://github.com/outergod/core-ops/releases/latest)
+
+| Signal | Value |
+|--------|-------|
 | Published artifacts | `x86_64 raw binary`, `aarch64 raw binary`, `x86_64 tar.gz + checksums`, `aarch64 tar.gz + checksums` |
 | Verification environment | `fedora-coreos-self-hosted@2026-04-fcos` |
 
-This section is the stable credibility surface for outside evaluators. Live
-badges can replace individual values after the default branch has established
-real CI, protected E2E runs, and published release artifacts, but the section
-location and semantics should remain stable across releases.
+This section is the stable credibility surface for outside evaluators. The badges
+above reflect live CI health and the latest published release version and update
+automatically as the project evolves.
 
 ---
 

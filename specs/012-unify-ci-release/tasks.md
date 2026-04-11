@@ -106,7 +106,7 @@ See quickstart.md §Live badges.
 
 ### Implementation for User Story 4
 
-- [ ] T005 [US4] Update `README.md` Credibility section:
+- [x] T005 [US4] Update `README.md` Credibility section:
   Replace the static table with a badge row for CI status
   (`https://github.com/outergod/core-ops/actions/workflows/ci.yml/badge.svg?branch=master`),
   E2E gate status
