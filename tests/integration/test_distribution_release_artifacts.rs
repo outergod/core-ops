@@ -55,6 +55,7 @@ fn unified_release_job_is_gated_to_master_push() {
         "refs/heads/master",
         "git ls-remote --tags origin",
         "gh release create",
+        "--target \"$GITHUB_SHA\"",
         "contents: write",
     ] {
         assert!(contents.contains(snippet), "missing release job snippet: {snippet}");

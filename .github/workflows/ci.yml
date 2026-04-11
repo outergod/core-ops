@@ -157,6 +157,7 @@ jobs:
         run: |
           tag="${{ steps.version.outputs.tag }}"
           gh release create "${tag}" \
+            --target "$GITHUB_SHA" \
             --title "core-ops ${tag}" \
             --notes-file "${{ steps.notes.outputs.notes_file }}" \
             dist/core-ops-linux-amd64 \
