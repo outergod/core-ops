@@ -76,6 +76,7 @@ An outside evaluator visits the README. Instead of static values for release ide
 - What happens when a push to master contains multiple commits with different Cargo.toml versions? The version at `HEAD` of the push is authoritative; the release job reads `Cargo.toml` at the pushed ref.
 - What happens when the binary build fails but governance passes? The release job must not run; binary artifact availability is a prerequisite for publication.
 - What badge service or URL format is used? Implementation choice; the spec requires the badges to be live-sourced, not the specific provider or URL.
+- What if the release job pushes the tag but `gh release create` subsequently fails (orphaned tag)? The duplicate-tag guard (FR-005) will block retries. Recovery is an explicit operator step: manually delete the orphaned tag, then re-push or re-run the workflow. Automatic tag-deletion on failure is out of scope.
 - What happens if the Credibility table contains values that have no live-badge equivalent (e.g., published artifact list, verification environment string)? Those values may remain as static text alongside badges where live data is not available.
 
 ## Requirements *(mandatory)*
@@ -92,6 +93,7 @@ An outside evaluator visits the README. Instead of static values for release ide
 - **FR-008**: Distribution-readiness fixtures and integration tests that assert workflow structure MUST be updated to reflect the unified workflow contract, not the separate `release-binary.yml` shape.
 - **FR-009**: The README Credibility section MUST be updated to display live badges for at minimum: CI workflow status, E2E gate status, and latest published release version.
 - **FR-010**: The README Credibility section badge replacement MUST occur only after the unified release job is operational and at least one GitHub Release has been published through it.
+- **FR-011**: The GitHub Release body MUST be populated from the `CHANGELOG.md` entry for the matching version (the text block under `## [<version>]`). Auto-generated commit-log notes MUST NOT be used as a substitute.
 
 ### Key Entities
 
@@ -108,13 +110,21 @@ An outside evaluator visits the README. Instead of static values for release ide
 - **Explicit effects/failures**: Every release publication action (tag creation, release creation, asset upload) must be observable in the workflow log. Failures must produce a clear, actionable error. Silent skips are prohibited.
 - **Observability**: PRs expose governance check results and downloadable workflow artifacts. Merged pushes expose a GitHub Release with version, changelog entry, and binary assets. README badges expose live CI and release status to outside evaluators.
 - **Provenance & traceability**: The GitHub Release must link to the commit SHA that produced it. The release tag anchors the published version to a specific point in history.
-- **Safe defaults**: The release job is gated to `push` to `master` only; no PR run can trigger publication. Duplicate version detection prevents accidental overwrite.
+- **Safe defaults**: The release job is gated to `push` to `master` only; no PR run can trigger publication. Duplicate version detection prevents accidental overwrite. The release job uses the default `GITHUB_TOKEN` with `contents: write` permission — no long-lived PAT or repository secret is required or permitted for this operation.
 - **Compatibility**: PRs that currently pass `ci.yml` governance must continue to pass after this change. No behavioral change to governance validation logic itself.
 - **Release version policy**: This feature is a minor change to CI workflow structure; the version bump for merging this work follows standard governance fragment rules.
 - **Release intent artifact**: A `changes/<change-id>.md` fragment with appropriate `release_intent` and version bump declaration is required when merging this work.
 - **Changelog discipline**: `CHANGELOG.md` must be updated with an entry covering the unified workflow change before the merge is considered complete.
 - **Test contract**: Distribution-readiness fixtures that verify workflow structure must be updated. No new Rust logic is introduced that requires `cargo test` or `cargo clippy` gates beyond the existing CI baseline.
 - **Regenerability**: The spec and updated fixtures fully describe the expected workflow contract, enabling safe future regeneration.
+
+## Clarifications
+
+### Session 2026-04-11
+
+- Q: What token should the release job use to create tags and GitHub Releases? → A: Default `GITHUB_TOKEN` with `contents: write` on the release job; no PAT required.
+- Q: What is the source for GitHub Release notes? → A: Extract from `CHANGELOG.md` under the matching `## [<version>]` section.
+- Q: How should partial-failure recovery be handled if the tag is pushed but `gh release create` fails? → A: Strict duplicate-tag guard stays; operator manually deletes the orphaned tag to retry.
 
 ## Success Criteria *(mandatory)*
 
