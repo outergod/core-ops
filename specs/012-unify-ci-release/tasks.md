@@ -32,7 +32,8 @@ under the `Build Release Binaries` job. See quickstart.md §PR validation.
   cross-toolchain install step (aarch64 only), `cargo build --release --locked --target "${{ matrix.target }}"`,
   full packaging into `dist/` (binary, systemd units, LICENSE, CHANGELOG.md, README.md,
   tarball, SHA256SUMS, release-metadata.json with version from `grep '^version' Cargo.toml`),
-  `actions/upload-artifact@v4` with `name: core-ops-binary-release-${{ matrix.target }}` and `path: dist/`
+  `actions/upload-artifact@v4` with `name: core-ops-binary-release-${{ matrix.target }}` and `path: dist/`;
+  set `release_identity` to `v${version}` where version is derived from `grep '^version' Cargo.toml`
 
 **Checkpoint**: Push a draft PR. Confirm the `Build Release Binaries (x86_64-unknown-linux-gnu)`
 and `Build Release Binaries (aarch64-unknown-linux-gnu)` jobs appear with downloadable artifacts.
@@ -81,7 +82,8 @@ Run `cargo test test_distribution_release` — all tests pass against the unifie
 - [ ] T003 [P] [US3] Delete `.github/workflows/release-binary.yml`
 
 - [ ] T004 [P] [US3] Update `tests/integration/test_distribution_release_artifacts.rs`:
-  In `release_binary_workflow_includes_license_and_metadata_outputs`:
+  Rename function `release_binary_workflow_includes_license_and_metadata_outputs` to
+  `release_workflow_includes_license_and_metadata_outputs`;
   change `read_to_string(... "release-binary.yml")` to `read_to_string(... "ci.yml")`;
   replace snippet `"release_identity=\"${{ github.event.release.tag_name }}\""` with
   `"grep '^version' Cargo.toml"`.

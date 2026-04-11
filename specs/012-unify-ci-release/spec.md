@@ -84,7 +84,7 @@ An outside evaluator visits the README. Instead of static values for release ide
 ### Functional Requirements
 
 - **FR-001**: The CI workflow MUST run `core-ops-release validate` (or equivalent governance check) on every pull request targeting `master`.
-- **FR-002**: The CI workflow MUST build all distributed binaries (`core-ops`, `core-ops-verify`, `core-ops-release`) on every pull request and upload them as workflow artifacts.
+- **FR-002**: The CI workflow MUST build the distributed binary (`core-ops`) for all supported targets on every pull request and upload the packaged artifacts as workflow artifacts. The `core-ops-verify` and `core-ops-release` binaries are built by the `ci` job for test and governance purposes but are not distribution artifacts.
 - **FR-003**: The CI workflow MUST include a release job that runs exclusively on `push` to `refs/heads/master` and is skipped for all other refs.
 - **FR-004**: The release job MUST read the canonical version from `Cargo.toml` at the pushed commit and use it to derive the release tag (`v<version>`).
 - **FR-005**: The release job MUST fail explicitly when a release or tag for the derived version already exists, and MUST NOT silently overwrite or skip without explanation.
