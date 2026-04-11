@@ -138,6 +138,11 @@ jobs:
           version="${{ steps.version.outputs.version }}"
           notes_file="$(mktemp)"
           awk "/^## \[${version}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md > "${notes_file}"
+          if [ ! -s "${notes_file}" ]; then
+            echo "Error: CHANGELOG.md has no '## [${version}]' section."
+            echo "Add a '## [${version}]' entry to CHANGELOG.md before merging to master."
+            exit 1
+          fi
           echo "notes_file=${notes_file}" >> "$GITHUB_OUTPUT"
 
       - name: Download release artifacts
