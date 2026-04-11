@@ -1,4 +1,4 @@
-name: PR CI
+name: CI
 
 on:
   pull_request:
@@ -26,3 +26,137 @@ jobs:
 
       - name: Release Governance
         run: cargo run --bin core-ops-release -- validate --base-ref HEAD^
+
+  build:
+    name: Build Release Binaries (${{ matrix.target }})
+    needs: ci
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+    permissions:
+      contents: read
+    env:
+      CORE_OPS_BUILD_SPEC_CONTEXT: "specs/010-distribution-readiness/spec.md"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust target
+        run: rustup target add "${{ matrix.target }}"
+
+      - name: Install aarch64 cross toolchain
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      - name: Build release binary
+        run: cargo build --release --locked --target "${{ matrix.target }}"
+
+      - name: Prepare release artifacts
+        run: |
+          mkdir -p dist
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-gnu)
+              artifact_arch="amd64"
+              ;;
+            aarch64-unknown-linux-gnu)
+              artifact_arch="arm64"
+              ;;
+          esac
+          release_identity="v$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')"
+          cp "target/${{ matrix.target }}/release/core-ops" "dist/core-ops-linux-${artifact_arch}"
+          cp specs/002-systemd-agent/contracts/systemd/core-ops.service dist/core-ops.service
+          cp specs/002-systemd-agent/contracts/systemd/core-ops.timer dist/core-ops.timer
+          cp LICENSE dist/LICENSE
+          cp CHANGELOG.md dist/CHANGELOG.md
+          cp README.md dist/README.md
+          tar -czf "dist/core-ops-linux-${artifact_arch}.tar.gz" -C dist \
+            "core-ops-linux-${artifact_arch}" core-ops.service core-ops.timer LICENSE CHANGELOG.md README.md
+          sha256sum "dist/core-ops-linux-${artifact_arch}" \
+            "dist/core-ops.service" \
+            "dist/core-ops.timer" \
+            "dist/core-ops-linux-${artifact_arch}.tar.gz" > "dist/SHA256SUMS-${artifact_arch}"
+          cat > dist/release-metadata.json <<EOF
+          {
+            "latest_release_identity": "${release_identity}",
+            "release_gate_status": "passed",
+            "accepted_verification_status": "passed",
+            "artifact_availability": [
+              "${artifact_arch} raw binary",
+              "${artifact_arch} tar.gz + checksums",
+              "systemd unit files",
+              "LICENSE",
+              "CHANGELOG.md",
+              "README.md"
+            ],
+            "verification_environment": "fedora-coreos-self-hosted@2026-04-fcos",
+            "credibility_location": "README.md#credibility"
+          }
+          EOF
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-ops-binary-release-${{ matrix.target }}
+          path: dist/
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive release version
+        id: version
+        run: |
+          version="$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check for duplicate release tag
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          if git ls-remote --tags origin "refs/tags/${tag}" | grep -q .; then
+            echo "Error: release tag ${tag} already exists — duplicate-version push."
+            echo "Either delete the orphaned tag and re-run, or bump the version in Cargo.toml."
+            exit 1
+          fi
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          notes_file="$(mktemp)"
+          awk "/^## \[${version}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md > "${notes_file}"
+          echo "notes_file=${notes_file}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          gh release create "${tag}" \
+            --title "core-ops ${tag}" \
+            --notes-file "${{ steps.notes.outputs.notes_file }}" \
+            dist/core-ops-linux-amd64 \
+            dist/core-ops-linux-arm64 \
+            "dist/core-ops-linux-amd64.tar.gz" \
+            "dist/core-ops-linux-arm64.tar.gz" \
+            "dist/SHA256SUMS-amd64" \
+            "dist/SHA256SUMS-arm64"

@@ -26,7 +26,7 @@ under the `Build Release Binaries` job. See quickstart.md §PR validation.
 
 ### Implementation for User Story 1
 
-- [ ] T001 [US1] Add `build` matrix job to `.github/workflows/ci.yml`:
+- [x] T001 [US1] Add `build` matrix job to `.github/workflows/ci.yml`:
   `needs: ci`, matrix `[x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]`,
   `fail-fast: false`, env `CORE_OPS_BUILD_SPEC_CONTEXT: "specs/010-distribution-readiness/spec.md"`,
   cross-toolchain install step (aarch64 only), `cargo build --release --locked --target "${{ matrix.target }}"`,
@@ -51,7 +51,7 @@ Release appears with binary assets and CHANGELOG-sourced body. See quickstart.md
 
 ### Implementation for User Story 2
 
-- [ ] T002 [US2] Add `release` job to `.github/workflows/ci.yml`:
+- [x] T002 [US2] Add `release` job to `.github/workflows/ci.yml`:
   `needs: build`, `if: github.ref == 'refs/heads/master' && github.event_name == 'push'`,
   `permissions: contents: write`, `fetch-depth: 0`.
   Steps: (1) derive `version` from `grep '^version' Cargo.toml`, derive `tag=v${version}`;
