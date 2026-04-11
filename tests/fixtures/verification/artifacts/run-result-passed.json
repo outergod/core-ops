@@ -2,7 +2,7 @@
   "view_kind": "verification_run",
   "run_id": "run-20260401-120001-frontend-idempotency",
   "mode": "ci",
-  "controller_version": "0.7.0",
+  "controller_version": "0.8.0",
   "revision_selection_basis": "single_scenario",
   "revision_under_test": "demo-uat-v2",
   "overall_outcome": "passed",

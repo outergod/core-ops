@@ -136,16 +136,16 @@ Credibility section.
   describing the unified CI workflow (build matrix on every PR, release job on master push,
   live README badges, retirement of `release-binary.yml`)
 
-- [ ] T008 Run `cargo test test_distribution_release` and confirm all tests pass
+- [x] T008 Run `cargo test test_distribution_release` and confirm all tests pass
 
-- [ ] T009 Run `cargo test test_distribution` and confirm full distribution suite passes
+- [x] T009 Run `cargo test test_distribution` and confirm full distribution suite passes
 
-- [ ] T010 Run `cargo clippy --all-targets -- -D warnings` and confirm no new warnings
+- [x] T010 Run `cargo clippy --all-targets -- -D warnings` and confirm no new warnings
 
-- [ ] T011 Validate `ci.yml` YAML syntax:
+- [x] T011 Validate `ci.yml` YAML syntax:
   `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"`
 
-- [ ] T012 Run `cargo run --bin core-ops-release -- validate --base-ref HEAD^` and confirm
+- [x] T012 Run `cargo run --bin core-ops-release -- validate --base-ref HEAD^` and confirm
   governance passes (fragment and CHANGELOG entry are present and consistent)
 
 ---

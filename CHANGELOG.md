@@ -11,12 +11,7 @@ versioning for public release policy decisions.
 ### Changed
 
 - Add the core-ops-release helper binary for machine-checkable SemVer and changelog governance
-- Unified CI validation and release publication into a single `ci.yml` workflow: build matrix
-  produces cross-compiled artifacts (x86_64, aarch64) on every PR; release job on master push
-  creates a GitHub Release with binary assets and CHANGELOG-sourced release notes
-- Replace static README Credibility table values with live CI status, E2E gate status, and
-  latest release version badges
-- Retire `release-binary.yml`; `ci.yml` is now the sole workflow for both validation and publication
+- Unified CI validation and release publication into a single ci.yml workflow
 <!-- core-ops-release:end -->
 
 ## [0.6.0] - 2026-04-07

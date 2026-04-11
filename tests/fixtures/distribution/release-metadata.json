@@ -1,5 +1,5 @@
 {
-  "latest_release_identity": "0.7.0-dev",
+  "latest_release_identity": "0.8.0-dev",
   "release_gate_status": "design-contract",
   "accepted_verification_status": "design-contract",
   "artifact_availability": [
