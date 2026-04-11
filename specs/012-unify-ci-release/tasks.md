@@ -127,12 +127,12 @@ Credibility section.
 
 **Purpose**: Release governance completeness required by the constitution and spec.
 
-- [ ] T006 [P] Create `changes/012-unify-ci-release.md` with frontmatter:
+- [x] T006 [P] Create `changes/012-unify-ci-release.md` with frontmatter:
   `change_id: 012-unify-ci-release`, `release_intent: minor`,
   `summary: Unified CI validation and release publication into a single ci.yml workflow`,
   `scope: ci-release`, `release_preparation: false`
 
-- [ ] T007 [P] Update `CHANGELOG.md` `[Unreleased]` section: add entry under `### Changed`
+- [x] T007 [P] Update `CHANGELOG.md` `[Unreleased]` section: add entry under `### Changed`
   describing the unified CI workflow (build matrix on every PR, release job on master push,
   live README badges, retirement of `release-binary.yml`)
 
