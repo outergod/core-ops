@@ -79,9 +79,9 @@ Run `cargo test test_distribution_release` — all tests pass against the unifie
 
 ### Implementation for User Story 3
 
-- [ ] T003 [P] [US3] Delete `.github/workflows/release-binary.yml`
+- [x] T003 [P] [US3] Delete `.github/workflows/release-binary.yml`
 
-- [ ] T004 [P] [US3] Update `tests/integration/test_distribution_release_artifacts.rs`:
+- [x] T004 [P] [US3] Update `tests/integration/test_distribution_release_artifacts.rs`:
   Rename function `release_binary_workflow_includes_license_and_metadata_outputs` to
   `release_workflow_includes_license_and_metadata_outputs`;
   change `read_to_string(... "release-binary.yml")` to `read_to_string(... "ci.yml")`;

@@ -6,9 +6,9 @@ fn repo_root() -> std::path::PathBuf {
 }
 
 #[test]
-fn release_binary_workflow_includes_license_and_metadata_outputs() {
-    let contents = fs::read_to_string(repo_root().join(".github/workflows/release-binary.yml"))
-        .expect("read release-binary workflow");
+fn release_workflow_includes_license_and_metadata_outputs() {
+    let contents = fs::read_to_string(repo_root().join(".github/workflows/ci.yml"))
+        .expect("read ci workflow");
     let cargo_config = fs::read_to_string(repo_root().join(".cargo/config.toml"))
         .expect("read cargo config");
 
@@ -29,7 +29,7 @@ fn release_binary_workflow_includes_license_and_metadata_outputs() {
         "core-ops.service core-ops.timer LICENSE CHANGELOG.md README.md",
         "release-metadata.json",
         "dist/SHA256SUMS-${artifact_arch}",
-        "release_identity=\"${{ github.event.release.tag_name }}\"",
+        "grep '^version' Cargo.toml",
         "\"release_gate_status\": \"passed\"",
         "\"accepted_verification_status\": \"passed\"",
         "\"verification_environment\": \"fedora-coreos-self-hosted@2026-04-fcos\"",
@@ -44,6 +44,21 @@ fn release_binary_workflow_includes_license_and_metadata_outputs() {
 
     assert!(cargo_config.contains("[target.aarch64-unknown-linux-gnu]"));
     assert!(cargo_config.contains("linker = \"aarch64-linux-gnu-gcc\""));
+}
+
+#[test]
+fn unified_release_job_is_gated_to_master_push() {
+    let contents = fs::read_to_string(repo_root().join(".github/workflows/ci.yml"))
+        .expect("read ci workflow");
+
+    for snippet in [
+        "refs/heads/master",
+        "git ls-remote --tags origin",
+        "gh release create",
+        "contents: write",
+    ] {
+        assert!(contents.contains(snippet), "missing release job snippet: {snippet}");
+    }
 }
 
 #[test]
