@@ -10,9 +10,16 @@ versioning for public release policy decisions.
 <!-- core-ops-release:start -->
 ### Changed
 
-- Add the core-ops-release helper binary for machine-checkable SemVer and changelog governance
-- Unified CI validation and release publication into a single ci.yml workflow
+- Fix short commit ID acceptance as --rev CLI input
 <!-- core-ops-release:end -->
+
+## [0.8.1] - 2026-04-12
+
+### Fixed
+
+- Short commit SHAs (e.g. `454ac5f1`) are now accepted as `--rev` input; previously
+  the loader treated all revision inputs as fetchable refspecs, causing short and full
+  SHAs to fail on most Git servers
 
 ## [0.8.0] - 2026-04-11
 

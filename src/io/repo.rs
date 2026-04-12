@@ -857,6 +857,11 @@ struct HostYaml {
 
 fn git_fetch_revision(repo_path: &Path, revision: &str) -> Result<(), RepoError> {
     let parsed = parse_revision_expression(revision);
+    if looks_like_commit_sha(parsed.fetch_ref) {
+        // Commit SHAs (short or full) are not fetchable refspecs. The objects are
+        // already present from the clone; skip the fetch and let checkout resolve them.
+        return Ok(());
+    }
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_path)
@@ -879,12 +884,19 @@ fn git_fetch_revision(repo_path: &Path, revision: &str) -> Result<(), RepoError>
 
 fn git_checkout_revision(repo_path: &Path, revision: &str) -> Result<(), RepoError> {
     let parsed = parse_revision_expression(revision);
+    let checkout_target = if looks_like_commit_sha(parsed.fetch_ref) {
+        // Use the original revision expression directly so Git can resolve the
+        // commit SHA (and any suffix like ~2) against the locally available objects.
+        revision.to_string()
+    } else {
+        parsed.checkout_target
+    };
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_path)
         .arg("checkout")
         .arg("--detach")
-        .arg(parsed.checkout_target)
+        .arg(checkout_target)
         .output()
         .map_err(|err| RepoError::GitCheckoutFailed(err.to_string()))?;
 
@@ -895,6 +907,11 @@ fn git_checkout_revision(repo_path: &Path, revision: &str) -> Result<(), RepoErr
     }
 
     Ok(())
+}
+
+fn looks_like_commit_sha(s: &str) -> bool {
+    let len = s.len();
+    (4..=40).contains(&len) && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 struct ParsedRevisionExpression<'a> {
@@ -980,8 +997,8 @@ fn resolved_head_revision(repo_path: &Path) -> Result<String, RepoError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_revision_expression, render_generated_automount_unit, render_generated_mount_unit,
-        required_fetch_depth, NATIVE_UNIT_MANAGED_MARKER,
+        looks_like_commit_sha, parse_revision_expression, render_generated_automount_unit,
+        render_generated_mount_unit, required_fetch_depth, NATIVE_UNIT_MANAGED_MARKER,
     };
     use crate::core::types::{MountDeclaration, MountVerificationMode};
 
@@ -1016,6 +1033,52 @@ mod tests {
         assert_eq!(required_fetch_depth("~5"), 6);
         assert_eq!(required_fetch_depth("^"), 2);
         assert_eq!(required_fetch_depth("~2^"), 4);
+    }
+
+    #[test]
+    fn short_sha_is_recognized_as_commit_sha() {
+        assert!(looks_like_commit_sha("454ac5f1"));
+        assert!(looks_like_commit_sha("abcd1234"));
+        assert!(looks_like_commit_sha("a1b2c3d4e5f6a1b2"));
+    }
+
+    #[test]
+    fn full_sha_is_recognized_as_commit_sha() {
+        // exactly 40 hex chars (SHA-1)
+        assert!(looks_like_commit_sha(
+            "454ac5f1deadbeefcafe00001111222233334444"
+        ));
+    }
+
+    #[test]
+    fn branch_and_tag_names_are_not_commit_shas() {
+        assert!(!looks_like_commit_sha("master"));
+        assert!(!looks_like_commit_sha("main"));
+        assert!(!looks_like_commit_sha("v1.0.0"));
+        assert!(!looks_like_commit_sha("feature/foo"));
+        // Too short to be a meaningful SHA
+        assert!(!looks_like_commit_sha("abc"));
+        // Non-hex characters
+        assert!(!looks_like_commit_sha("deadgood"));
+    }
+
+    #[test]
+    fn revision_expression_short_sha_uses_direct_checkout() {
+        // fetch_ref for a short SHA is still parsed correctly
+        let parsed = parse_revision_expression("454ac5f1");
+        assert_eq!(parsed.fetch_ref, "454ac5f1");
+        assert_eq!(parsed.checkout_target, "FETCH_HEAD");
+        // looks_like_commit_sha(fetch_ref) is what triggers the direct-checkout path
+        assert!(looks_like_commit_sha(parsed.fetch_ref));
+    }
+
+    #[test]
+    fn revision_expression_short_sha_with_suffix_parsed_correctly() {
+        let parsed = parse_revision_expression("454ac5f1~2");
+        assert_eq!(parsed.fetch_ref, "454ac5f1");
+        assert_eq!(parsed.checkout_target, "FETCH_HEAD~2");
+        assert_eq!(parsed.fetch_depth, 3);
+        assert!(looks_like_commit_sha(parsed.fetch_ref));
     }
 
     #[test]

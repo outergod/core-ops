@@ -355,9 +355,13 @@ pub fn render_generated_changelog(
     generated.push_str("## [Unreleased]\n\n");
     generated.push_str(CHANGELOG_START_MARKER);
     generated.push('\n');
-    if !fragments.is_empty() {
+    let pending_fragments: Vec<_> = fragments
+        .iter()
+        .filter(|f| !f.front_matter.release_preparation)
+        .collect();
+    if !pending_fragments.is_empty() {
         generated.push_str("### Changed\n\n");
-        let mut summaries = fragments
+        let mut summaries = pending_fragments
             .iter()
             .map(|fragment| fragment.front_matter.summary.trim().to_string())
             .collect::<Vec<_>>();

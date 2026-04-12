@@ -17,8 +17,11 @@ pub fn load_governance_repository_input(
     let changed_fragment_paths = changed_files
         .iter()
         .filter_map(|change| {
-            // Destination path covers additions, modifications, and renames into changes/.
-            if change.path.starts_with("changes/")
+            // Destination path covers additions and modifications into changes/.
+            // Deletions are excluded: removing an old fragment retires a past
+            // release's artifact and carries no new release intent.
+            if change.kind != RepoChangeKind::Deleted
+                && change.path.starts_with("changes/")
                 && change.path.ends_with(".md")
                 && change.path != "changes/README.md"
             {
