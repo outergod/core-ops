@@ -135,15 +135,21 @@ impl VerificationGuestBoundary for GuestCommandRunner {
 
         let duration = parse_timeout(timeout)?;
         let deadline = Instant::now() + duration;
+        let mut consecutive_successes: u32 = 0;
         while Instant::now() < deadline {
             let mut command = self.ssh_command(guest, "true");
             let output = self.run_output(&mut command, "ssh readiness probe")?;
             if output.status_code == 0 {
-                return Ok(GuestCommandOutput {
-                    status_code: 0,
-                    stdout: format!("{} ready within {timeout}", guest.ssh_target),
-                    stderr: String::new(),
-                });
+                consecutive_successes += 1;
+                if consecutive_successes >= 2 {
+                    return Ok(GuestCommandOutput {
+                        status_code: 0,
+                        stdout: format!("{} ready within {timeout}", guest.ssh_target),
+                        stderr: String::new(),
+                    });
+                }
+            } else {
+                consecutive_successes = 0;
             }
             sleep(Duration::from_secs(2));
         }
