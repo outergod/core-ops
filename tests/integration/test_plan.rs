@@ -124,6 +124,7 @@ fn plan_does_not_apply_changes() {
 
 #[test]
 fn cli_plan_summary_uses_deterministic_reconciliation_view() {
+    let _lock = path_lock().lock().expect("path lock");
     let repo = temp_dir("core_ops_repo_plan_summary");
     let rev = init_git_repo(&repo);
 
