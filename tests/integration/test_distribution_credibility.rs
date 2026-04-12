@@ -17,9 +17,11 @@ fn credibility_surface_matches_release_metadata_fixture() {
     .expect("parse release metadata");
 
     assert!(readme.contains("## Credibility"));
-    assert!(readme.contains(&metadata.latest_release_identity));
-    assert!(readme.contains(&metadata.release_gate_status));
-    assert!(readme.contains(&metadata.accepted_verification_status));
+    // Live badges replaced the static release identity, gate status, and verification status values
+    assert!(readme.contains("actions/workflows/ci.yml/badge.svg"), "missing CI badge");
+    assert!(readme.contains("actions/workflows/e2e-gate.yml/badge.svg"), "missing E2E gate badge");
+    assert!(readme.contains("img.shields.io/github/v/release/"), "missing release version badge");
+    // Static artifact availability rows remain alongside the live badges
     for artifact in &metadata.artifact_availability {
         assert!(readme.contains(artifact), "missing artifact {artifact}");
     }
