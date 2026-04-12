@@ -3,7 +3,7 @@ change_id: 013-fix-short-sha-rev
 release_intent: patch
 summary: Fix short commit ID acceptance as --rev CLI input
 scope: cli-revision
-release_preparation: false
+release_preparation: true
 ---
 
 Short commit SHAs displayed in human-readable apply/plan output (e.g. `454ac5f1`) are

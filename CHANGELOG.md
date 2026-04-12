@@ -8,9 +8,6 @@ versioning for public release policy decisions.
 ## [Unreleased]
 
 <!-- core-ops-release:start -->
-### Changed
-
-- Fix short commit ID acceptance as --rev CLI input
 <!-- core-ops-release:end -->
 
 ## [0.8.1] - 2026-04-12
