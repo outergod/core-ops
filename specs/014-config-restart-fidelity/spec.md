@@ -27,7 +27,7 @@ this:
 ### Session 2026-04-12
 
 - Q: When a config file is deleted (`DiffKind::Remove`), should dependent containers be restarted? → A: Yes — schedule `RestartUnit` for dependent containers on removal, same as Change, to surface the missing-config failure immediately.
-- Q: Should SC-002 (live-host restart after config change) be covered by an automated e2e verification scenario or manual/operational validation only? → A: Automated e2e verification scenario — add a scenario to the verification harness that applies a config change and asserts the consuming service restart timestamp advances.
+- Q: Should SC-002 (live-host restart after config change) be covered by an automated e2e verification scenario or manual/operational validation only? → A: Operator-run validation — the operator runs the quickstart scenario on a live host to confirm the restart timestamp advances.
 - Q: When a config file is added (`DiffKind::Add`) and a dependent container is already running, should the container be restarted? → A: Yes — restart if the container is present in observed state (already running); skip restart only when no prior observed state exists for the consuming container.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -149,9 +149,13 @@ fails, then re-applying the fix and confirming it passes.
   container restarts.
 - **FR-004**: Deduplication MUST prevent double `RestartUnit` actions when the consuming container is
   also independently changed in the same plan.
-- **FR-005**: Apply reporting in `src/cli/report.rs` MUST derive terminal `restarted` / `failed` status
-  for each workload from the actual `ExecutionEvent` records in the apply output, not solely from the
-  `DeterministicActionClass` of the planned object.
+- **FR-005**: Apply reporting MUST NOT show `restarted` for a workload when no `RestartUnit` was
+  executed for it. After FR-001's fix, the executable plan contains a `RestartUnit` for every
+  config-file-dependent container that requires restart; a failed restart MUST surface as `failed` in
+  the apply output via the post-apply verification convergence path (`failed_actions` →
+  `convergence_failed_for_entry`). No structural change to `src/cli/report.rs` is required; this
+  requirement is satisfied by the combination of FR-001 (correct action scheduling) and the existing
+  verification mechanism.
 - **FR-006**: A unit integration test MUST assert that a `ConfigFile` change for a container with a
   declared dependency produces a `RestartUnit` action for that container in the executable plan.
 - **FR-007**: The fix MUST NOT affect the deterministic reconciliation plan
@@ -207,7 +211,7 @@ fails, then re-applying the fix and confirming it passes.
 - Config-file change with no dependents: produces no `RestartUnit` (unit test).
 - Config-file change plus independent container change in same plan: no duplicate `RestartUnit` (unit test).
 - Config-file-only change on a live host: `ActiveEnterTimestamp` of the consuming service advances
-  after apply completes (e2e verification harness scenario).
+  after apply completes (operator-run quickstart validation).
 - Config-file deletion with a dependent container: consuming service receives `RestartUnit` and the
   apply report reflects the restart attempt (unit test + e2e).
 - Config-file addition with an already-running dependent container: container receives `RestartUnit`
@@ -256,7 +260,7 @@ fails, then re-applying the fix and confirming it passes.
   action for that container in `ReconciliationPlan.actions`.
 - **SC-002**: Applying a config-file-only change on a live host results in the consuming service being
   restarted, with a post-apply `ActiveEnterTimestamp` newer than the pre-apply value. This criterion
-  is validated by an automated e2e verification harness scenario.
+  is validated by the operator running the quickstart scenario on a live host.
 - **SC-003**: Terminal apply output shows `restarted` only when a `RestartUnit` action was actually
   executed and succeeded for that workload.
 - **SC-004**: The regression test fails when the P1 fix is reverted and passes with it in place.

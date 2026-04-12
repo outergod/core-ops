@@ -88,9 +88,10 @@ The US2 test below validates that a failed restart surfaces correctly.
 
 ### Validation for US2
 
-- [ ] T015 [P] [US2] Add test `config_file_change_report_shows_restarted_from_execution` to `tests/integration/test_plan.rs`: call `build_apply_output` from `src/cli/report.rs` with the deterministic plan for a config-file change scenario; assert the container's terminal `ExecutionEvent.state` is `Restarted` (not `Unchanged`) — confirming the report is consistent with the now-executed restart
-- [ ] T016 [P] [US2] Read `src/cli/report.rs:476–596` (`build_apply_output`) and `src/core/verify.rs:61–70` and confirm in code comments or a note that no additional report-sourcing change is needed: after P1, the terminal state is `Restarted` (synthesised from plan action) and, if the service fails to restart, `verify_state` will populate `failed_actions`, causing `convergence_failed_for_entry` to return `true` and the report to show `Failed`
-- [ ] T017 [US2] Run `cargo test config_file_change_report` and confirm T015 passes
+- [ ] T015a [P] [US2] Add test `config_file_change_report_shows_restarted_when_restart_executed` to `tests/integration/test_plan.rs`: build a `DeterministicReconciliationPlan` where the container has `DeterministicActionClass::Restart`; call `build_apply_output` with no convergence failure; assert the container's terminal `ExecutionEvent.state` is `Restarted` — confirms the positive path works
+- [ ] T015b [P] [US2] Add test `config_file_change_report_shows_failed_when_restart_fails` to `tests/integration/test_plan.rs`: build the same plan but pass a `DeterministicConvergenceRecord` with the container unit name in `failed_actions`; call `build_apply_output`; assert the terminal `ExecutionEvent.state` is `Failed` — confirms the negative path (failed restart surfaces correctly, not silently shown as `Restarted`)
+- [ ] T016 [P] [US2] Add a one-line comment at the `terminal_execution_state` call site in `src/cli/report.rs` (line ~571 inside `build_apply_output`) noting: "FR-005: RestartUnit is always present in executable plan when deterministic plan shows Restart for config-file-dependent containers (see planner.rs dependent-restart pass); restart failures surface via failed_actions → convergence_failed_for_entry" — makes the design decision explicit and reviewable in code review
+- [ ] T017 [US2] Run `cargo test config_file_change_report` and confirm T015a and T015b pass
 
 **Checkpoint**: US2 validated — apply report accurately reflects restart execution.
 
@@ -124,7 +125,7 @@ requiring systemd or filesystem access.
 - [ ] T024 [P] Bump version in `Cargo.toml` to `0.8.2` (patch bump from current `0.8.1`)
 - [ ] T025 Update `CHANGELOG.md`: add `## [0.8.2]` section (or update `[Unreleased]`) with a `### Fixed` entry covering: (a) config-file changes now restart dependent containers; (b) config-file removal and addition with pre-existing containers also trigger restarts
 - [ ] T026 Run `cargo run --bin core-ops-release -- validate --base-ref HEAD^` and confirm governance check passes (fragment present, version bumped, CHANGELOG updated)
-- [ ] T027 Run the quickstart validation from `specs/014-config-restart-fidelity/quickstart.md` if a live host is available, or confirm via `cargo test` that SC-001 through SC-005 are satisfied
+- [ ] T027 Run the quickstart validation from `specs/014-config-restart-fidelity/quickstart.md` on a live host to satisfy SC-002 (operator-run: confirm `ActiveEnterTimestamp` advances after a config-file-only apply). SC-001, SC-003, SC-004, SC-005 are all covered by `cargo test`.
 
 ---
 
@@ -155,7 +156,7 @@ requiring systemd or filesystem access.
 - T002, T003 (Phase 1 reads) can run in parallel
 - T004, T005, T006 (Phase 2 reads) can run in parallel
 - T007, T008, T009, T010 (US1 failing tests) can be written in parallel
-- T015, T016 (US2 validation) can run in parallel
+- T015a, T015b, T016 (US2 validation) can run in parallel
 - T018, T019 (US3 Add-case tests) can run in parallel
 - T023, T024 (fragment + version bump) can run in parallel
 
@@ -195,8 +196,8 @@ Task: "config_file_change_no_duplicate_restart_when_container_also_changed"
 
 ## Notes
 
-- Total tasks: 27
-- Tasks per user story: US1=8, US2=3, US3=3, Polish=7
+- Total tasks: 28 (T015 split into T015a + T015b)
+- Tasks per user story: US1=8, US2=4, US3=3, Polish=7
 - Parallel opportunities: T002/T003, T004/T005/T006, T007/T008/T009/T010, T015/T016, T018/T019, T023/T024
 - MVP scope: Phase 1–3 + Phase 6 (US1 only, ~14 tasks)
 - **No new types, no new modules** — all changes in `src/core/planner.rs` (T012) and `tests/integration/test_plan.rs` (T007–T010, T015, T018–T019)
