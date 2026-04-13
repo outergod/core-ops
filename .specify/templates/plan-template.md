@@ -55,6 +55,8 @@
   `cargo clippy --all-targets -- -D warnings`, or an explicit temporary
   exception with follow-up.
 - Test strategy covers invariants, external behavior, convergence, and failures.
+- If the change affects externally visible host behavior, an accepted VM-backed
+  scenario is planned or an explicit exemption is recorded with justification.
 - Modules are structured to be regenerable from specs and tests.
 
 ## Project Structure
