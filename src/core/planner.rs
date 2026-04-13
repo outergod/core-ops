@@ -112,16 +112,15 @@ pub fn plan(
                     .contains(&config_name.to_string());
 
                 if depends {
-                    let should_restart = match kind {
-                        DiffKind::Add => {
-                            // observed.units stores runtime names (e.g. app.service) derived
-                            // via systemd_unit_for_quadlet_file, not quadlet names (app.container).
-                            let runtime_name =
-                                systemd_unit_for_quadlet_file(&workload.systemd_unit_name);
-                            observed_active_units.contains(runtime_name.as_str())
-                        }
-                        _ => true,
-                    };
+                    // Gate on observed runtime active state for all diff kinds.
+                    // observed.units stores runtime names via systemd_unit_for_quadlet_file
+                    // (e.g. app.container → app.service), so convert before lookup.
+                    // This prevents RestartUnit from starting intentionally stopped services
+                    // on Change and Remove, and avoids unnecessary restarts in mixed plans.
+                    let runtime_name =
+                        systemd_unit_for_quadlet_file(&workload.systemd_unit_name);
+                    let should_restart =
+                        observed_active_units.contains(runtime_name.as_str());
                     if should_restart && !already_restarted.contains(&workload.systemd_unit_name) {
                         actions.push(action(
                             PlanActionType::RestartUnit,

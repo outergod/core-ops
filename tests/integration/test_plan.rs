@@ -889,10 +889,15 @@ fn config_file_change_schedules_restart_for_dependent_container() {
         ],
         vec![config_path.to_string()],
     );
-    let observed = config_observed_state(vec![
-        config_file_workload(config_path, "KEY=old_value"),
-        container_workload_with_env_file("app", config_path),
-    ]);
+    // Container is active (running) — restart must be scheduled.
+    // ObservedUnit names are runtime names (app.service), not quadlet names (app.container).
+    let observed = config_observed_state_with_units(
+        vec![
+            config_file_workload(config_path, "KEY=old_value"),
+            container_workload_with_env_file("app", config_path),
+        ],
+        vec![active_unit("app.service")],
+    );
 
     let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
 
@@ -957,11 +962,15 @@ fn config_file_remove_schedules_restart_for_dependent_container() {
         vec![container_workload_with_env_file("app", config_path)],
         vec![], // config removed from desired, so not in managed_config_paths
     );
-    // Observed: both config file and container present
-    let observed = config_observed_state(vec![
-        config_file_workload(config_path, "KEY=old_value"),
-        container_workload_with_env_file("app", config_path),
-    ]);
+    // Observed: both config file and container present; container is active (running).
+    // ObservedUnit names are runtime names (app.service), not quadlet names (app.container).
+    let observed = config_observed_state_with_units(
+        vec![
+            config_file_workload(config_path, "KEY=old_value"),
+            container_workload_with_env_file("app", config_path),
+        ],
+        vec![active_unit("app.service")],
+    );
 
     let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
 
@@ -984,20 +993,24 @@ fn config_file_change_no_duplicate_restart_when_container_also_changed() {
         ],
         vec![config_path.to_string()],
     );
-    // Container also changed independently (different quadlet_contents)
-    let observed = config_observed_state(vec![
-        config_file_workload(config_path, "KEY=old_value"),
-        Workload {
-            name: "app".to_string(),
-            quadlet_type: QuadletType::Container,
-            quadlet_contents: format!(
-                "[Container]\nImage=docker.io/example/app:v1\nEnvironmentFile={config_path}\n"
-            ),
-            systemd_unit_name: "app.container".to_string(),
-            enabled_state: EnabledState::Enabled,
-            restart_policy: RestartPolicy::Always,
-        },
-    ]);
+    // Container also changed independently (different quadlet_contents); container is active.
+    // ObservedUnit names are runtime names (app.service), not quadlet names (app.container).
+    let observed = config_observed_state_with_units(
+        vec![
+            config_file_workload(config_path, "KEY=old_value"),
+            Workload {
+                name: "app".to_string(),
+                quadlet_type: QuadletType::Container,
+                quadlet_contents: format!(
+                    "[Container]\nImage=docker.io/example/app:v1\nEnvironmentFile={config_path}\n"
+                ),
+                systemd_unit_name: "app.container".to_string(),
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            },
+        ],
+        vec![active_unit("app.service")],
+    );
 
     let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
 
@@ -1222,11 +1235,15 @@ fn config_file_remove_schedules_restart_via_volume_dependency() {
         vec![container_with_volume.clone()],
         vec![], // config removed from desired, so not in managed_config_paths
     );
-    // Observed: both config file and container present
-    let observed = config_observed_state(vec![
-        config_file_workload(config_path, "option=value"),
-        container_with_volume,
-    ]);
+    // Observed: both config file and container present; container is active (running).
+    // ObservedUnit names are runtime names (app.service), not quadlet names (app.container).
+    let observed = config_observed_state_with_units(
+        vec![
+            config_file_workload(config_path, "option=value"),
+            container_with_volume,
+        ],
+        vec![active_unit("app.service")],
+    );
 
     let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
 
@@ -1236,6 +1253,66 @@ fn config_file_remove_schedules_restart_via_volume_dependency() {
                 && a.target == "app.container"
         }),
         "expected RestartUnit for container with Volume= dependency when config file is removed"
+    );
+}
+
+#[test]
+fn config_file_change_no_restart_for_stopped_container() {
+    let config_path = "/etc/runner/env";
+    let desired = config_desired_state(
+        vec![
+            config_file_workload(config_path, "KEY=new_value"),
+            container_workload_with_env_file("app", config_path),
+        ],
+        vec![config_path.to_string()],
+    );
+    // Observed: container present but INACTIVE — intentionally stopped.
+    // ObservedUnit names are runtime names (app.service), not quadlet names (app.container).
+    let observed = config_observed_state_with_units(
+        vec![
+            config_file_workload(config_path, "KEY=old_value"),
+            container_workload_with_env_file("app", config_path),
+        ],
+        vec![inactive_unit("app.service")],
+    );
+
+    let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
+
+    assert!(
+        !plan.actions.iter().any(|a| {
+            a.action_type == core_ops::core::types::PlanActionType::RestartUnit
+                && a.target == "app.container"
+        }),
+        "expected NO RestartUnit for stopped (inactive) container when config file changes"
+    );
+}
+
+#[test]
+fn config_file_remove_no_restart_for_stopped_container() {
+    let config_path = "/etc/runner/env";
+    // Desired: container only (config file removed)
+    let desired = config_desired_state(
+        vec![container_workload_with_env_file("app", config_path)],
+        vec![],
+    );
+    // Observed: both present but container INACTIVE — intentionally stopped.
+    // ObservedUnit names are runtime names (app.service), not quadlet names (app.container).
+    let observed = config_observed_state_with_units(
+        vec![
+            config_file_workload(config_path, "KEY=old_value"),
+            container_workload_with_env_file("app", config_path),
+        ],
+        vec![inactive_unit("app.service")],
+    );
+
+    let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
+
+    assert!(
+        !plan.actions.iter().any(|a| {
+            a.action_type == core_ops::core::types::PlanActionType::RestartUnit
+                && a.target == "app.container"
+        }),
+        "expected NO RestartUnit for stopped (inactive) container when config file is removed"
     );
 }
 
