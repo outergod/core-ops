@@ -12,8 +12,8 @@ use core_ops::core::reconcile::reconcile_deterministic_plan;
 use core_ops::core::reconcile::{reconcile_plan, ReconcileDependencies};
 use core_ops::core::types::{
     Boundaries, BoundaryScope, DeterministicPersistedState, DriftCategory, EnabledState, Invariant,
-    ManagedObjectKind, NormalizedManagedObject, NormalizedSnapshot, QuadletType, RestartPolicy,
-    RetainedAppliedSnapshot, Workload,
+    ManagedObjectKind, NormalizedManagedObject, NormalizedSnapshot, ObservedUnit, QuadletType,
+    RestartPolicy, RetainedAppliedSnapshot, UnitActiveState, Workload,
 };
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::{build_observed_snapshot, read_observed_state};
@@ -826,6 +826,35 @@ fn config_observed_state(workloads: Vec<Workload>) -> core_ops::core::types::Obs
     }
 }
 
+fn config_observed_state_with_units(
+    workloads: Vec<Workload>,
+    units: Vec<ObservedUnit>,
+) -> core_ops::core::types::ObservedState {
+    core_ops::core::types::ObservedState {
+        observed_revision_id: Some("obs".to_string()),
+        units,
+        workloads,
+        last_reconcile_id: None,
+        host_info: None,
+    }
+}
+
+fn active_unit(unit_name: &str) -> ObservedUnit {
+    ObservedUnit {
+        unit_name: unit_name.to_string(),
+        active_state: UnitActiveState::Active,
+        enabled_state: EnabledState::Enabled,
+    }
+}
+
+fn inactive_unit(unit_name: &str) -> ObservedUnit {
+    ObservedUnit {
+        unit_name: unit_name.to_string(),
+        active_state: UnitActiveState::Inactive,
+        enabled_state: EnabledState::Enabled,
+    }
+}
+
 fn config_file_workload(path: &str, contents: &str) -> Workload {
     Workload {
         name: path.to_string(),
@@ -1127,8 +1156,11 @@ fn config_file_add_restarts_already_running_container() {
         ],
         vec![config_path.to_string()],
     );
-    // Observed: container PRESENT but config file ABSENT
-    let observed = config_observed_state(vec![container_workload_with_env_file("app", config_path)]);
+    // Observed: container PRESENT and ACTIVE but config file ABSENT
+    let observed = config_observed_state_with_units(
+        vec![container_workload_with_env_file("app", config_path)],
+        vec![active_unit("app.container")],
+    );
 
     let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
 
@@ -1137,7 +1169,71 @@ fn config_file_add_restarts_already_running_container() {
             a.action_type == core_ops::core::types::PlanActionType::RestartUnit
                 && a.target == "app.container"
         }),
-        "expected RestartUnit for already-running container when config file is added"
+        "expected RestartUnit for already-running (active) container when config file is added"
+    );
+}
+
+#[test]
+fn config_file_add_no_restart_for_stopped_container() {
+    let config_path = "/etc/runner/env";
+    // Desired: config file (new) + container with dependency
+    let desired = config_desired_state(
+        vec![
+            config_file_workload(config_path, "KEY=value"),
+            container_workload_with_env_file("app", config_path),
+        ],
+        vec![config_path.to_string()],
+    );
+    // Observed: container PRESENT but INACTIVE — intentionally stopped
+    let observed = config_observed_state_with_units(
+        vec![container_workload_with_env_file("app", config_path)],
+        vec![inactive_unit("app.container")],
+    );
+
+    let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
+
+    assert!(
+        !plan.actions.iter().any(|a| {
+            a.action_type == core_ops::core::types::PlanActionType::RestartUnit
+                && a.target == "app.container"
+        }),
+        "expected NO RestartUnit for stopped (inactive) container when config file is added"
+    );
+}
+
+#[test]
+fn config_file_remove_schedules_restart_via_volume_dependency() {
+    let config_path = "/etc/app/config";
+    // Container depends on config via Volume= mount (not EnvironmentFile=)
+    let container_with_volume = Workload {
+        name: "app".to_string(),
+        quadlet_type: QuadletType::Container,
+        quadlet_contents: format!(
+            "[Container]\nImage=docker.io/example/app:latest\nVolume={config_path}:/cfg:Z\n"
+        ),
+        systemd_unit_name: "app.container".to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    };
+    // Desired: container only (config file removed)
+    let desired = config_desired_state(
+        vec![container_with_volume.clone()],
+        vec![], // config removed from desired, so not in managed_config_paths
+    );
+    // Observed: both config file and container present
+    let observed = config_observed_state(vec![
+        config_file_workload(config_path, "option=value"),
+        container_with_volume,
+    ]);
+
+    let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
+
+    assert!(
+        plan.actions.iter().any(|a| {
+            a.action_type == core_ops::core::types::PlanActionType::RestartUnit
+                && a.target == "app.container"
+        }),
+        "expected RestartUnit for container with Volume= dependency when config file is removed"
     );
 }
 

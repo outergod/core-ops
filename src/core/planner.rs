@@ -8,8 +8,8 @@ use crate::core::types::{
     DiffItem, DiffKind, FailureClass, GeneratedUnitSet, ManagedObjectKind, ManagedObjectRef,
     MountDeclaration, MountDependency, NormalizedSnapshot, ObservedState, PlanAction,
     PlanActionType, QuadletType, ReconciliationPlan, SafetyCheck, SemanticDependencyEdge,
-    SemanticDependencyGraph, SemanticDependencyNode, ServiceDependencyEdit, VerificationResult,
-    VerificationStatus,
+    SemanticDependencyGraph, SemanticDependencyNode, ServiceDependencyEdit, UnitActiveState,
+    VerificationResult, VerificationStatus,
 };
 use crate::core::validation::{detect_semantic_dependency_cycle, validate_desired_state};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -74,10 +74,14 @@ pub fn plan(
         .collect();
 
     if !config_diffs.is_empty() {
-        let observed_unit_names: HashSet<&str> = observed
-            .workloads
+        // For Add: only restart containers that are currently active (running).
+        // Keying off observed.units (runtime state) prevents RestartUnit from
+        // unintentionally starting services that were intentionally stopped.
+        let observed_active_units: HashSet<&str> = observed
+            .units
             .iter()
-            .map(|w| w.systemd_unit_name.as_str())
+            .filter(|u| u.active_state == UnitActiveState::Active)
+            .map(|u| u.unit_name.as_str())
             .collect();
         let mut already_restarted: HashSet<String> = actions
             .iter()
@@ -86,26 +90,29 @@ pub fn plan(
             .collect();
 
         for (kind, config_name) in &config_diffs {
-            for workload in &desired.workloads {
-                // For Remove: config is no longer in managed_config_paths, so check
-                // quadlet_contents directly for EnvironmentFile directives.
-                // For Add/Change: use dependency_refs_for_workload_state (path is in
-                // managed_config_paths and the function handles all directive types).
-                let depends = if matches!(kind, DiffKind::Remove) {
-                    workload.quadlet_contents.lines().any(|raw_line| {
-                        let line = raw_line.trim();
-                        line.strip_prefix("EnvironmentFile=")
-                            .map(|v| v.trim().trim_start_matches('-') == *config_name)
-                            .unwrap_or(false)
-                    })
-                } else {
-                    dependency_refs_for_workload_state(desired, workload)
-                        .contains(&config_name.to_string())
+            // For Remove: the config path is absent from desired.managed_config_paths,
+            // so dependency_refs_for_workload_state would miss it. Augment a clone of
+            // desired with the removed path so the full dependency parser (EnvironmentFile=,
+            // Volume= roots, etc.) can resolve the dependency correctly.
+            let augmented_desired;
+            let effective_desired = if matches!(kind, DiffKind::Remove) {
+                augmented_desired = {
+                    let mut d = desired.clone();
+                    d.managed_config_paths.push(config_name.to_string());
+                    d
                 };
+                &augmented_desired
+            } else {
+                desired
+            };
+
+            for workload in &desired.workloads {
+                let depends = dependency_refs_for_workload_state(effective_desired, workload)
+                    .contains(&config_name.to_string());
 
                 if depends {
                     let should_restart = match kind {
-                        DiffKind::Add => observed_unit_names
+                        DiffKind::Add => observed_active_units
                             .contains(workload.systemd_unit_name.as_str()),
                         _ => true,
                     };
