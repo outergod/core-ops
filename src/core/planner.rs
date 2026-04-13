@@ -430,45 +430,32 @@ pub fn plan_deterministic_reconciliation_with_runtime(
 
     let delete_ids = ordered_delete_ids(actual, desired).map_err(map_validation_error)?;
 
-    // Config-delete restart pass: a workload whose dependency_refs reference
-    // a config path that is now being deleted must be classified Restart.
+    // Config-delete restart pass: a workload whose current desired quadlet contents
+    // reference a config path that is now being deleted must be classified Restart.
     //
-    // Two evidence sources are tried in order:
+    // We scan desired_map.material_fields["contents"] directly rather than relying on
+    // dependency_refs (which are filtered by managed_config_paths and thus omit the
+    // removed path) or applied_map.dependency_refs (which may be stale — the workload
+    // may have since been updated to drop the EnvironmentFile= reference, in which case
+    // applied_map would still carry the old dep but the executable planner would not
+    // emit a RestartUnit, causing plan/apply divergence).
     //
-    // 1. applied_map (last-applied snapshot): dependency_refs were computed when
-    //    the config was still in managed_config_paths, so they carry the removed
-    //    path explicitly. Reliable when a baseline exists.
-    //
-    // 2. actual_map fallback (no baseline — first reconcile or after state reset):
-    //    applied_map is empty, but the actual workload's raw quadlet contents
-    //    (stored in material_fields["contents"]) still reference the config path
-    //    via EnvironmentFile= or Volume=. We re-derive the dependency by scanning
-    //    those contents against the deleted paths. This mirrors the augmented-desired
-    //    trick in the executable planner and prevents plan/apply divergence in
-    //    bootstrap-style runs.
+    // Scanning the desired contents is the same evidence the executable planner uses
+    // (via the augmented-desired trick), so the two planners stay in sync regardless
+    // of whether a baseline exists.
     let deleted_ids: std::collections::HashSet<&str> =
         delete_ids.iter().map(String::as_str).collect();
     for action in &mut actions {
         if action.classification != DeterministicActionClass::NoOp {
             continue;
         }
-        let trigger = applied_map
+        let trigger = desired_map
             .get(action.object_id.as_str())
-            .and_then(|applied| {
-                applied
-                    .dependency_refs
-                    .iter()
-                    .find(|dep| deleted_ids.contains(dep.as_str()))
-                    .map(String::as_str)
-            })
-            .or_else(|| {
-                // Fallback: scan actual quadlet contents for direct config references.
-                // This handles bootstrap runs where no applied_map entry exists.
-                let actual_obj = actual_map.get(action.object_id.as_str())?;
+            .and_then(|desired_obj| {
                 deleted_ids
                     .iter()
                     .copied()
-                    .find(|path| normalized_object_references_config(actual_obj, path))
+                    .find(|path| normalized_object_references_config(desired_obj, path))
             });
 
         if let Some(trigger) = trigger {

@@ -614,11 +614,14 @@ fn deterministic_planner_classifies_restart_when_config_dependency_is_removed() 
     // When a config file that a workload depends on is removed from desired,
     // the workload must be classified Restart (not NoOp). The desired
     // dependency_refs omit the removed path because managed_config_paths no
-    // longer includes it, so the planner must consult the applied snapshot to
-    // detect the implicit restart requirement.
+    // longer includes it, but the desired quadlet contents still contain an
+    // EnvironmentFile= reference — the authoritative evidence the planner uses.
     let config_path = "/etc/runner/env";
+    let quadlet_contents =
+        "[Container]\nImage=docker.io/example/app:v1\nEnvironmentFile=/etc/runner/env\n";
 
-    // Desired: container only — config file has been removed.
+    // Desired: container only — config file has been removed from managed_config_paths,
+    // but the quadlet still references it via EnvironmentFile=.
     // dependency_refs is empty because managed_config_paths no longer lists config_path.
     let desired = NormalizedSnapshot {
         revision_id: Some("rev-2".to_string()),
@@ -626,7 +629,7 @@ fn deterministic_planner_classifies_restart_when_config_dependency_is_removed() 
         objects: vec![normalized_object(
             "app.container",
             ManagedObjectKind::GeneratedUnit,
-            &[("unit", "app.container")],
+            &[("unit", "app.container"), ("contents", quadlet_contents)],
             &[], // config removed from managed_config_paths → no dep ref in desired
         )],
     };
@@ -649,9 +652,11 @@ fn deterministic_planner_classifies_restart_when_config_dependency_is_removed() 
             ),
         ],
     };
-    // Actual: config file still present on disk, but workload dependency_refs
-    // are empty because they're re-derived from the current desired state
-    // (managed_config_paths no longer includes config_path).
+    // Actual: config file still present on disk; workload material_fields match
+    // desired (container itself unchanged) so classification is NoOp until the
+    // config-delete restart pass promotes it to Restart.
+    // dependency_refs are empty because they're re-derived from the current desired
+    // state (managed_config_paths no longer includes config_path).
     let actual = NormalizedSnapshot {
         revision_id: Some("rev-1".to_string()),
         scope_id: "host:alpha".to_string(),
@@ -665,7 +670,7 @@ fn deterministic_planner_classifies_restart_when_config_dependency_is_removed() 
             normalized_object(
                 "app.container",
                 ManagedObjectKind::GeneratedUnit,
-                &[("unit", "app.container")],
+                &[("unit", "app.container"), ("contents", quadlet_contents)],
                 &[], // same as desired — derived from current managed_config_paths
             ),
         ],
