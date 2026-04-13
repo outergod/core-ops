@@ -4,7 +4,7 @@ Deferred implementation work and discoveries that should be revisited after the 
 
 ## Config Change Restart Reporting Diverges From Actual Apply
 
-- Status: Deferred follow-up after distribution-readiness merge
+- Status: Resolved in 0.8.2 — see `specs/014-config-restart-fidelity/` and `changes/014-config-restart-fidelity.md`
 - Area: apply execution vs apply reporting for dependent restarts
 - Discovery:
   - On `ulthar`, `core-ops apply --repo file:///var/lib/core-ops/repo --rev master` reported:

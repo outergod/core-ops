@@ -1,6 +1,7 @@
 use crate::core::boundaries::enforce_plan_boundaries;
 use crate::core::diff::{diff_normalized_snapshots, diff_workloads};
 use crate::core::errors::{CoreError, ValidationError};
+use crate::core::evaluate::dependency_refs_for_workload_state;
 use crate::core::types::{
     DependencyEdgeKind, DependencyEdgeView, DependencyRelation, DesiredState,
     DeterministicActionClass, DeterministicPlannedAction, DeterministicReconciliationPlan,
@@ -54,6 +55,70 @@ pub fn plan(
             &automount_stems,
         );
         actions.append(&mut diff_actions);
+    }
+
+    // Dependent-restart pass: schedule RestartUnit for containers whose config
+    // files changed, were added (when container already running), or were removed.
+    let config_diffs: Vec<(&DiffKind, &str)> = diffs
+        .iter()
+        .filter(|diff| {
+            matches!(diff.kind, DiffKind::Add | DiffKind::Change | DiffKind::Remove)
+                && diff
+                    .desired
+                    .as_ref()
+                    .or(diff.observed.as_ref())
+                    .map(|w| w.quadlet_type == QuadletType::ConfigFile)
+                    .unwrap_or(false)
+        })
+        .map(|diff| (&diff.kind, diff.name.as_str()))
+        .collect();
+
+    if !config_diffs.is_empty() {
+        let observed_unit_names: HashSet<&str> = observed
+            .workloads
+            .iter()
+            .map(|w| w.systemd_unit_name.as_str())
+            .collect();
+        let mut already_restarted: HashSet<String> = actions
+            .iter()
+            .filter(|a| a.action_type == PlanActionType::RestartUnit)
+            .map(|a| a.target.clone())
+            .collect();
+
+        for (kind, config_name) in &config_diffs {
+            for workload in &desired.workloads {
+                // For Remove: config is no longer in managed_config_paths, so check
+                // quadlet_contents directly for EnvironmentFile directives.
+                // For Add/Change: use dependency_refs_for_workload_state (path is in
+                // managed_config_paths and the function handles all directive types).
+                let depends = if matches!(kind, DiffKind::Remove) {
+                    workload.quadlet_contents.lines().any(|raw_line| {
+                        let line = raw_line.trim();
+                        line.strip_prefix("EnvironmentFile=")
+                            .map(|v| v.trim().trim_start_matches('-') == *config_name)
+                            .unwrap_or(false)
+                    })
+                } else {
+                    dependency_refs_for_workload_state(desired, workload)
+                        .contains(&config_name.to_string())
+                };
+
+                if depends {
+                    let should_restart = match kind {
+                        DiffKind::Add => observed_unit_names
+                            .contains(workload.systemd_unit_name.as_str()),
+                        _ => true,
+                    };
+                    if should_restart && !already_restarted.contains(&workload.systemd_unit_name) {
+                        actions.push(action(
+                            PlanActionType::RestartUnit,
+                            &workload.systemd_unit_name,
+                        ));
+                        already_restarted.insert(workload.systemd_unit_name.clone());
+                    }
+                }
+            }
+        }
     }
 
     let plan_id = format!(

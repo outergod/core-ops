@@ -792,3 +792,376 @@ fn cli_plan_uses_retained_snapshot_baseline_for_expected_deletions() {
     assert!(summary.contains("Plan for host alpha @ rev-1 → rev-2"));
     assert!(!summary.contains("(with drift)"));
 }
+
+// ── US1 tests: config-file changes trigger dependent container restarts ──────
+
+fn config_desired_state(
+    workloads: Vec<Workload>,
+    config_paths: Vec<String>,
+) -> core_ops::core::types::DesiredState {
+    core_ops::core::types::DesiredState {
+        repository_ref: "repo".to_string(),
+        revision_id: "rev".to_string(),
+        requested_repository: None,
+        requested_ref: None,
+        workloads,
+        mount_declarations: Vec::new(),
+        mount_dependencies: Vec::new(),
+        managed_config_paths: config_paths,
+        managed_config_roots: Vec::new(),
+        invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
+        boundaries: core_ops::core::types::Boundaries {
+            scopes: vec![BoundaryScope::QuadletSystemd],
+        },
+    }
+}
+
+fn config_observed_state(workloads: Vec<Workload>) -> core_ops::core::types::ObservedState {
+    core_ops::core::types::ObservedState {
+        observed_revision_id: Some("obs".to_string()),
+        units: Vec::new(),
+        workloads,
+        last_reconcile_id: None,
+        host_info: None,
+    }
+}
+
+fn config_file_workload(path: &str, contents: &str) -> Workload {
+    Workload {
+        name: path.to_string(),
+        quadlet_type: QuadletType::ConfigFile,
+        quadlet_contents: contents.to_string(),
+        systemd_unit_name: path.to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    }
+}
+
+fn container_workload_with_env_file(name: &str, env_file_path: &str) -> Workload {
+    Workload {
+        name: name.to_string(),
+        quadlet_type: QuadletType::Container,
+        quadlet_contents: format!(
+            "[Container]\nImage=docker.io/example/app:latest\nEnvironmentFile={env_file_path}\n"
+        ),
+        systemd_unit_name: format!("{name}.container"),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    }
+}
+
+#[test]
+fn config_file_change_schedules_restart_for_dependent_container() {
+    let config_path = "/etc/runner/env";
+    let desired = config_desired_state(
+        vec![
+            config_file_workload(config_path, "KEY=new_value"),
+            container_workload_with_env_file("app", config_path),
+        ],
+        vec![config_path.to_string()],
+    );
+    let observed = config_observed_state(vec![
+        config_file_workload(config_path, "KEY=old_value"),
+        container_workload_with_env_file("app", config_path),
+    ]);
+
+    let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
+
+    let action_types: Vec<_> = plan
+        .actions
+        .iter()
+        .map(|a| (&a.action_type, a.target.as_str()))
+        .collect();
+
+    let restart_pos = plan
+        .actions
+        .iter()
+        .position(|a| {
+            a.action_type == core_ops::core::types::PlanActionType::RestartUnit
+                && a.target == "app.container"
+        })
+        .unwrap_or_else(|| panic!("expected RestartUnit for app.container, got: {action_types:?}"));
+
+    let write_pos = plan
+        .actions
+        .iter()
+        .position(|a| {
+            a.action_type == core_ops::core::types::PlanActionType::WriteQuadlet
+                && a.target == config_path
+        })
+        .expect("expected WriteQuadlet for config file");
+
+    assert!(
+        write_pos < restart_pos,
+        "WriteQuadlet must precede RestartUnit"
+    );
+}
+
+#[test]
+fn config_file_change_no_restart_when_no_dependents() {
+    let config_path = "/etc/runner/env";
+    let desired = config_desired_state(
+        vec![config_file_workload(config_path, "KEY=new_value")],
+        vec![config_path.to_string()],
+    );
+    let observed = config_observed_state(vec![config_file_workload(config_path, "KEY=old_value")]);
+
+    let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
+
+    let restart_actions: Vec<_> = plan
+        .actions
+        .iter()
+        .filter(|a| a.action_type == core_ops::core::types::PlanActionType::RestartUnit)
+        .collect();
+
+    assert!(
+        restart_actions.is_empty(),
+        "expected no RestartUnit actions when no dependent containers, got: {restart_actions:?}"
+    );
+}
+
+#[test]
+fn config_file_remove_schedules_restart_for_dependent_container() {
+    let config_path = "/etc/runner/env";
+    // Desired: container only (config file removed)
+    let desired = config_desired_state(
+        vec![container_workload_with_env_file("app", config_path)],
+        vec![], // config removed from desired, so not in managed_config_paths
+    );
+    // Observed: both config file and container present
+    let observed = config_observed_state(vec![
+        config_file_workload(config_path, "KEY=old_value"),
+        container_workload_with_env_file("app", config_path),
+    ]);
+
+    let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
+
+    assert!(
+        plan.actions.iter().any(|a| {
+            a.action_type == core_ops::core::types::PlanActionType::RestartUnit
+                && a.target == "app.container"
+        }),
+        "expected RestartUnit for app.container when config file is removed"
+    );
+}
+
+#[test]
+fn config_file_change_no_duplicate_restart_when_container_also_changed() {
+    let config_path = "/etc/runner/env";
+    let desired = config_desired_state(
+        vec![
+            config_file_workload(config_path, "KEY=new_value"),
+            container_workload_with_env_file("app", config_path),
+        ],
+        vec![config_path.to_string()],
+    );
+    // Container also changed independently (different quadlet_contents)
+    let observed = config_observed_state(vec![
+        config_file_workload(config_path, "KEY=old_value"),
+        Workload {
+            name: "app".to_string(),
+            quadlet_type: QuadletType::Container,
+            quadlet_contents: format!(
+                "[Container]\nImage=docker.io/example/app:v1\nEnvironmentFile={config_path}\n"
+            ),
+            systemd_unit_name: "app.container".to_string(),
+            enabled_state: EnabledState::Enabled,
+            restart_policy: RestartPolicy::Always,
+        },
+    ]);
+
+    let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
+
+    let restart_count = plan
+        .actions
+        .iter()
+        .filter(|a| {
+            a.action_type == core_ops::core::types::PlanActionType::RestartUnit
+                && a.target == "app.container"
+        })
+        .count();
+
+    assert_eq!(
+        restart_count, 1,
+        "expected exactly one RestartUnit for app.container, got {restart_count}"
+    );
+}
+
+// ── US2 tests: apply report reflects actual restart execution ────────────────
+
+#[test]
+fn config_file_change_report_shows_restarted_when_restart_executed() {
+    use core_ops::cli::report::build_apply_output;
+    use core_ops::core::types::{
+        ConvergenceStatus, DeterministicActionClass, DeterministicConvergenceRecord,
+        DeterministicPlannedAction, DeterministicReconciliationPlan, ExecutionState,
+        SemanticDependencyGraph,
+    };
+    use std::collections::BTreeMap;
+
+    let plan = DeterministicReconciliationPlan {
+        desired_revision_id: Some("rev".to_string()),
+        baseline_revision_id: Some("base".to_string()),
+        requested_repository: None,
+        requested_ref: None,
+        last_applied_requested_repository: None,
+        last_applied_requested_ref: None,
+        scope_id: "host:test".to_string(),
+        actions: vec![DeterministicPlannedAction {
+            object_id: "app.container".to_string(),
+            classification: DeterministicActionClass::Restart,
+            reason: "config file changed".to_string(),
+            dependency_context: Vec::new(),
+            semantic_diff: BTreeMap::new(),
+        }],
+        drift_records: Vec::new(),
+        graph: SemanticDependencyGraph {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        },
+    };
+
+    let convergence = DeterministicConvergenceRecord {
+        desired_revision_id: "rev".to_string(),
+        scope_id: "host:test".to_string(),
+        status: ConvergenceStatus::Success,
+        attempt_count: 1,
+        affected_objects: vec!["app.container".to_string()],
+        completed_actions: vec!["app.container".to_string()],
+        failed_actions: Vec::new(),
+        can_continue: true,
+    };
+
+    let output = build_apply_output(&plan, &[], Some(&convergence));
+
+    let terminal = output
+        .events
+        .iter()
+        .find(|e| {
+            e.object.name == "app.container"
+                && e.event_kind
+                    == core_ops::core::types::ExecutionEventKind::ObjectTerminal
+        })
+        .expect("terminal event for app.container");
+
+    assert_eq!(
+        terminal.state,
+        ExecutionState::Restarted,
+        "expected Restarted state when restart succeeded"
+    );
+}
+
+#[test]
+fn config_file_change_report_shows_failed_when_restart_fails() {
+    use core_ops::cli::report::build_apply_output;
+    use core_ops::core::types::{
+        ConvergenceStatus, DeterministicActionClass, DeterministicConvergenceRecord,
+        DeterministicPlannedAction, DeterministicReconciliationPlan, ExecutionState,
+        SemanticDependencyGraph,
+    };
+    use std::collections::BTreeMap;
+
+    let plan = DeterministicReconciliationPlan {
+        desired_revision_id: Some("rev".to_string()),
+        baseline_revision_id: Some("base".to_string()),
+        requested_repository: None,
+        requested_ref: None,
+        last_applied_requested_repository: None,
+        last_applied_requested_ref: None,
+        scope_id: "host:test".to_string(),
+        actions: vec![DeterministicPlannedAction {
+            object_id: "app.container".to_string(),
+            classification: DeterministicActionClass::Restart,
+            reason: "config file changed".to_string(),
+            dependency_context: Vec::new(),
+            semantic_diff: BTreeMap::new(),
+        }],
+        drift_records: Vec::new(),
+        graph: SemanticDependencyGraph {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        },
+    };
+
+    let convergence = DeterministicConvergenceRecord {
+        desired_revision_id: "rev".to_string(),
+        scope_id: "host:test".to_string(),
+        status: ConvergenceStatus::Failed,
+        attempt_count: 1,
+        affected_objects: vec!["app.container".to_string()],
+        completed_actions: Vec::new(),
+        failed_actions: vec!["app.container".to_string()],
+        can_continue: false,
+    };
+
+    let output = build_apply_output(&plan, &[], Some(&convergence));
+
+    let terminal = output
+        .events
+        .iter()
+        .find(|e| {
+            e.object.name == "app.container"
+                && e.event_kind
+                    == core_ops::core::types::ExecutionEventKind::ObjectTerminal
+        })
+        .expect("terminal event for app.container");
+
+    assert_eq!(
+        terminal.state,
+        ExecutionState::Failed,
+        "expected Failed state when restart fails, got {:?}",
+        terminal.state
+    );
+}
+
+// ── US3 tests: Add-case edge cases ───────────────────────────────────────────
+
+#[test]
+fn config_file_add_restarts_already_running_container() {
+    let config_path = "/etc/runner/env";
+    // Desired: config file (new) + container with dependency
+    let desired = config_desired_state(
+        vec![
+            config_file_workload(config_path, "KEY=value"),
+            container_workload_with_env_file("app", config_path),
+        ],
+        vec![config_path.to_string()],
+    );
+    // Observed: container PRESENT but config file ABSENT
+    let observed = config_observed_state(vec![container_workload_with_env_file("app", config_path)]);
+
+    let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
+
+    assert!(
+        plan.actions.iter().any(|a| {
+            a.action_type == core_ops::core::types::PlanActionType::RestartUnit
+                && a.target == "app.container"
+        }),
+        "expected RestartUnit for already-running container when config file is added"
+    );
+}
+
+#[test]
+fn config_file_add_no_restart_for_new_container() {
+    let config_path = "/etc/runner/env";
+    // Desired: config file (new) + container (new)
+    let desired = config_desired_state(
+        vec![
+            config_file_workload(config_path, "KEY=value"),
+            container_workload_with_env_file("app", config_path),
+        ],
+        vec![config_path.to_string()],
+    );
+    // Observed: NEITHER config file nor container
+    let observed = config_observed_state(vec![]);
+
+    let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
+
+    assert!(
+        !plan.actions.iter().any(|a| {
+            a.action_type == core_ops::core::types::PlanActionType::RestartUnit
+                && a.target == "app.container"
+        }),
+        "expected NO RestartUnit for new container when config file is added fresh"
+    );
+}

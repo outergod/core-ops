@@ -560,6 +560,10 @@ pub fn build_apply_output(
                     impacted_objects: None,
                 });
                 next_sequence += 1;
+                // FR-005: RestartUnit is always present in the executable plan when
+                // the deterministic plan shows Restart for config-file-dependent containers
+                // (see planner.rs dependent-restart pass); restart failures surface via
+                // failed_actions → convergence_failed_for_entry.
                 let failed = convergence_failed_for_entry(entry, convergence)
                     || verification_failed_for_entry(entry, verification_results);
                 events.push(ExecutionEvent {

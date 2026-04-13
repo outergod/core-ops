@@ -20,9 +20,9 @@ implementation and testing of each story.
 
 **Purpose**: Confirm branch, locate affected code.
 
-- [ ] T001 Verify working branch is `014-config-restart-fidelity` (`git branch --show-current`)
-- [ ] T002 [P] Read `src/core/planner.rs` — study `plan()` (lines 17–83) and `actions_for_diff` (lines 626–730) to understand the diff-to-action mapping and where the ConfigFile gap is
-- [ ] T003 [P] Read `src/core/evaluate.rs` — study `dependency_refs_for_workload_state` (lines 101–168) to confirm it parses `EnvironmentFile=` directives against `managed_config_paths` and returns path-based refs
+- [X] T001 Verify working branch is `014-config-restart-fidelity` (`git branch --show-current`)
+- [X] T002 [P] Read `src/core/planner.rs` — study `plan()` (lines 17–83) and `actions_for_diff` (lines 626–730) to understand the diff-to-action mapping and where the ConfigFile gap is
+- [X] T003 [P] Read `src/core/evaluate.rs` — study `dependency_refs_for_workload_state` (lines 101–168) to confirm it parses `EnvironmentFile=` directives against `managed_config_paths` and returns path-based refs
 
 ---
 
@@ -30,9 +30,9 @@ implementation and testing of each story.
 
 **Purpose**: Confirm the shared key identity (`systemd_unit_name == target_path == dependency_ref`) and the existing test harness shape before writing any code.
 
-- [ ] T004 Read `tests/integration/test_plan.rs` around the existing `desired_snapshot_extracts_config_and_runtime_dependency_refs` test (line 392) to understand how `DesiredState`, `Workload`, and `ObservedState` are constructed in tests — this is the exact shape the regression tests will use
-- [ ] T005 [P] Read `src/io/repo.rs:591` (`workload_from_config_file`) to confirm `systemd_unit_name = file.target_path` — this validates the key identity assumption from research.md D1
-- [ ] T006 [P] Read `src/cli/report.rs` — locate `build_apply_output` (line 476) and `convergence_failed_for_entry` (line 1374) to confirm the P2 resolution path: failed RestartUnit → `failed_actions` → `convergence_failed_for_entry` → terminal `Failed` in report
+- [X] T004 Read `tests/integration/test_plan.rs` around the existing `desired_snapshot_extracts_config_and_runtime_dependency_refs` test (line 392) to understand how `DesiredState`, `Workload`, and `ObservedState` are constructed in tests — this is the exact shape the regression tests will use
+- [X] T005 [P] Read `src/io/repo.rs:591` (`workload_from_config_file`) to confirm `systemd_unit_name = file.target_path` — this validates the key identity assumption from research.md D1
+- [X] T006 [P] Read `src/cli/report.rs` — locate `build_apply_output` (line 476) and `convergence_failed_for_entry` (line 1374) to confirm the P2 resolution path: failed RestartUnit → `failed_actions` → `convergence_failed_for_entry` → terminal `Failed` in report
 
 **Checkpoint**: Foundation confirmed — ready to write failing tests and implement.
 
@@ -49,15 +49,15 @@ asserts `RestartUnit` appears in `ReconciliationPlan.actions`.
 
 ### Tests for US1 (write first — MUST FAIL before T011)
 
-- [ ] T007 [P] [US1] Add test `config_file_change_schedules_restart_for_dependent_container` to `tests/integration/test_plan.rs`: desired has ConfigFile (new contents) + Container (EnvironmentFile dep); observed has both (old config contents + container present); assert `actions` contains `RestartUnit` for the container and that `WriteQuadlet` for the config file precedes it
-- [ ] T008 [P] [US1] Add test `config_file_change_no_restart_when_no_dependents` to `tests/integration/test_plan.rs`: desired has ConfigFile only (no dependent container); observed has old contents; assert no `RestartUnit` actions in plan
-- [ ] T009 [P] [US1] Add test `config_file_remove_schedules_restart_for_dependent_container` to `tests/integration/test_plan.rs`: desired has Container only (config file removed); observed has both config file and container; assert `RestartUnit` for the container is scheduled
-- [ ] T010 [P] [US1] Add test `config_file_change_no_duplicate_restart_when_container_also_changed` to `tests/integration/test_plan.rs`: both config file and container contents changed; assert exactly one `RestartUnit` for the container (not two)
-- [ ] T011 Run `cargo test config_file_change config_file_remove` and confirm all four tests FAIL (required before implementing)
+- [X] T007 [P] [US1] Add test `config_file_change_schedules_restart_for_dependent_container` to `tests/integration/test_plan.rs`: desired has ConfigFile (new contents) + Container (EnvironmentFile dep); observed has both (old config contents + container present); assert `actions` contains `RestartUnit` for the container and that `WriteQuadlet` for the config file precedes it
+- [X] T008 [P] [US1] Add test `config_file_change_no_restart_when_no_dependents` to `tests/integration/test_plan.rs`: desired has ConfigFile only (no dependent container); observed has old contents; assert no `RestartUnit` actions in plan
+- [X] T009 [P] [US1] Add test `config_file_remove_schedules_restart_for_dependent_container` to `tests/integration/test_plan.rs`: desired has Container only (config file removed); observed has both config file and container; assert `RestartUnit` for the container is scheduled
+- [X] T010 [P] [US1] Add test `config_file_change_no_duplicate_restart_when_container_also_changed` to `tests/integration/test_plan.rs`: both config file and container contents changed; assert exactly one `RestartUnit` for the container (not two)
+- [X] T011 Run `cargo test config_file_change config_file_remove` and confirm all four tests FAIL (required before implementing)
 
 ### Implementation for US1
 
-- [ ] T012 [US1] In `src/core/planner.rs`, add `use crate::core::evaluate::dependency_refs_for_workload_state;` import and a dependent-restart pass after the main `for diff in &diffs` loop in `plan()`:
+- [X] T012 [US1] In `src/core/planner.rs`, add `use crate::core::evaluate::dependency_refs_for_workload_state;` import and a dependent-restart pass after the main `for diff in &diffs` loop in `plan()`:
   - Build `observed_unit_names: HashSet<String>` from `observed.workloads`
   - Build `already_restarted: HashSet<String>` from existing `actions` (any `PlanActionType::RestartUnit` targets)
   - For each diff where `quadlet_type == QuadletType::ConfigFile` and `kind` is `Add | Change | Remove`:
@@ -68,8 +68,8 @@ asserts `RestartUnit` appears in `ReconciliationPlan.actions`.
         - For `Change | Remove`: always restart
         - Skip if `already_restarted` contains the unit name
         - Push `action(PlanActionType::RestartUnit, &workload.systemd_unit_name)` and insert into `already_restarted`
-- [ ] T013 [US1] Run `cargo test config_file_change config_file_remove` and confirm all four US1 tests now PASS
-- [ ] T014 [US1] Run `cargo test` (full suite) and confirm no regressions
+- [X] T013 [US1] Run `cargo test config_file_change config_file_remove` and confirm all four US1 tests now PASS
+- [X] T014 [US1] Run `cargo test` (full suite) and confirm no regressions
 
 **Checkpoint**: US1 complete — containers now actually restart when their config files change.
 
@@ -88,10 +88,10 @@ The US2 test below validates that a failed restart surfaces correctly.
 
 ### Validation for US2
 
-- [ ] T015a [P] [US2] Add test `config_file_change_report_shows_restarted_when_restart_executed` to `tests/integration/test_plan.rs`: build a `DeterministicReconciliationPlan` where the container has `DeterministicActionClass::Restart`; call `build_apply_output` with no convergence failure; assert the container's terminal `ExecutionEvent.state` is `Restarted` — confirms the positive path works
-- [ ] T015b [P] [US2] Add test `config_file_change_report_shows_failed_when_restart_fails` to `tests/integration/test_plan.rs`: build the same plan but pass a `DeterministicConvergenceRecord` with the container unit name in `failed_actions`; call `build_apply_output`; assert the terminal `ExecutionEvent.state` is `Failed` — confirms the negative path (failed restart surfaces correctly, not silently shown as `Restarted`)
-- [ ] T016 [P] [US2] Add a one-line comment at the `terminal_execution_state` call site in `src/cli/report.rs` (line ~571 inside `build_apply_output`) noting: "FR-005: RestartUnit is always present in executable plan when deterministic plan shows Restart for config-file-dependent containers (see planner.rs dependent-restart pass); restart failures surface via failed_actions → convergence_failed_for_entry" — makes the design decision explicit and reviewable in code review
-- [ ] T017 [US2] Run `cargo test config_file_change_report` and confirm T015a and T015b pass
+- [X] T015a [P] [US2] Add test `config_file_change_report_shows_restarted_when_restart_executed` to `tests/integration/test_plan.rs`: build a `DeterministicReconciliationPlan` where the container has `DeterministicActionClass::Restart`; call `build_apply_output` with no convergence failure; assert the container's terminal `ExecutionEvent.state` is `Restarted` — confirms the positive path works
+- [X] T015b [P] [US2] Add test `config_file_change_report_shows_failed_when_restart_fails` to `tests/integration/test_plan.rs`: build the same plan but pass a `DeterministicConvergenceRecord` with the container unit name in `failed_actions`; call `build_apply_output`; assert the terminal `ExecutionEvent.state` is `Failed` — confirms the negative path (failed restart surfaces correctly, not silently shown as `Restarted`)
+- [X] T016 [P] [US2] Add a one-line comment at the `terminal_execution_state` call site in `src/cli/report.rs` (line ~571 inside `build_apply_output`) noting: "FR-005: RestartUnit is always present in executable plan when deterministic plan shows Restart for config-file-dependent containers (see planner.rs dependent-restart pass); restart failures surface via failed_actions → convergence_failed_for_entry" — makes the design decision explicit and reviewable in code review
+- [X] T017 [US2] Run `cargo test config_file_change_report` and confirm T015a and T015b pass
 
 **Checkpoint**: US2 validated — apply report accurately reflects restart execution.
 
@@ -107,9 +107,9 @@ requiring systemd or filesystem access.
 
 ### Tests for US3 (write first — MUST FAIL before T020 if T012 not yet applied, verify pass if T012 was applied)
 
-- [ ] T018 [P] [US3] Add test `config_file_add_restarts_already_running_container` to `tests/integration/test_plan.rs`: desired has config file (new) + container (EnvironmentFile dep); observed has container PRESENT but config file ABSENT; assert `RestartUnit` for the container is scheduled (container was running without the config file, now needs to pick it up)
-- [ ] T019 [P] [US3] Add test `config_file_add_no_restart_for_new_container` to `tests/integration/test_plan.rs`: desired has config file (new) + container (EnvironmentFile dep); observed has NEITHER; assert NO `RestartUnit` for the container (fresh `StartUnit` from container's own diff is sufficient)
-- [ ] T020 [US3] Run `cargo test config_file_add` and confirm both tests pass (they should, since the planner pass from T012 handles the Add case with the observed-state discriminator)
+- [X] T018 [P] [US3] Add test `config_file_add_restarts_already_running_container` to `tests/integration/test_plan.rs`: desired has config file (new) + container (EnvironmentFile dep); observed has container PRESENT but config file ABSENT; assert `RestartUnit` for the container is scheduled (container was running without the config file, now needs to pick it up)
+- [X] T019 [P] [US3] Add test `config_file_add_no_restart_for_new_container` to `tests/integration/test_plan.rs`: desired has config file (new) + container (EnvironmentFile dep); observed has NEITHER; assert NO `RestartUnit` for the container (fresh `StartUnit` from container's own diff is sufficient)
+- [X] T020 [US3] Run `cargo test config_file_add` and confirm both tests pass (they should, since the planner pass from T012 handles the Add case with the observed-state discriminator)
 
 **Checkpoint**: US3 complete — Add-case edge cases covered and regression-proof.
 
@@ -119,12 +119,12 @@ requiring systemd or filesystem access.
 
 **Purpose**: Validation gates, release artefacts, and changelog.
 
-- [ ] T021 Run `cargo clippy --all-targets -- -D warnings` and fix any new warnings introduced by T012
-- [ ] T022 Run `cargo test` (full suite) and confirm all tests pass, no regressions
-- [ ] T023 [P] Create `changes/014-config-restart-fidelity.md` with `release_intent: patch`, `scope: planner`, `release_preparation: false`, and summary: "Fix config-file changes not triggering dependent container restarts"
-- [ ] T024 [P] Bump version in `Cargo.toml` to `0.8.2` (patch bump from current `0.8.1`)
-- [ ] T025 Update `CHANGELOG.md`: add `## [0.8.2]` section (or update `[Unreleased]`) with a `### Fixed` entry covering: (a) config-file changes now restart dependent containers; (b) config-file removal and addition with pre-existing containers also trigger restarts
-- [ ] T026 Run `cargo run --bin core-ops-release -- validate --base-ref HEAD^` and confirm governance check passes (fragment present, version bumped, CHANGELOG updated)
+- [X] T021 Run `cargo clippy --all-targets -- -D warnings` and fix any new warnings introduced by T012
+- [X] T022 Run `cargo test` (full suite) and confirm all tests pass, no regressions
+- [X] T023 [P] Create `changes/014-config-restart-fidelity.md` with `release_intent: patch`, `scope: planner`, `release_preparation: false`, and summary: "Fix config-file changes not triggering dependent container restarts"
+- [X] T024 [P] Bump version in `Cargo.toml` to `0.8.2` (patch bump from current `0.8.1`)
+- [X] T025 Update `CHANGELOG.md`: add `## [0.8.2]` section (or update `[Unreleased]`) with a `### Fixed` entry covering: (a) config-file changes now restart dependent containers; (b) config-file removal and addition with pre-existing containers also trigger restarts
+- [X] T026 Run `cargo run --bin core-ops-release -- validate --base-ref HEAD^` and confirm governance check passes (fragment present, version bumped, CHANGELOG updated)
 - [ ] T027 Run the quickstart validation from `specs/014-config-restart-fidelity/quickstart.md` on a live host to satisfy SC-002 (operator-run: confirm `ActiveEnterTimestamp` advances after a config-file-only apply). SC-001, SC-003, SC-004, SC-005 are all covered by `cargo test`.
 
 ---
