@@ -608,3 +608,86 @@ fn deterministic_planner_uses_recover_for_runtime_variance_without_declarative_d
             && record.category == core_ops::core::types::DriftCategory::RuntimeVariance
     }));
 }
+
+#[test]
+fn deterministic_planner_classifies_restart_when_config_dependency_is_removed() {
+    // When a config file that a workload depends on is removed from desired,
+    // the workload must be classified Restart (not NoOp). The desired
+    // dependency_refs omit the removed path because managed_config_paths no
+    // longer includes it, so the planner must consult the applied snapshot to
+    // detect the implicit restart requirement.
+    let config_path = "/etc/runner/env";
+
+    // Desired: container only — config file has been removed.
+    // dependency_refs is empty because managed_config_paths no longer lists config_path.
+    let desired = NormalizedSnapshot {
+        revision_id: Some("rev-2".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![normalized_object(
+            "app.container",
+            ManagedObjectKind::GeneratedUnit,
+            &[("unit", "app.container")],
+            &[], // config removed from managed_config_paths → no dep ref in desired
+        )],
+    };
+    // Applied: both config file and container present; container depends on config.
+    let applied = NormalizedSnapshot {
+        revision_id: Some("rev-1".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            normalized_object(
+                config_path,
+                ManagedObjectKind::RenderedArtifact,
+                &[("target_path", config_path)],
+                &[],
+            ),
+            normalized_object(
+                "app.container",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "app.container")],
+                &[config_path], // dep recorded at last-apply time
+            ),
+        ],
+    };
+    // Actual: config file still present on disk, but workload dependency_refs
+    // are empty because they're re-derived from the current desired state
+    // (managed_config_paths no longer includes config_path).
+    let actual = NormalizedSnapshot {
+        revision_id: Some("rev-1".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            normalized_object(
+                config_path,
+                ManagedObjectKind::RenderedArtifact,
+                &[("target_path", config_path)],
+                &[],
+            ),
+            normalized_object(
+                "app.container",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "app.container")],
+                &[], // same as desired — derived from current managed_config_paths
+            ),
+        ],
+    };
+
+    let plan = plan_deterministic_reconciliation(&desired, Some(&applied), &actual)
+        .expect("deterministic plan");
+
+    let app_action = plan
+        .actions
+        .iter()
+        .find(|a| a.object_id == "app.container")
+        .expect("app.container action present");
+
+    assert_eq!(
+        app_action.classification,
+        DeterministicActionClass::Restart,
+        "workload must be Restart when its config dependency is deleted, got {:?}",
+        app_action.classification
+    );
+    assert!(
+        app_action.reason.contains(config_path),
+        "reason must reference the deleted config path"
+    );
+}

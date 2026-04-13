@@ -428,7 +428,36 @@ pub fn plan_deterministic_reconciliation_with_runtime(
         }
     }
 
-    for object_id in ordered_delete_ids(actual, desired).map_err(map_validation_error)? {
+    let delete_ids = ordered_delete_ids(actual, desired).map_err(map_validation_error)?;
+
+    // Config-delete restart pass: a workload whose last-applied dependency_refs
+    // include a config path that is now being deleted must be classified Restart.
+    // The desired dependency_refs omit the removed path (managed_config_paths no
+    // longer lists it), so the change-propagation pass above cannot detect it.
+    // We consult the applied snapshot's dependency_refs, which were computed when
+    // the config was still present, to find these implicit restart requirements.
+    let deleted_ids: std::collections::HashSet<&str> =
+        delete_ids.iter().map(String::as_str).collect();
+    for action in &mut actions {
+        if action.classification != DeterministicActionClass::NoOp {
+            continue;
+        }
+        let Some(applied) = applied_map.get(action.object_id.as_str()) else {
+            continue;
+        };
+        if let Some(trigger) = applied
+            .dependency_refs
+            .iter()
+            .find(|dep| deleted_ids.contains(dep.as_str()))
+        {
+            action.classification = DeterministicActionClass::Restart;
+            action.reason = format!("restart required because {} was removed", trigger);
+            changed_by_object
+                .insert(action.object_id.clone(), DeterministicActionClass::Restart);
+        }
+    }
+
+    for object_id in delete_ids {
         actions.push(DeterministicPlannedAction {
             object_id,
             classification: DeterministicActionClass::Delete,
