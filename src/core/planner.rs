@@ -84,10 +84,14 @@ pub fn plan(
             .filter(|u| u.active_state == UnitActiveState::Active)
             .map(|u| u.unit_name.as_str())
             .collect();
+        // Normalise to runtime names so that RestartUnit actions emitted by
+        // actions_for_diff (which may use runtime names such as "app.service"
+        // for socket-activated containers) match the runtime_name key we
+        // compute below for workloads.
         let mut already_restarted: HashSet<String> = actions
             .iter()
             .filter(|a| a.action_type == PlanActionType::RestartUnit)
-            .map(|a| a.target.clone())
+            .map(|a| systemd_unit_for_quadlet_file(&a.target))
             .collect();
 
         for (kind, config_name) in &config_diffs {
@@ -121,12 +125,9 @@ pub fn plan(
                         systemd_unit_for_quadlet_file(&workload.systemd_unit_name);
                     let should_restart =
                         observed_active_units.contains(runtime_name.as_str());
-                    if should_restart && !already_restarted.contains(&workload.systemd_unit_name) {
-                        actions.push(action(
-                            PlanActionType::RestartUnit,
-                            &workload.systemd_unit_name,
-                        ));
-                        already_restarted.insert(workload.systemd_unit_name.clone());
+                    if should_restart && !already_restarted.contains(runtime_name.as_str()) {
+                        actions.push(action(PlanActionType::RestartUnit, &runtime_name));
+                        already_restarted.insert(runtime_name.clone());
                     }
                 }
             }

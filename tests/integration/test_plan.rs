@@ -912,9 +912,9 @@ fn config_file_change_schedules_restart_for_dependent_container() {
         .iter()
         .position(|a| {
             a.action_type == core_ops::core::types::PlanActionType::RestartUnit
-                && a.target == "app.container"
+                && a.target == "app.service"
         })
-        .unwrap_or_else(|| panic!("expected RestartUnit for app.container, got: {action_types:?}"));
+        .unwrap_or_else(|| panic!("expected RestartUnit for app.service, got: {action_types:?}"));
 
     let write_pos = plan
         .actions
@@ -977,9 +977,9 @@ fn config_file_remove_schedules_restart_for_dependent_container() {
     assert!(
         plan.actions.iter().any(|a| {
             a.action_type == core_ops::core::types::PlanActionType::RestartUnit
-                && a.target == "app.container"
+                && a.target == "app.service"
         }),
-        "expected RestartUnit for app.container when config file is removed"
+        "expected RestartUnit for app.service when config file is removed"
     );
 }
 
@@ -1014,18 +1014,21 @@ fn config_file_change_no_duplicate_restart_when_container_also_changed() {
 
     let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
 
+    // actions_for_diff emits RestartUnit("app.container") for the container change;
+    // the config-change pass must not add a second RestartUnit for the same workload
+    // (regardless of which name — quadlet or runtime — is used for the target).
     let restart_count = plan
         .actions
         .iter()
         .filter(|a| {
             a.action_type == core_ops::core::types::PlanActionType::RestartUnit
-                && a.target == "app.container"
+                && (a.target == "app.service" || a.target == "app.container")
         })
         .count();
 
     assert_eq!(
         restart_count, 1,
-        "expected exactly one RestartUnit for app.container, got {restart_count}"
+        "expected exactly one RestartUnit for app (any form), got {restart_count}"
     );
 }
 
@@ -1181,7 +1184,7 @@ fn config_file_add_restarts_already_running_container() {
     assert!(
         plan.actions.iter().any(|a| {
             a.action_type == core_ops::core::types::PlanActionType::RestartUnit
-                && a.target == "app.container"
+                && a.target == "app.service"
         }),
         "expected RestartUnit for already-running (active) container when config file is added"
     );
@@ -1210,7 +1213,7 @@ fn config_file_add_no_restart_for_stopped_container() {
     assert!(
         !plan.actions.iter().any(|a| {
             a.action_type == core_ops::core::types::PlanActionType::RestartUnit
-                && a.target == "app.container"
+                && a.target == "app.service"
         }),
         "expected NO RestartUnit for stopped (inactive) container when config file is added"
     );
@@ -1250,9 +1253,66 @@ fn config_file_remove_schedules_restart_via_volume_dependency() {
     assert!(
         plan.actions.iter().any(|a| {
             a.action_type == core_ops::core::types::PlanActionType::RestartUnit
-                && a.target == "app.container"
+                && a.target == "app.service"
         }),
         "expected RestartUnit for container with Volume= dependency when config file is removed"
+    );
+}
+
+#[test]
+fn config_file_change_no_duplicate_restart_when_container_changed_via_socket_activation() {
+    let config_path = "/etc/runner/env";
+    // Socket-activated container: app.socket + app.container both in desired.
+    // When app.container changes, actions_for_diff emits RestartUnit(app.service)
+    // (runtime name), not RestartUnit(app.container). The config-change pass must
+    // normalize to the same key and not add a second restart.
+    let socket_workload = Workload {
+        name: "app".to_string(),
+        quadlet_type: QuadletType::Socket,
+        quadlet_contents: "[Socket]\nListenStream=8080\n".to_string(),
+        systemd_unit_name: "app.socket".to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    };
+    let desired = config_desired_state(
+        vec![
+            config_file_workload(config_path, "KEY=new_value"),
+            container_workload_with_env_file("app", config_path),
+            socket_workload.clone(),
+        ],
+        vec![config_path.to_string()],
+    );
+    let observed = config_observed_state_with_units(
+        vec![
+            config_file_workload(config_path, "KEY=old_value"),
+            // Container has old image — triggers a Change diff and RestartUnit(app.service)
+            Workload {
+                name: "app".to_string(),
+                quadlet_type: QuadletType::Container,
+                quadlet_contents: format!(
+                    "[Container]\nImage=docker.io/example/app:v1\nEnvironmentFile={config_path}\n"
+                ),
+                systemd_unit_name: "app.container".to_string(),
+                enabled_state: EnabledState::Enabled,
+                restart_policy: RestartPolicy::Always,
+            },
+            socket_workload,
+        ],
+        vec![active_unit("app.service")],
+    );
+
+    let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
+
+    let restart_count = plan
+        .actions
+        .iter()
+        .filter(|a| a.action_type == core_ops::core::types::PlanActionType::RestartUnit)
+        .filter(|a| a.target == "app.service" || a.target == "app.container")
+        .count();
+
+    assert_eq!(
+        restart_count, 1,
+        "expected exactly one restart for app when container and config both changed (socket-activated case), got {restart_count}"
     );
 }
 
@@ -1281,7 +1341,7 @@ fn config_file_change_no_restart_for_stopped_container() {
     assert!(
         !plan.actions.iter().any(|a| {
             a.action_type == core_ops::core::types::PlanActionType::RestartUnit
-                && a.target == "app.container"
+                && a.target == "app.service"
         }),
         "expected NO RestartUnit for stopped (inactive) container when config file changes"
     );
@@ -1310,7 +1370,7 @@ fn config_file_remove_no_restart_for_stopped_container() {
     assert!(
         !plan.actions.iter().any(|a| {
             a.action_type == core_ops::core::types::PlanActionType::RestartUnit
-                && a.target == "app.container"
+                && a.target == "app.service"
         }),
         "expected NO RestartUnit for stopped (inactive) container when config file is removed"
     );
@@ -1335,7 +1395,7 @@ fn config_file_add_no_restart_for_new_container() {
     assert!(
         !plan.actions.iter().any(|a| {
             a.action_type == core_ops::core::types::PlanActionType::RestartUnit
-                && a.target == "app.container"
+                && a.target == "app.service"
         }),
         "expected NO RestartUnit for new container when config file is added fresh"
     );
