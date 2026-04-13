@@ -1021,7 +1021,7 @@ fn normalized_object_references_config(
                 return true;
             }
         } else if let Some(value) = line.strip_prefix("Volume=") {
-            if let Some(source) = value.split(':').next() {
+            if let Some(source) = value.split(':').next().map(str::trim) {
                 if source == config_path
                     || config_path.starts_with(&format!("{source}/"))
                 {

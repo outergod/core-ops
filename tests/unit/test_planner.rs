@@ -766,3 +766,59 @@ fn deterministic_planner_classifies_restart_when_config_dependency_is_removed_wi
         "reason must reference the deleted config path"
     );
 }
+
+#[test]
+fn config_delete_restart_matches_volume_source_with_leading_whitespace() {
+    // Volume= values with leading whitespace after the '=' must still trigger
+    // a Restart when the referenced config path is deleted. directive_value
+    // (used by the executable planner) trims before comparing, so the
+    // deterministic helper must do the same to avoid plan/apply divergence.
+    let config_path = "/etc/app/config";
+    // Note the space between '=' and the source path.
+    let contents = "[Container]\nImage=example\nVolume= /etc/app/config:/cfg:Z\n";
+
+    let desired = NormalizedSnapshot {
+        revision_id: Some("rev-2".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![normalized_object(
+            "app.container",
+            ManagedObjectKind::GeneratedUnit,
+            &[("unit", "app.container"), ("contents", contents)],
+            &[],
+        )],
+    };
+    let actual = NormalizedSnapshot {
+        revision_id: Some("rev-1".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            normalized_object(
+                config_path,
+                ManagedObjectKind::RenderedArtifact,
+                &[("target_path", config_path)],
+                &[],
+            ),
+            normalized_object(
+                "app.container",
+                ManagedObjectKind::GeneratedUnit,
+                &[("unit", "app.container"), ("contents", contents)],
+                &[],
+            ),
+        ],
+    };
+
+    let plan = plan_deterministic_reconciliation(&desired, None, &actual)
+        .expect("deterministic plan");
+
+    let app_action = plan
+        .actions
+        .iter()
+        .find(|a| a.object_id == "app.container")
+        .expect("app.container action present");
+
+    assert_eq!(
+        app_action.classification,
+        DeterministicActionClass::Restart,
+        "Volume= source with leading whitespace must still trigger Restart, got {:?}",
+        app_action.classification
+    );
+}
