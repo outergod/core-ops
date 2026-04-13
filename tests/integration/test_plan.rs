@@ -1156,10 +1156,11 @@ fn config_file_add_restarts_already_running_container() {
         ],
         vec![config_path.to_string()],
     );
-    // Observed: container PRESENT and ACTIVE but config file ABSENT
+    // Observed: container PRESENT and ACTIVE but config file ABSENT.
+    // ObservedUnit names are runtime names (app.service), not quadlet names (app.container).
     let observed = config_observed_state_with_units(
         vec![container_workload_with_env_file("app", config_path)],
-        vec![active_unit("app.container")],
+        vec![active_unit("app.service")],
     );
 
     let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");
@@ -1184,10 +1185,11 @@ fn config_file_add_no_restart_for_stopped_container() {
         ],
         vec![config_path.to_string()],
     );
-    // Observed: container PRESENT but INACTIVE — intentionally stopped
+    // Observed: container PRESENT but INACTIVE — intentionally stopped.
+    // ObservedUnit names are runtime names (app.service), not quadlet names (app.container).
     let observed = config_observed_state_with_units(
         vec![container_workload_with_env_file("app", config_path)],
-        vec![inactive_unit("app.container")],
+        vec![inactive_unit("app.service")],
     );
 
     let plan = core_ops::core::planner::plan(&desired, &observed).expect("plan");

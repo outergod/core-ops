@@ -11,6 +11,7 @@ use crate::core::types::{
     SemanticDependencyGraph, SemanticDependencyNode, ServiceDependencyEdit, UnitActiveState,
     VerificationResult, VerificationStatus,
 };
+use crate::core::unit::systemd_unit_for_quadlet_file;
 use crate::core::validation::{detect_semantic_dependency_cycle, validate_desired_state};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
@@ -112,8 +113,13 @@ pub fn plan(
 
                 if depends {
                     let should_restart = match kind {
-                        DiffKind::Add => observed_active_units
-                            .contains(workload.systemd_unit_name.as_str()),
+                        DiffKind::Add => {
+                            // observed.units stores runtime names (e.g. app.service) derived
+                            // via systemd_unit_for_quadlet_file, not quadlet names (app.container).
+                            let runtime_name =
+                                systemd_unit_for_quadlet_file(&workload.systemd_unit_name);
+                            observed_active_units.contains(runtime_name.as_str())
+                        }
                         _ => true,
                     };
                     if should_restart && !already_restarted.contains(&workload.systemd_unit_name) {
