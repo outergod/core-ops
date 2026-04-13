@@ -8,7 +8,21 @@ versioning for public release policy decisions.
 ## [Unreleased]
 
 <!-- core-ops-release:start -->
+### Changed
+
+- Fix config-file changes not triggering dependent container restarts
 <!-- core-ops-release:end -->
+
+## [0.8.2] - 2026-04-12
+
+### Fixed
+
+- Config-file changes, removals, and additions (when the dependent container was already
+  running) now correctly schedule `RestartUnit` actions for dependent containers during
+  `apply`. Previously, the planner emitted only `WriteQuadlet` for `ConfigFile` diffs,
+  leaving services silently running with stale configuration
+- Apply report no longer falsely shows `restarted` for containers that were not actually
+  restarted; a failed restart now correctly surfaces as `failed` in apply output
 
 ## [0.8.1] - 2026-04-12
 

@@ -3,6 +3,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use core_ops::io::repo::load_desired_state;
 
+use crate::integration::env_lock::path_lock;
+
+struct HostGuard(Option<std::ffi::OsString>);
+
+impl Drop for HostGuard {
+    fn drop(&mut self) {
+        if let Some(value) = &self.0 {
+            std::env::set_var("CORE_OPS_HOST", value);
+        } else {
+            std::env::remove_var("CORE_OPS_HOST");
+        }
+    }
+}
+
 fn temp_repo() -> PathBuf {
     let mut path = std::env::temp_dir();
     let nanos = SystemTime::now()
@@ -155,6 +169,9 @@ fn ignores_dotfiles_and_warns_on_unknown_extensions() {
 
 #[test]
 fn layered_repo_preserves_requested_repository_and_ref() {
+    let _lock = path_lock().lock().expect("path lock");
+    let previous_host = std::env::var_os("CORE_OPS_HOST");
+    let _host_guard = HostGuard(previous_host);
     let repo = temp_repo();
     std::process::Command::new("git")
         .arg("init")
@@ -211,7 +228,7 @@ fn layered_repo_preserves_requested_repository_and_ref() {
 
     std::env::set_var("CORE_OPS_HOST", "uat");
     let desired = load_desired_state(repo.to_str().unwrap(), "demo-uat-v2").expect("load desired");
-    std::env::remove_var("CORE_OPS_HOST");
+    // CORE_OPS_HOST is restored by _host_guard on drop
 
     assert_eq!(desired.revision_id, rev);
     assert_eq!(desired.requested_repository.as_deref(), repo.to_str());

@@ -1,6 +1,6 @@
 # core-ops Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-11
+Auto-generated from all feature plans. Last updated: 2026-04-12
 
 ## Active Technologies
 
@@ -32,6 +32,7 @@ Follow standard Rust conventions. No new abstractions without justification.
 
 ## Recent Changes
 
+- 014-config-restart-fidelity: Fix planner to emit RestartUnit for config-file-dependent containers
 - 012-unify-ci-release: Unified CI workflow — build matrix, artifact upload, release job
 
 <!-- MANUAL ADDITIONS START -->

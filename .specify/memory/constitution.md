@@ -1,25 +1,15 @@
 <!--
 Sync Impact Report:
-- Version change: 1.4.0 -> 1.5.0
+- Version change: 1.5.0 -> 1.6.0
 - Modified principles:
-  - 12. Provenance, Versioning, and Behavioral Traceability ->
-    12. Provenance, Versioning, and Behavioral Traceability
-  - 13. Release Governance and Intent -> 13. Release Governance and Intent
+  - 10. Tests Define the Contract -> 10. Tests Define the Contract
 - Modified sections:
   - Core Principles
-  - Development Workflow
-  - Governance
-- Added sections:
-  - Principle 13. Release Governance and Intent
+- Added sections: None
 - Removed sections: None
 - Templates requiring updates:
   - ✅ /home/outergod/code/github.com/outergod/core-ops/.specify/templates/plan-template.md
-  - ✅ /home/outergod/code/github.com/outergod/core-ops/.specify/templates/spec-template.md
-  - ✅ /home/outergod/code/github.com/outergod/core-ops/.specify/templates/tasks-template.md
-  - ✅ /home/outergod/code/github.com/outergod/core-ops/.specify/templates/commands/README.md
   - ✅ /home/outergod/code/github.com/outergod/core-ops/AGENTS.md
-  - ✅ /home/outergod/code/github.com/outergod/core-ops/docs/development.md
-  - ✅ /home/outergod/code/github.com/outergod/core-ops/README.md
 - Follow-up TODOs: None
 -->
 # CoreOps Constitution
@@ -110,8 +100,16 @@ guarantees, failure semantics, and provenance-visible outcomes rather than
 incidental implementation details. Property-based and scenario-driven tests
 SHOULD be preferred where they strengthen confidence.
 
+Changes that affect externally visible host behavior MUST include an accepted
+VM-backed scenario in `tests/fixtures/verification/scenarios/` unless an
+explicit exemption is recorded in the relevant plan or task. `cargo test` alone
+is insufficient verification for claims about live systemd, Podman, or
+filesystem behavior on a real host.
+
 Rationale: If code is to remain replaceable, the behavioral contract must be
-precise and executable.
+precise and executable. Deterministic unit tests cannot substitute for evidence
+that the system behaves correctly on a real host; scenario-driven VM execution
+is the authoritative path for externally visible host behavior.
 
 ### 11. Regenerability Over Incidental Craftsmanship
 Modules SHOULD be structured so they can be regenerated or rewritten from
@@ -167,6 +165,10 @@ provenance/version surfaces, compatibility impact, release version policy
 impact, changelog impact for externally visible changes, release-intent
 artifact impact for releasable work, and the test plan for each change.
 
+The test plan MUST identify whether the change affects externally visible host
+behavior. If it does, the plan MUST include an accepted VM-backed scenario or
+record an explicit exemption with justification.
+
 Releasable changes MUST update `Cargo.toml`, `CHANGELOG.md`, and the
 machine-checkable release-intent artifact in the same change set unless an
 explicit exemption rule applies. PRs missing any required release-governance
@@ -206,5 +208,7 @@ lint failures is not permitted.
 - Compliance reviews MUST verify that Rust changes either pass `cargo test` and
   `cargo clippy --all-targets -- -D warnings` or record an explicit temporary
   exception with remediation.
+- Compliance reviews MUST verify that changes affecting externally visible host
+  behavior include an accepted VM-backed scenario or a recorded exemption.
 
-**Version**: 1.5.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-04-10
+**Version**: 1.6.0 | **Ratified**: 2026-03-18 | **Last Amended**: 2026-04-13

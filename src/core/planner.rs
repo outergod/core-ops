@@ -1,15 +1,17 @@
 use crate::core::boundaries::enforce_plan_boundaries;
 use crate::core::diff::{diff_normalized_snapshots, diff_workloads};
 use crate::core::errors::{CoreError, ValidationError};
+use crate::core::evaluate::dependency_refs_for_workload_state;
 use crate::core::types::{
     DependencyEdgeKind, DependencyEdgeView, DependencyRelation, DesiredState,
     DeterministicActionClass, DeterministicPlannedAction, DeterministicReconciliationPlan,
     DiffItem, DiffKind, FailureClass, GeneratedUnitSet, ManagedObjectKind, ManagedObjectRef,
     MountDeclaration, MountDependency, NormalizedSnapshot, ObservedState, PlanAction,
     PlanActionType, QuadletType, ReconciliationPlan, SafetyCheck, SemanticDependencyEdge,
-    SemanticDependencyGraph, SemanticDependencyNode, ServiceDependencyEdit, VerificationResult,
-    VerificationStatus,
+    SemanticDependencyGraph, SemanticDependencyNode, ServiceDependencyEdit, UnitActiveState,
+    VerificationResult, VerificationStatus,
 };
+use crate::core::unit::systemd_unit_for_quadlet_file;
 use crate::core::validation::{detect_semantic_dependency_cycle, validate_desired_state};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
@@ -54,6 +56,82 @@ pub fn plan(
             &automount_stems,
         );
         actions.append(&mut diff_actions);
+    }
+
+    // Dependent-restart pass: schedule RestartUnit for containers whose config
+    // files changed, were added (when container already running), or were removed.
+    let config_diffs: Vec<(&DiffKind, &str)> = diffs
+        .iter()
+        .filter(|diff| {
+            matches!(diff.kind, DiffKind::Add | DiffKind::Change | DiffKind::Remove)
+                && diff
+                    .desired
+                    .as_ref()
+                    .or(diff.observed.as_ref())
+                    .map(|w| w.quadlet_type == QuadletType::ConfigFile)
+                    .unwrap_or(false)
+        })
+        .map(|diff| (&diff.kind, diff.name.as_str()))
+        .collect();
+
+    if !config_diffs.is_empty() {
+        // For Add: only restart containers that are currently active (running).
+        // Keying off observed.units (runtime state) prevents RestartUnit from
+        // unintentionally starting services that were intentionally stopped.
+        let observed_active_units: HashSet<&str> = observed
+            .units
+            .iter()
+            .filter(|u| u.active_state == UnitActiveState::Active)
+            .map(|u| u.unit_name.as_str())
+            .collect();
+        // Normalise to runtime names so that RestartUnit actions emitted by
+        // actions_for_diff (which may use runtime names such as "app.service"
+        // for socket-activated containers) match the runtime_name key we
+        // compute below for workloads.
+        let mut already_restarted: HashSet<String> = actions
+            .iter()
+            .filter(|a| a.action_type == PlanActionType::RestartUnit)
+            .map(|a| systemd_unit_for_quadlet_file(&a.target))
+            .collect();
+
+        for (kind, config_name) in &config_diffs {
+            // For Remove: the config path is absent from desired.managed_config_paths,
+            // so dependency_refs_for_workload_state would miss it. Augment a clone of
+            // desired with the removed path so the full dependency parser (EnvironmentFile=,
+            // Volume= roots, etc.) can resolve the dependency correctly.
+            let augmented_desired;
+            let effective_desired = if matches!(kind, DiffKind::Remove) {
+                augmented_desired = {
+                    let mut d = desired.clone();
+                    d.managed_config_paths.push(config_name.to_string());
+                    d
+                };
+                &augmented_desired
+            } else {
+                desired
+            };
+
+            for workload in &desired.workloads {
+                let depends = dependency_refs_for_workload_state(effective_desired, workload)
+                    .contains(&config_name.to_string());
+
+                if depends {
+                    // Gate on observed runtime active state for all diff kinds.
+                    // observed.units stores runtime names via systemd_unit_for_quadlet_file
+                    // (e.g. app.container → app.service), so convert before lookup.
+                    // This prevents RestartUnit from starting intentionally stopped services
+                    // on Change and Remove, and avoids unnecessary restarts in mixed plans.
+                    let runtime_name =
+                        systemd_unit_for_quadlet_file(&workload.systemd_unit_name);
+                    let should_restart =
+                        observed_active_units.contains(runtime_name.as_str());
+                    if should_restart && !already_restarted.contains(runtime_name.as_str()) {
+                        actions.push(action(PlanActionType::RestartUnit, &runtime_name));
+                        already_restarted.insert(runtime_name.clone());
+                    }
+                }
+            }
+        }
     }
 
     let plan_id = format!(
@@ -350,7 +428,45 @@ pub fn plan_deterministic_reconciliation_with_runtime(
         }
     }
 
-    for object_id in ordered_delete_ids(actual, desired).map_err(map_validation_error)? {
+    let delete_ids = ordered_delete_ids(actual, desired).map_err(map_validation_error)?;
+
+    // Config-delete restart pass: a workload whose current desired quadlet contents
+    // reference a config path that is now being deleted must be classified Restart.
+    //
+    // We scan desired_map.material_fields["contents"] directly rather than relying on
+    // dependency_refs (which are filtered by managed_config_paths and thus omit the
+    // removed path) or applied_map.dependency_refs (which may be stale — the workload
+    // may have since been updated to drop the EnvironmentFile= reference, in which case
+    // applied_map would still carry the old dep but the executable planner would not
+    // emit a RestartUnit, causing plan/apply divergence).
+    //
+    // Scanning the desired contents is the same evidence the executable planner uses
+    // (via the augmented-desired trick), so the two planners stay in sync regardless
+    // of whether a baseline exists.
+    let deleted_ids: std::collections::HashSet<&str> =
+        delete_ids.iter().map(String::as_str).collect();
+    for action in &mut actions {
+        if action.classification != DeterministicActionClass::NoOp {
+            continue;
+        }
+        let trigger = desired_map
+            .get(action.object_id.as_str())
+            .and_then(|desired_obj| {
+                deleted_ids
+                    .iter()
+                    .copied()
+                    .find(|path| normalized_object_references_config(desired_obj, path))
+            });
+
+        if let Some(trigger) = trigger {
+            action.classification = DeterministicActionClass::Restart;
+            action.reason = format!("restart required because {} was removed", trigger);
+            changed_by_object
+                .insert(action.object_id.clone(), DeterministicActionClass::Restart);
+        }
+    }
+
+    for object_id in delete_ids {
         actions.push(DeterministicPlannedAction {
             object_id,
             classification: DeterministicActionClass::Delete,
@@ -881,4 +997,38 @@ fn action(action_type: PlanActionType, name: &str) -> PlanAction {
 
 fn map_validation_error(err: ValidationError) -> CoreError {
     CoreError::new(FailureClass::Validation, err.message)
+}
+
+/// Returns true when a normalized workload object's raw quadlet contents directly
+/// reference `config_path` as an EnvironmentFile or Volume source.
+///
+/// Used as a fallback dependency check when no applied snapshot is available
+/// (first reconcile / after state reset), because in that case the workload's
+/// `dependency_refs` were derived from the current desired state which no longer
+/// lists the removed path in `managed_config_paths`.
+fn normalized_object_references_config(
+    obj: &crate::core::types::NormalizedManagedObject,
+    config_path: &str,
+) -> bool {
+    let Some(contents) = obj.material_fields.get("contents") else {
+        return false;
+    };
+    for raw_line in contents.lines() {
+        let line = raw_line.trim();
+        if let Some(value) = line.strip_prefix("EnvironmentFile=") {
+            // Optional-file marker ('-') is stripped before comparison.
+            if value.trim_start_matches('-').trim() == config_path {
+                return true;
+            }
+        } else if let Some(value) = line.strip_prefix("Volume=") {
+            if let Some(source) = value.split(':').next().map(str::trim) {
+                if source == config_path
+                    || config_path.starts_with(&format!("{source}/"))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }

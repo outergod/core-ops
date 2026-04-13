@@ -4,6 +4,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::integration::env_lock::path_lock;
 use core_ops::io::repo::load_desired_state;
 
+struct HostGuard(Option<std::ffi::OsString>);
+
+impl Drop for HostGuard {
+    fn drop(&mut self) {
+        if let Some(value) = &self.0 {
+            std::env::set_var("CORE_OPS_HOST", value);
+        } else {
+            std::env::remove_var("CORE_OPS_HOST");
+        }
+    }
+}
+
 fn temp_repo() -> PathBuf {
     let mut path = std::env::temp_dir();
     let nanos = SystemTime::now()
@@ -85,6 +97,8 @@ fn init_layered_repo(repo: &PathBuf) -> String {
 #[test]
 fn fails_on_dropin_target_missing() {
     let _lock = path_lock().lock().expect("path lock");
+    let previous_host = std::env::var_os("CORE_OPS_HOST");
+    let _host_guard = HostGuard(previous_host);
     let repo = temp_repo();
     let rev = init_layered_repo(&repo);
 
@@ -92,6 +106,5 @@ fn fails_on_dropin_target_missing() {
     let err = load_desired_state(repo.to_str().unwrap(), &rev).expect_err("should fail");
 
     assert!(err.to_string().contains("drop-in target does not exist"));
-
-    std::env::remove_var("CORE_OPS_HOST");
+    // CORE_OPS_HOST is restored by _host_guard on drop
 }
