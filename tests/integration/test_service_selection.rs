@@ -4,6 +4,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::integration::env_lock::path_lock;
 use core_ops::io::repo::load_desired_state;
 
+struct HostGuard(Option<std::ffi::OsString>);
+
+impl Drop for HostGuard {
+    fn drop(&mut self) {
+        if let Some(value) = &self.0 {
+            std::env::set_var("CORE_OPS_HOST", value);
+        } else {
+            std::env::remove_var("CORE_OPS_HOST");
+        }
+    }
+}
+
 fn temp_repo() -> PathBuf {
     let mut path = std::env::temp_dir();
     let nanos = SystemTime::now()
@@ -73,6 +85,8 @@ fn init_layered_repo(repo: &PathBuf) -> String {
 #[test]
 fn selects_services_per_host() {
     let _lock = path_lock().lock().expect("path lock");
+    let previous_host = std::env::var_os("CORE_OPS_HOST");
+    let _host_guard = HostGuard(previous_host);
     let repo = temp_repo();
     let rev = init_layered_repo(&repo);
 
@@ -104,13 +118,14 @@ fn selects_services_per_host() {
     assert!(names.contains(&"vector.container"));
     assert!(!names.contains(&"immich.container"));
     assert!(!names.contains(&"immich.volume"));
-
-    std::env::remove_var("CORE_OPS_HOST");
+    // CORE_OPS_HOST is restored by _host_guard on drop
 }
 
 #[test]
 fn derives_managed_config_roots_from_config_targets_not_service_names() {
     let _lock = path_lock().lock().expect("path lock");
+    let previous_host = std::env::var_os("CORE_OPS_HOST");
+    let _host_guard = HostGuard(previous_host);
     let repo = temp_repo();
     let rev = init_layered_repo(&repo);
 
@@ -126,6 +141,5 @@ fn derives_managed_config_roots_from_config_targets_not_service_names() {
     assert!(!desired
         .managed_config_roots
         .contains(&"/etc/traefik-dnschallenge".to_string()));
-
-    std::env::remove_var("CORE_OPS_HOST");
+    // CORE_OPS_HOST is restored by _host_guard on drop
 }
