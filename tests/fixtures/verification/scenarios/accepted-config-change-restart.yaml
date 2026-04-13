@@ -1,0 +1,90 @@
+scenario_id: accepted-config-change-restart
+title: Config-file change triggers dependent container restart
+description: Applying a baseline revision and then changing only a config file causes the dependent container to restart, and the apply report correctly reflects it.
+scenario_classes:
+  - regression_detection
+source: accepted
+behavioral_claim: When a managed config file changes, the planner emits RestartUnit for dependent containers and the apply report shows the restart rather than leaving the service stale.
+rationale: Regression guard for fix 014-config-restart-fidelity. Before the fix, the planner emitted only WriteQuadlet for ConfigFile diffs and never scheduled RestartUnit, leaving services silently running with stale config while the apply report falsely claimed restarted.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: tests/fixtures/verification/repos/config-change-history
+  revision_under_test: config-v2
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/config-change-history
+    revisions:
+      - config-v1
+      - config-v2
+    states:
+      - valid
+      - valid
+    transition_expectations:
+      - baseline config revision converges on clean boot
+      - config-file-only change restarts dependent container
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: apply-baseline
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: config-v1
+      host: test-vm
+      mode: humane
+  - step_id: check-service-active-baseline
+    step_type: guest_command
+    target: guest
+    command: sudo systemctl is-active runner.service
+  - step_id: apply-config-change
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      repository_source: fixture
+      revision: config-v2
+      host: test-vm
+      mode: humane
+  - step_id: check-service-active-after-change
+    step_type: guest_command
+    target: guest
+    command: sudo systemctl is-active runner.service
+assertions:
+  - assertion_id: baseline-apply-succeeded
+    assertion_type: step_exit_code_is
+    target: apply-baseline
+    expected_state: "0"
+    failure_message: Baseline apply did not exit successfully.
+  - assertion_id: baseline-apply-converged
+    assertion_type: step_stdout_contains
+    target: apply-baseline
+    expected_state: "Outcome: converged"
+    failure_message: Baseline apply did not report converged outcome.
+  - assertion_id: service-active-after-baseline
+    assertion_type: step_exit_code_is
+    target: check-service-active-baseline
+    expected_state: "0"
+    failure_message: Container service was not active after baseline apply.
+  - assertion_id: config-change-apply-succeeded
+    assertion_type: step_exit_code_is
+    target: apply-config-change
+    expected_state: "0"
+    failure_message: Config-change apply did not exit successfully.
+  - assertion_id: config-change-apply-converged
+    assertion_type: step_stdout_contains
+    target: apply-config-change
+    expected_state: "Outcome: converged"
+    failure_message: Config-change apply did not report converged outcome.
+  - assertion_id: config-change-apply-restarted
+    assertion_type: step_stdout_contains
+    target: apply-config-change
+    expected_state: "1 restart"
+    failure_message: Config-change apply did not report a container restart. The planner must emit RestartUnit for config-file-dependent containers (regression check for 014-config-restart-fidelity).
+  - assertion_id: service-active-after-change
+    assertion_type: step_exit_code_is
+    target: check-service-active-after-change
+    expected_state: "0"
+    failure_message: Container service was not active after config-change apply.

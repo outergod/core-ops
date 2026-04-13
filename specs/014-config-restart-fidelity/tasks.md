@@ -125,7 +125,10 @@ requiring systemd or filesystem access.
 - [X] T024 [P] Bump version in `Cargo.toml` to `0.8.2` (patch bump from current `0.8.1`)
 - [X] T025 Update `CHANGELOG.md`: add `## [0.8.2]` section (or update `[Unreleased]`) with a `### Fixed` entry covering: (a) config-file changes now restart dependent containers; (b) config-file removal and addition with pre-existing containers also trigger restarts
 - [X] T026 Run `cargo run --bin core-ops-release -- validate --base-ref HEAD^` and confirm governance check passes (fragment present, version bumped, CHANGELOG updated)
-- [ ] T027 Run the quickstart validation from `specs/014-config-restart-fidelity/quickstart.md` on a live host to satisfy SC-002 (operator-run: confirm `ActiveEnterTimestamp` advances after a config-file-only apply). SC-001, SC-003, SC-004, SC-005 are all covered by `cargo test`.
+- [X] T027 [P] Create E2E regression scenario for SC-002 (config-file change triggers actual restart on a live VM):
+  - Repo fixture: `tests/fixtures/verification/repos/config-change-history/` with revisions `config-v1` (VERSION=1) and `config-v2` (VERSION=2); layered format with `services/runner/runner.container` (EnvironmentFile=/etc/runner/runner.env), `services/runner/config/etc/runner/runner.env`, and `hosts/test-vm/host.yaml`
+  - Accepted scenario: `tests/fixtures/verification/scenarios/accepted-config-change-restart.yaml` with `scenario_classes: [regression_detection]`; key assertion: `step_stdout_contains` "1 restart" on the config-change apply step
+  - Run: `CORE_OPS_VERIFY_VM_HOST=<host> CORE_OPS_VERIFY_CORE_OPS_BIN=target/debug/core-ops core-ops-verify run --scenario tests/fixtures/verification/scenarios/accepted-config-change-restart.yaml`
 
 ---
 

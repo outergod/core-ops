@@ -62,15 +62,69 @@ Rust (stable toolchain): Follow standard conventions
 <!-- MANUAL ADDITIONS START -->
 ## Verification Harness Playbook
 
-When working on feature or regression changes in this repository, agents should
+When working on feature or regression changes in this repository, agents MUST
 treat VM-backed `core-ops-verify run` execution as the authoritative
-verification path for end-to-end scenario coverage. Use the synthetic path
-only for deterministic internal test coverage.
+verification path for end-to-end scenario coverage. Use `cargo test` only for
+deterministic internal unit/integration coverage — it is not a substitute for
+live host validation.
 
 The detailed contracts and examples currently live under
 `specs/008-e2e-verification-harness/`, but the scenario-generation and
 regression-verification workflow is now a repo-wide development practice, not
 just a one-off feature artifact.
+
+### Mandatory E2E Scenario Authoring
+
+E2E scenario authoring is **not optional**. Every accepted feature and every
+regression fix must have a corresponding accepted scenario before the work is
+considered complete.
+
+**For every new feature (non-negotiable)**:
+1. Author a candidate scenario covering the feature's primary behavioral claim
+2. Place it in `tests/fixtures/verification/scenarios/` with
+   `source: accepted` once the claim is stable
+3. Scenario class must match the feature type: `convergence`, `idempotency`,
+   `upgrade_transition`, etc.
+4. The scenario is the live-host proof that `cargo test` cannot provide
+
+**For every regression fix (non-negotiable)**:
+1. Create a repository-history fixture under
+   `tests/fixtures/verification/repos/<fix-name>-history/` with at least two
+   revisions: the pre-fix state and the post-fix state
+2. The fixture must use the layered repo format (`services/` + `hosts/`) if it
+   involves config files — the simple `quadlets/` format does not support
+   `managed_config_paths`
+3. Author an accepted scenario with `scenario_classes: [regression_detection]`
+   referencing `fixtures.repository_evolution`
+4. The scenario's key assertion must directly test the behavioral claim of the
+   fix (e.g., "1 restart" for a planner restart fix)
+5. Preserve the scenario in the accepted corpus permanently — it is the
+   permanent regression guard
+
+**Workflow for regression scenarios**:
+```
+1. Create repo fixture: tests/fixtures/verification/repos/<name>-history/
+     <revision-1>/  — state that exposed the bug
+     <revision-2>/  — state after the fix applies correctly
+2. Author scenario YAML in tests/fixtures/verification/scenarios/
+     source: accepted
+     scenario_classes: [regression_detection]
+     fixtures.repository_evolution.history_fixture: <path>
+     assertions: include the specific behavioral check (e.g., "1 restart")
+3. Validate scenario parses: cargo test --test mod verification_cli
+4. Run on live VM: core-ops-verify run --scenario <path>
+5. Mark the implementation task complete only after step 4 passes
+```
+
+**Layered repo format** (required for config-file scenarios):
+```
+<revision>/
+  services/<name>/<name>.container        ← container quadlet with EnvironmentFile=
+  services/<name>/config/etc/<path>       ← config file (target: /etc/<path>)
+  hosts/<hostname>/host.yaml              ← host: <hostname>\nservices:\n  - <name>
+```
+Use `action.host: <hostname>` in the scenario step to pass `--host <hostname>`
+to `core-ops apply`, matching the hostname in `host.yaml`.
 
 ### Scenario / Bundle Generation Rules
 

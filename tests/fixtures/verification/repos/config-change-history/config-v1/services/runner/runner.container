@@ -1,0 +1,13 @@
+[Unit]
+Description=Verification config-change regression test runner service
+
+[Container]
+Image=docker.io/library/caddy:2.10.2-alpine
+ContainerName=runner
+EnvironmentFile=/etc/runner/runner.env
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
