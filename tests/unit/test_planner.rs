@@ -691,3 +691,73 @@ fn deterministic_planner_classifies_restart_when_config_dependency_is_removed() 
         "reason must reference the deleted config path"
     );
 }
+
+#[test]
+fn deterministic_planner_classifies_restart_when_config_dependency_is_removed_without_baseline() {
+    // Same scenario as the previous test but with last_applied = None (first reconcile
+    // after state reset). applied_map is empty, so the pass must fall back to scanning
+    // the actual workload's raw quadlet contents for EnvironmentFile= references.
+    let config_path = "/etc/runner/env";
+
+    let quadlet_contents = "[Container]\nImage=docker.io/example/app:v1\nEnvironmentFile=/etc/runner/env\n";
+
+    // Desired: container only — config file removed, no managed_config_paths entry.
+    // Material fields match actual (container itself unchanged) so classification is
+    // NoOp until the config-delete restart pass promotes it to Restart.
+    // dependency_refs is empty because managed_config_paths no longer includes the path.
+    let desired = NormalizedSnapshot {
+        revision_id: Some("rev-2".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![normalized_object(
+            "app.container",
+            ManagedObjectKind::GeneratedUnit,
+            &[("unit", "app.container"), ("contents", quadlet_contents)],
+            &[],
+        )],
+    };
+    // Actual: config file still on disk; workload quadlet contents reference it via
+    // EnvironmentFile= but dependency_refs is empty (derived from current desired).
+    let actual = NormalizedSnapshot {
+        revision_id: Some("rev-1".to_string()),
+        scope_id: "host:alpha".to_string(),
+        objects: vec![
+            normalized_object(
+                config_path,
+                ManagedObjectKind::RenderedArtifact,
+                &[("target_path", config_path)],
+                &[],
+            ),
+            normalized_object(
+                "app.container",
+                ManagedObjectKind::GeneratedUnit,
+                // Same contents as desired so the container itself is NoOp —
+                // only the config deletion should trigger the Restart classification.
+                // The EnvironmentFile= line is the fallback evidence used when
+                // no applied snapshot exists (dependency_refs is empty).
+                &[("unit", "app.container"), ("contents", quadlet_contents)],
+                &[], // dependency_refs empty — current desired has no managed_config_paths
+            ),
+        ],
+    };
+
+    // No baseline — first reconcile after state reset.
+    let plan = plan_deterministic_reconciliation(&desired, None, &actual)
+        .expect("deterministic plan");
+
+    let app_action = plan
+        .actions
+        .iter()
+        .find(|a| a.object_id == "app.container")
+        .expect("app.container action present");
+
+    assert_eq!(
+        app_action.classification,
+        DeterministicActionClass::Restart,
+        "workload must be Restart when its config dep is deleted and no baseline exists, got {:?}",
+        app_action.classification
+    );
+    assert!(
+        app_action.reason.contains(config_path),
+        "reason must reference the deleted config path"
+    );
+}

@@ -430,26 +430,48 @@ pub fn plan_deterministic_reconciliation_with_runtime(
 
     let delete_ids = ordered_delete_ids(actual, desired).map_err(map_validation_error)?;
 
-    // Config-delete restart pass: a workload whose last-applied dependency_refs
-    // include a config path that is now being deleted must be classified Restart.
-    // The desired dependency_refs omit the removed path (managed_config_paths no
-    // longer lists it), so the change-propagation pass above cannot detect it.
-    // We consult the applied snapshot's dependency_refs, which were computed when
-    // the config was still present, to find these implicit restart requirements.
+    // Config-delete restart pass: a workload whose dependency_refs reference
+    // a config path that is now being deleted must be classified Restart.
+    //
+    // Two evidence sources are tried in order:
+    //
+    // 1. applied_map (last-applied snapshot): dependency_refs were computed when
+    //    the config was still in managed_config_paths, so they carry the removed
+    //    path explicitly. Reliable when a baseline exists.
+    //
+    // 2. actual_map fallback (no baseline — first reconcile or after state reset):
+    //    applied_map is empty, but the actual workload's raw quadlet contents
+    //    (stored in material_fields["contents"]) still reference the config path
+    //    via EnvironmentFile= or Volume=. We re-derive the dependency by scanning
+    //    those contents against the deleted paths. This mirrors the augmented-desired
+    //    trick in the executable planner and prevents plan/apply divergence in
+    //    bootstrap-style runs.
     let deleted_ids: std::collections::HashSet<&str> =
         delete_ids.iter().map(String::as_str).collect();
     for action in &mut actions {
         if action.classification != DeterministicActionClass::NoOp {
             continue;
         }
-        let Some(applied) = applied_map.get(action.object_id.as_str()) else {
-            continue;
-        };
-        if let Some(trigger) = applied
-            .dependency_refs
-            .iter()
-            .find(|dep| deleted_ids.contains(dep.as_str()))
-        {
+        let trigger = applied_map
+            .get(action.object_id.as_str())
+            .and_then(|applied| {
+                applied
+                    .dependency_refs
+                    .iter()
+                    .find(|dep| deleted_ids.contains(dep.as_str()))
+                    .map(String::as_str)
+            })
+            .or_else(|| {
+                // Fallback: scan actual quadlet contents for direct config references.
+                // This handles bootstrap runs where no applied_map entry exists.
+                let actual_obj = actual_map.get(action.object_id.as_str())?;
+                deleted_ids
+                    .iter()
+                    .copied()
+                    .find(|path| normalized_object_references_config(actual_obj, path))
+            });
+
+        if let Some(trigger) = trigger {
             action.classification = DeterministicActionClass::Restart;
             action.reason = format!("restart required because {} was removed", trigger);
             changed_by_object
@@ -988,4 +1010,38 @@ fn action(action_type: PlanActionType, name: &str) -> PlanAction {
 
 fn map_validation_error(err: ValidationError) -> CoreError {
     CoreError::new(FailureClass::Validation, err.message)
+}
+
+/// Returns true when a normalized workload object's raw quadlet contents directly
+/// reference `config_path` as an EnvironmentFile or Volume source.
+///
+/// Used as a fallback dependency check when no applied snapshot is available
+/// (first reconcile / after state reset), because in that case the workload's
+/// `dependency_refs` were derived from the current desired state which no longer
+/// lists the removed path in `managed_config_paths`.
+fn normalized_object_references_config(
+    obj: &crate::core::types::NormalizedManagedObject,
+    config_path: &str,
+) -> bool {
+    let Some(contents) = obj.material_fields.get("contents") else {
+        return false;
+    };
+    for raw_line in contents.lines() {
+        let line = raw_line.trim();
+        if let Some(value) = line.strip_prefix("EnvironmentFile=") {
+            // Optional-file marker ('-') is stripped before comparison.
+            if value.trim_start_matches('-').trim() == config_path {
+                return true;
+            }
+        } else if let Some(value) = line.strip_prefix("Volume=") {
+            if let Some(source) = value.split(':').next() {
+                if source == config_path
+                    || config_path.starts_with(&format!("{source}/"))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
