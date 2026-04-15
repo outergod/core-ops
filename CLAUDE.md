@@ -1,8 +1,10 @@
 # core-ops Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-12
+Auto-generated from all feature plans. Last updated: 2026-04-15
 
 ## Active Technologies
+- Rust 2021 + clap 4, serde / serde_json, miette, thiserror, tempfile (015-controller-state-lifecycle)
+- JSON state file at `/var/lib/core-ops/status.json` (atomic write via tempfile) (015-controller-state-lifecycle)
 
 - Rust 2021 — clap 4, serde, miette, serde_json, serde_yaml
 - GitHub Actions — ubuntu-latest runners, `gh` CLI, `rustup`
@@ -31,6 +33,7 @@ cargo run --bin core-ops-release -- validate --base-ref HEAD^
 Follow standard Rust conventions. No new abstractions without justification.
 
 ## Recent Changes
+- 015-controller-state-lifecycle: Added Rust 2021 + clap 4, serde / serde_json, miette, thiserror, tempfile
 
 - 014-config-restart-fidelity: Fix planner to emit RestartUnit for config-file-dependent containers
 - 012-unify-ci-release: Unified CI workflow — build matrix, artifact upload, release job
