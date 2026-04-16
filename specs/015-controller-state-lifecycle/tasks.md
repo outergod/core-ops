@@ -74,17 +74,17 @@
 
 ### Tests for User Story 2
 
-- [ ] T019 [P] [US2] Add unit tests for rollback apply path in `apply.rs`: (a) initial rollback from Converged writes `detached = true` and correct `last_applied_revision` before returning success; (b) **further rollback from Detached** (when `state.detached == true` on entry) also writes `detached = true` with the *new* revision as `last_applied_revision`, asserting `detached` is preserved and the revision changes (US2 acceptance scenario 3 / FR-013)
-- [ ] T019b [P] [US2] Add unit test for rollback eligibility that asserts FR-014: construct a `DeterministicPersistedState` with a retained snapshot for a revision that does not exist in the test repo fixture; call `resolve_rollback_target` with that revision; assert the result is `RollbackEligibility::Eligible` (not a Git-reachability rejection). This is a regression guard — if Git reachability is ever accidentally added to the eligibility check, this test will fail.
-- [ ] T020 [P] [US2] Add unit test for `run_agent` when `state.detached == true`: verify it returns without calling `apply_with_report`; verify it returns an `AgentOutput` or exits cleanly; verify emitted log/message contains "detached" and the applied revision
+- [X] T019 [P] [US2] Add unit tests for rollback apply path in `apply.rs`: (a) initial rollback from Converged writes `detached = true` and correct `last_applied_revision` before returning success; (b) **further rollback from Detached** (when `state.detached == true` on entry) also writes `detached = true` with the *new* revision as `last_applied_revision`, asserting `detached` is preserved and the revision changes (US2 acceptance scenario 3 / FR-013)
+- [X] T019b [P] [US2] Add unit test for rollback eligibility that asserts FR-014: construct a `DeterministicPersistedState` with a retained snapshot for a revision that does not exist in the test repo fixture; call `resolve_rollback_target` with that revision; assert the result is `RollbackEligibility::Eligible` (not a Git-reachability rejection). This is a regression guard — if Git reachability is ever accidentally added to the eligibility check, this test will fail.
+- [X] T020 [P] [US2] Add unit test for `run_agent` when `state.detached == true`: verify it returns without calling `apply_with_report`; verify it returns an `AgentOutput` or exits cleanly; verify emitted log/message contains "detached" and the applied revision
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] Update the rollback apply path in `src/cli/apply.rs` — after a successful snapshot rollback apply, write `detached = true` and update `reconciliation.last_applied_revision` to the rolled-back revision in persisted state before returning success; ensure `desired_state.requested_ref` is unchanged
-- [ ] T022 [US2] Update `src/cli/agent.rs` — add detached-state check before the apply path: if `state.detached == true`, emit a message matching the contract in `contracts/error-messages.md` ("controller is detached at revision {revision}; …") and return/exit cleanly without calling `apply_with_report`
-- [ ] T023 [US2] Update `src/cli/apply.rs` — add a guard for the non-rollback apply path: if `state.detached == true`, fail with the detached-state error message; `apply --rollback-to` MUST still proceed from Detached (this is the further-rollback path already handled in T021)
-- [ ] T024 [US2] Update `src/cli/status.rs` — expose `detached` flag and currently applied detached revision (`reconciliation.last_applied_revision`) in status output when `state.detached == true` (FR-017)
-- [ ] T025 [US2] Run `cargo test` and `cargo clippy --all-targets -- -D warnings`; fix all warnings; verify agent detached path tests pass
+- [X] T021 [US2] Update the rollback apply path in `src/cli/apply.rs` — after a successful snapshot rollback apply, write `detached = true` and update `reconciliation.last_applied_revision` to the rolled-back revision in persisted state before returning success; ensure `desired_state.requested_ref` is unchanged
+- [X] T022 [US2] Update `src/cli/agent.rs` — add detached-state check before the apply path: if `state.detached == true`, emit a message matching the contract in `contracts/error-messages.md` ("controller is detached at revision {revision}; …") and return/exit cleanly without calling `apply_with_report`
+- [X] T023 [US2] Update `src/cli/apply.rs` — add a guard for the non-rollback apply path: if `state.detached == true`, fail with the detached-state error message; `apply --rollback-to` MUST still proceed from Detached (this is the further-rollback path already handled in T021)
+- [X] T024 [US2] Update `src/cli/status.rs` — expose `detached` flag and currently applied detached revision (`reconciliation.last_applied_revision`) in status output when `state.detached == true` (FR-017)
+- [X] T025 [US2] Run `cargo test` and `cargo clippy --all-targets -- -D warnings`; fix all warnings; verify agent detached path tests pass
 
 **Checkpoint**: Snapshot rollback enters Detached state; agent skips reconciliation and reports clearly; status shows detached revision
 
