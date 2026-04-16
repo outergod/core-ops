@@ -27,8 +27,9 @@ use crate::io::repo::load_desired_state;
 use crate::io::state::{
     latest_retained_snapshot_for_scope, persist_finished_state, persist_in_progress_state,
     read_deterministic_state, read_deterministic_state as load_deterministic_state,
-    record_convergence_outcome, record_rollback_outcome, resolve_state_file,
-    retain_successful_snapshot, write_deterministic_state, DETERMINISTIC_STATE_FILE_NAME,
+    read_persisted_state, record_convergence_outcome, record_rollback_outcome, resolve_state_file,
+    retain_successful_snapshot, write_deterministic_state, write_persisted_state,
+    DETERMINISTIC_STATE_FILE_NAME,
 };
 
 pub fn apply(
@@ -767,6 +768,15 @@ pub fn execute_rollback_with_report(
         reload_systemd,
         Some(state_path.clone()),
     )?;
+
+    // After a successful rollback, mark controller as Detached.
+    // This persists regardless of whether convergence was recorded.
+    if output.result.run.status == RunStatus::Success {
+        if let Ok(Some(mut provenance)) = read_persisted_state(&state_path) {
+            provenance.detached = true;
+            let _ = write_persisted_state(&state_path, &provenance);
+        }
+    }
 
     let mut deterministic_state =
         load_or_init_deterministic_state(&deterministic_state_path).map_err(map_apply_error)?;

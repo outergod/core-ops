@@ -37,7 +37,10 @@ pub fn read_persisted_state(path: &Path) -> Result<Option<PersistedProvenanceSta
         Err(err) => return Err(StateError::Io(err.to_string())),
     };
 
-    Ok(parse_persisted_state_text(&contents))
+    match parse_persisted_state_text(&contents) {
+        Some(state) => Ok(Some(state)),
+        None => Err(StateError::Corrupt(path.display().to_string())),
+    }
 }
 
 pub fn write_persisted_state(
@@ -107,6 +110,34 @@ pub fn persist_success_state(
     )
 }
 
+/// Write controller state for a fresh `init` invocation.
+///
+/// If `existing` is `Some` and repository/ref are unchanged, reconciliation
+/// history is preserved and only `detached` is cleared.  Otherwise a clean
+/// NeverRun state is written.
+pub fn write_init_state(
+    path: &Path,
+    repository: &str,
+    requested_ref: &str,
+    existing: Option<&PersistedProvenanceState>,
+) -> Result<(), StateError> {
+    let same_config = existing
+        .map(|s| {
+            s.desired_state.repository == repository
+                && s.desired_state.requested_ref == requested_ref
+        })
+        .unwrap_or(false);
+
+    if same_config {
+        let mut state = existing.unwrap().clone();
+        state.detached = false;
+        state.controller = controller_provenance_from_env();
+        write_persisted_state(path, &state)
+    } else {
+        persist_never_run_state(path, repository, requested_ref)
+    }
+}
+
 pub fn persist_never_run_state(
     path: &Path,
     repository: &str,
@@ -122,6 +153,7 @@ pub fn persist_never_run_state(
             last_observed_at: None,
         },
         reconciliation: never_run_provenance(),
+        detached: false,
     };
 
     write_persisted_state(path, &state)
@@ -134,7 +166,7 @@ pub fn persist_in_progress_state(
     observed_revision: &str,
     attempted_revision: Option<&str>,
 ) -> Result<ReconciliationAttemptHandle, StateError> {
-    let previous = read_persisted_state(path)?;
+    let previous = read_persisted_state(path).unwrap_or(None);
     let generation = next_reconciliation_generation(previous.as_ref());
     let started_at = timestamp_string();
     let state = build_state(
@@ -169,7 +201,7 @@ pub fn persist_finished_state(
     attempt: &ReconciliationAttemptHandle,
     status: ReconciliationStatus,
 ) -> Result<(), StateError> {
-    let previous = read_persisted_state(path)?;
+    let previous = read_persisted_state(path).unwrap_or(None);
     let state = build_state(
         previous.as_ref(),
         repository,
@@ -223,6 +255,7 @@ fn build_state(
             }),
         },
         reconciliation,
+        detached: false,
     }
 }
 
@@ -309,8 +342,8 @@ pub fn resolve_rollback_target(
             scope_id: scope_id.to_string(),
             eligibility: RollbackEligibility::IncompatibleScope,
             reason: format!(
-                "retained snapshot scope mismatch: expected {} but found {}",
-                scope_id, snapshot.scope_id
+                "snapshot for revision {} was recorded on scope {}, which is incompatible with current scope {}",
+                target_revision_id, snapshot.scope_id, scope_id
             ),
         },
         Some(snapshot) if !snapshot.retained => RollbackTargetCandidate {

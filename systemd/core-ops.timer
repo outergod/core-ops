@@ -1,0 +1,11 @@
+[Unit]
+Description=Run CoreOps Quadlet GitOps Agent on a schedule
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=core-ops.service
+
+[Install]
+WantedBy=timers.target

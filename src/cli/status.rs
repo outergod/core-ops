@@ -6,6 +6,8 @@ use crate::core::types::{
     DeterministicReconciliationPlan, PlanEntry, PlanEntryAction, PlanOutputView,
     VerificationResult, VerificationStatus,
 };
+use crate::core::errors::StateError;
+use crate::core::types::ReconciliationStatus;
 use crate::io::state::{
     parse_persisted_state_text, read_deterministic_state, read_persisted_state, resolve_state_file,
     DETERMINISTIC_STATE_FILE_NAME,
@@ -14,7 +16,9 @@ use crate::io::state::{
 pub fn render_status_from_path(path: &Path) -> String {
     let base = match read_persisted_state(path) {
         Ok(Some(state)) => render_present_state(&state),
-        Ok(None) | Err(_) => absent_status(),
+        Ok(None) => uninitialized_status(),
+        Err(StateError::Corrupt(corrupt_path)) => corrupt_status(&corrupt_path),
+        Err(_) => uninitialized_status(),
     };
     append_deterministic_status(base, path)
 }
@@ -27,19 +31,42 @@ pub fn render_status(explicit: Option<PathBuf>) -> String {
 pub fn format_status_text(contents: &str) -> String {
     match parse_persisted_state_text(contents) {
         Some(state) => render_present_state(&state),
-        None => absent_status(),
+        None => uninitialized_status(),
     }
 }
 
 fn render_present_state(state: &crate::core::types::PersistedProvenanceState) -> String {
+    let lifecycle = derive_lifecycle_state(state);
     match serde_json::to_string_pretty(state) {
-        Ok(pretty) => format!("provenance\n{}", pretty),
-        Err(_) => absent_status(),
+        Ok(pretty) => format!("lifecycle_state: {lifecycle}\nprovenance\n{}", pretty),
+        Err(_) => uninitialized_status(),
     }
 }
 
-fn absent_status() -> String {
-    "provenance\n{\n  \"status\": \"absent\"\n}".to_string()
+fn uninitialized_status() -> String {
+    "lifecycle_state: Uninitialized\nprovenance\n{\n  \"status\": \"absent\"\n}".to_string()
+}
+
+fn corrupt_status(path: &str) -> String {
+    format!(
+        "lifecycle_state: Corrupt\nprovenance\n{{\n  \"status\": \"corrupt\",\n  \"path\": \"{}\",\n  \"hint\": \"run 'core-ops init --force <repository> <ref>' to recover\"\n}}",
+        path
+    )
+}
+
+fn derive_lifecycle_state(state: &crate::core::types::PersistedProvenanceState) -> &'static str {
+    if state.detached {
+        return "Detached";
+    }
+    if state.reconciliation.running {
+        return "Reconciling";
+    }
+    match state.reconciliation.status {
+        ReconciliationStatus::NeverRun => "Initialized",
+        ReconciliationStatus::InProgress => "Reconciling",
+        ReconciliationStatus::Success => "Converged",
+        ReconciliationStatus::Failed => "Diverged",
+    }
 }
 
 pub fn render_mount_dependency_summary(

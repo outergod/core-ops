@@ -32,6 +32,7 @@ pub struct DeterministicPlanOutput {
 }
 
 pub fn plan(deps: &ReconcileDependencies<'_>, verbose: bool) -> Result<PlanOutput, CoreError> {
+    let detached_header = detached_header_from_state()?;
     let result = reconcile_plan(deps)?;
     let observed = (deps.read_observed)(&result.desired)?;
     let scope_id = scope_id_for_observed(&observed);
@@ -80,12 +81,19 @@ pub fn plan(deps: &ReconcileDependencies<'_>, verbose: bool) -> Result<PlanOutpu
     }
     let event = build_audit_event(&result.run, Some(&result.plan), &[], None);
 
+    let summary = format_deterministic_plan_report_with_options_and_state(
+        &deterministic.plan,
+        verbose,
+        run_display_state,
+    );
+    let summary = if let Some(header) = detached_header {
+        format!("{header}\n{summary}")
+    } else {
+        summary
+    };
+
     Ok(PlanOutput {
-        summary: format_deterministic_plan_report_with_options_and_state(
-            &deterministic.plan,
-            verbose,
-            run_display_state,
-        ),
+        summary,
         machine: format_deterministic_plan_json(&deterministic.plan),
         audit_record: audit,
         audit_event: event,
@@ -126,6 +134,44 @@ fn default_host_scope_id() -> Option<String> {
     let len = buf.iter().position(|b| *b == 0).unwrap_or(buf.len());
     let hostname = String::from_utf8_lossy(&buf[..len]).trim().to_string();
     (!hostname.is_empty()).then(|| format!("host:{hostname}"))
+}
+
+fn detached_header_from_state() -> Result<Option<String>, CoreError> {
+    use crate::core::errors::StateError;
+    let state_path = resolve_state_file(None);
+    let state = match read_persisted_state(&state_path) {
+        Ok(state) => state,
+        Err(StateError::Corrupt(path)) => {
+            return Err(CoreError::new(
+                crate::core::types::FailureClass::Plan,
+                format!(
+                    "state file at {} is corrupt or unreadable; run 'core-ops init <repository> <ref> --force' to recover",
+                    path
+                ),
+            ));
+        }
+        Err(err) => {
+            return Err(CoreError::new(
+                crate::core::types::FailureClass::Plan,
+                format!("failed to read persisted state {}: {}", state_path.display(), err),
+            ));
+        }
+    };
+    if let Some(state) = state {
+        if state.detached {
+            let revision = state
+                .reconciliation
+                .last_applied_revision
+                .as_deref()
+                .unwrap_or("unknown");
+            let requested_ref = &state.desired_state.requested_ref;
+            return Ok(Some(format!(
+                "[DETACHED] plan computed against detached revision {revision}; \
+                 this represents what re-attaching to {requested_ref} would apply"
+            )));
+        }
+    }
+    Ok(None)
 }
 
 fn last_applied_revision_from_state() -> Result<Option<String>, CoreError> {

@@ -3,10 +3,11 @@ use core_ops::build_info::{BUILD_REVISION, BUILD_TIME, BUILD_TREE_STATE};
 use core_ops::cli::agent as agent_cmd;
 use core_ops::cli::args::{Cli, Commands};
 use core_ops::cli::common as cli_common;
+use core_ops::cli::init as init_cmd;
 use core_ops::cli::{apply as apply_cmd, explain as explain_cmd, plan as plan_cmd};
-use core_ops::core::errors::CoreError;
+use core_ops::core::errors::{CoreError, StateError};
 use core_ops::core::reconcile::ReconcileDependencies;
-use core_ops::core::types::RunStatus;
+use core_ops::core::types::{FailureClass, RunStatus};
 use core_ops::io::state::{
     read_persisted_state, resolve_state_file, CONTROLLER_BUILD_TIME_ENV, CONTROLLER_REVISION_ENV,
     CONTROLLER_TREE_STATE_ENV, CONTROLLER_VERSION_ENV,
@@ -36,9 +37,13 @@ fn main() {
 
 fn run(cli: Cli) -> Result<(), CoreError> {
     match cli.command {
+        Commands::Init(args) => {
+            init_cmd::run_init(&args)?;
+            println!("initialized");
+            Ok(())
+        }
         Commands::Plan(args) => {
-            let repo_source = args.repo;
-            let rev = args.rev;
+            let (repo_source, rev) = resolve_repo_from_state(None)?;
             let quadlet_dir = args.quadlet_dir;
             let audit_dir = args.audit_dir;
             let json = args.json;
@@ -75,8 +80,6 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             Ok(())
         }
         Commands::Apply(args) => {
-            let repo_source = args.repo;
-            let rev = args.rev;
             let rollback_to = args.rollback_to;
             let rollback_plan_only = args.rollback_plan_only;
             let quadlet_dir = args.quadlet_dir;
@@ -94,6 +97,8 @@ fn run(cli: Cli) -> Result<(), CoreError> {
 
             let mut streamed_human_output = false;
             let output = if let Some(target_revision_id) = rollback_to.as_deref() {
+                // Rollback is permitted from Detached state — only require repo (not ref) from state.
+                let (repo_source, _) = resolve_repo_from_state(None)?;
                 apply_cmd::execute_rollback_with_report(
                     &repo_source,
                     target_revision_id,
@@ -103,6 +108,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                     rollback_plan_only,
                 )?
             } else if json {
+                let (repo_source, rev) = resolve_from_state(None)?;
                 apply_cmd::apply_with_report(
                     &repo_source,
                     &rev,
@@ -111,6 +117,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                     state_file.clone(),
                 )?
             } else {
+                let (repo_source, rev) = resolve_from_state(None)?;
                 let stdout = io::stdout();
                 let interactive = stdout.is_terminal();
                 streamed_human_output = true;
@@ -192,8 +199,6 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             Ok(())
         }
         Commands::Agent(args) => {
-            let repo = resolve_env(args.repo, "CORE_OPS_REPO")?;
-            let rev = resolve_env(args.rev, "CORE_OPS_REV")?;
             let quadlet_dir = args
                 .quadlet_dir
                 .or_else(|| std::env::var_os("CORE_OPS_QUADLET_DIR").map(PathBuf::from))
@@ -216,8 +221,6 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                 .or_else(|| std::env::var_os("CORE_OPS_LOCK_PATH").map(PathBuf::from));
 
             let config = agent_cmd::AgentConfig {
-                repo,
-                rev,
                 quadlet_dir,
                 audit_dir,
                 state_file,
@@ -225,12 +228,26 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                 lock_path,
             };
 
-            let output = agent_cmd::run_agent(&config)?;
-            println!("{}", output.report);
-            if output.run.status == RunStatus::Failure {
-                std::process::exit(1);
+            match agent_cmd::run_agent(&config)? {
+                agent_cmd::AgentExitReason::Uninitialized => {
+                    log::info!("core-ops agent: not initialized, exiting cleanly");
+                    Ok(())
+                }
+                agent_cmd::AgentExitReason::Detached { revision } => {
+                    println!(
+                        "controller is detached at revision {}; apply and agent reconciliation are paused until re-attached via 'core-ops init <repository> <ref> --force'",
+                        revision
+                    );
+                    Ok(())
+                }
+                agent_cmd::AgentExitReason::Completed(output) => {
+                    println!("{}", output.report);
+                    if output.run.status == RunStatus::Failure {
+                        std::process::exit(1);
+                    }
+                    Ok(())
+                }
             }
-            Ok(())
         }
         Commands::Status(args) => {
             println!("{}", core_ops::cli::status::render_status(args.state_file));
@@ -240,7 +257,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             set_systemd_unit_dir(&args.systemd_unit_dir);
             set_host_override(&args.host);
             let (repo_source, revision) =
-                explain_cmd::resolve_explain_target(args.repo.as_deref(), args.rev.as_deref())?;
+                explain_cmd::resolve_explain_target()?;
             let deps = ReconcileDependencies {
                 load_desired: &|| {
                     repo::load_desired_state(&repo_source, &revision).map_err(map_plan_error)
@@ -360,18 +377,83 @@ fn map_apply_error<E: std::fmt::Display>(err: E) -> CoreError {
     CoreError::new(core_ops::core::types::FailureClass::Apply, err.to_string())
 }
 
-fn resolve_env(value: Option<String>, key: &str) -> Result<String, CoreError> {
-    if let Some(value) = value {
-        return Ok(value);
-    }
-    if let Ok(value) = std::env::var(key) {
-        if !value.is_empty() {
-            return Ok(value);
+/// Read `(repository, requested_ref)` from state, allowing Detached state.
+/// Used only for the rollback path where Detached is a valid entry point.
+fn resolve_repo_from_state(
+    state_file_override: Option<std::path::PathBuf>,
+) -> Result<(String, String), CoreError> {
+    let state_path = resolve_state_file(state_file_override);
+    let state = match read_persisted_state(&state_path) {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            return Err(CoreError::new(
+                FailureClass::Plan,
+                format!(
+                    "not initialized; run 'core-ops init <repository> <ref>' first ({})",
+                    state_path.display()
+                ),
+            ));
         }
+        Err(StateError::Corrupt(path)) => {
+            return Err(CoreError::new(
+                FailureClass::Plan,
+                format!(
+                    "state file at {} is corrupt or unreadable; run 'core-ops init <repository> <ref> --force' to recover",
+                    path
+                ),
+            ));
+        }
+        Err(err) => {
+            return Err(CoreError::new(FailureClass::Plan, err.to_string()));
+        }
+    };
+    // Detached state is intentionally allowed here — rollback from Detached is valid.
+    Ok((
+        state.desired_state.repository,
+        state.desired_state.requested_ref,
+    ))
+}
+
+fn resolve_from_state(
+    state_file_override: Option<std::path::PathBuf>,
+) -> Result<(String, String), CoreError> {
+    let state_path = resolve_state_file(state_file_override);
+    let state = match read_persisted_state(&state_path) {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            return Err(CoreError::new(
+                FailureClass::Plan,
+                format!(
+                    "not initialized; run 'core-ops init <repository> <ref>' first ({})",
+                    state_path.display()
+                ),
+            ));
+        }
+        Err(StateError::Corrupt(path)) => {
+            return Err(CoreError::new(
+                FailureClass::Plan,
+                format!(
+                    "state file at {} is corrupt or unreadable; run 'core-ops init <repository> <ref> --force' to recover",
+                    path
+                ),
+            ));
+        }
+        Err(err) => {
+            return Err(CoreError::new(FailureClass::Plan, err.to_string()));
+        }
+    };
+    if state.detached {
+        return Err(CoreError::new(
+            FailureClass::Plan,
+            format!(
+                "controller is in Detached state; run 'core-ops init --force <repository> <ref>' to reinitialize ({})",
+                state_path.display()
+            ),
+        ));
     }
-    Err(CoreError::new(
-        core_ops::core::types::FailureClass::Apply,
-        format!("missing required value for {key}"),
+    Ok((
+        state.desired_state.repository,
+        state.desired_state.requested_ref,
     ))
 }
 

@@ -1,4 +1,7 @@
+mod test_agent_state;
 mod test_audit;
+mod test_rollback_detached;
+mod test_init;
 mod test_dropin_order;
 mod test_evaluation_determinism;
 mod test_invariants;

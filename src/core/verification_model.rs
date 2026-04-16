@@ -87,6 +87,7 @@ pub enum VerificationCandidateReviewStatus {
 pub enum VerificationCoreOpsActionKind {
     Apply,
     Explain,
+    Init,
     Plan,
     Status,
     Agent,
@@ -170,7 +171,9 @@ pub struct VerificationRepositoryEvolution {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationCoreOpsAction {
     pub action: VerificationCoreOpsActionKind,
+    #[serde(default)]
     pub repository_source: String,
+    #[serde(default)]
     pub revision: String,
     #[serde(default)]
     pub object: Option<String>,
@@ -180,6 +183,8 @@ pub struct VerificationCoreOpsAction {
     pub mode: Option<String>,
     #[serde(default)]
     pub output_contract: Option<String>,
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -863,14 +868,19 @@ fn render_coreops_action(
     command.push(' ');
     command.push_str(action_label(action.action));
     match action.action {
-        VerificationCoreOpsActionKind::Apply | VerificationCoreOpsActionKind::Plan => {
-            command.push_str(" --repo ");
+        VerificationCoreOpsActionKind::Init => {
+            command.push(' ');
             command.push_str(repository_source_arg(
                 &action.repository_source,
                 &bindings.repo_path,
             ));
-            command.push_str(" --rev ");
+            command.push(' ');
             command.push_str(&action.revision);
+            if action.force {
+                command.push_str(" --force");
+            }
+        }
+        VerificationCoreOpsActionKind::Apply | VerificationCoreOpsActionKind::Plan => {
             if let Some(host) = &action.host {
                 command.push_str(" --host ");
                 command.push_str(host);
@@ -886,13 +896,6 @@ fn render_coreops_action(
                 command.push(' ');
                 command.push_str(object);
             }
-            command.push_str(" --repo ");
-            command.push_str(repository_source_arg(
-                &action.repository_source,
-                &bindings.repo_path,
-            ));
-            command.push_str(" --rev ");
-            command.push_str(&action.revision);
             if let Some(host) = &action.host {
                 command.push_str(" --host ");
                 command.push_str(host);
@@ -905,17 +908,6 @@ fn render_coreops_action(
         }
         VerificationCoreOpsActionKind::Status => {}
         VerificationCoreOpsActionKind::Agent => {
-            if !action.repository_source.trim().is_empty() {
-                command.push_str(" --repo ");
-                command.push_str(repository_source_arg(
-                    &action.repository_source,
-                    &bindings.repo_path,
-                ));
-            }
-            if !action.revision.trim().is_empty() {
-                command.push_str(" --rev ");
-                command.push_str(&action.revision);
-            }
             if let Some(host) = &action.host {
                 command.push_str(" --host ");
                 command.push_str(host);
@@ -960,6 +952,7 @@ fn action_label(action: VerificationCoreOpsActionKind) -> &'static str {
     match action {
         VerificationCoreOpsActionKind::Apply => "apply",
         VerificationCoreOpsActionKind::Explain => "explain",
+        VerificationCoreOpsActionKind::Init => "init",
         VerificationCoreOpsActionKind::Plan => "plan",
         VerificationCoreOpsActionKind::Status => "status",
         VerificationCoreOpsActionKind::Agent => "agent",

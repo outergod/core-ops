@@ -10,7 +10,7 @@ versioning for public release policy decisions.
 <!-- core-ops-release:start -->
 ### Changed
 
-- Fix config-file changes not triggering dependent container restarts
+- Add controller lifecycle state management and core-ops init command
 <!-- core-ops-release:end -->
 
 ## [0.8.2] - 2026-04-12

@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::integration::env_lock::path_lock;
-use core_ops::cli::agent::{run_agent, AgentConfig};
+use core_ops::cli::agent::{run_agent, AgentConfig, AgentExitReason};
+use core_ops::io::state::persist_never_run_state;
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -106,17 +107,24 @@ fn agent_runs_once_with_service_config() {
     let quadlet_dir = temp.join("quadlets");
     fs::create_dir_all(&quadlet_dir).expect("quadlet dir");
 
+    let state_file = temp.join("status.json");
+    persist_never_run_state(&state_file, &repo.display().to_string(), &rev)
+        .expect("persist init state");
+
     let config = AgentConfig {
-        repo: repo.display().to_string(),
-        rev,
         quadlet_dir,
         audit_dir: None,
-        state_file: Some(temp.join("status.json")),
+        state_file: Some(state_file),
         reload_systemd: true,
         lock_path: Some(temp.join("agent.lock")),
     };
 
-    let output = run_agent(&config).expect("agent run");
+    let result = run_agent(&config).expect("agent run");
+    let output = match result {
+        AgentExitReason::Completed(o) => o,
+        AgentExitReason::Uninitialized => panic!("agent exited as uninitialized"),
+        AgentExitReason::Detached { revision } => panic!("agent exited as detached at {revision}"),
+    };
     assert!(output.report.contains("Apply for host"));
     assert!(output.report.contains("Execution"));
     assert!(!output.run.summary.is_empty());

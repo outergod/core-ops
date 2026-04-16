@@ -18,7 +18,7 @@
 
 **Purpose**: No new project scaffolding is needed. This feature extends an existing Rust binary with new source files and type changes.
 
-- [ ] T001 Confirm `cargo build --locked --bin core-ops` passes clean before starting work
+- [X] T001 Confirm `cargo build --locked --bin core-ops` passes clean before starting work
 
 ---
 
@@ -28,13 +28,13 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Add `#[error("state file is corrupt: {0}")] Corrupt(String)` variant to `StateError` enum in `src/core/errors.rs`
-- [ ] T003 Update `read_persisted_state` in `src/io/state.rs` to return `Err(StateError::Corrupt(path.display().to_string()))` when the file exists but `parse_persisted_state_text` returns `None` (absent → `Ok(None)` unchanged; only the invalid-file path changes)
-- [ ] T004 Add `#[serde(default)] pub detached: bool` field to `PersistedProvenanceState` in `src/core/types.rs`
-- [ ] T005 Add `InitArgs` struct (positional `repository: String`, positional `requested_ref: String`, `--force: bool`) and `Commands::Init(InitArgs)` to `src/cli/args.rs`; remove `--repo`/`--rev` from `PlanArgs`, `ApplyArgs`, `AgentArgs`, `ExplainArgs`; update all four `--after_help` strings to remove examples that use `--repo`/`--rev`
-- [ ] T006 Add `Init` variant (`#[serde(rename = "init")]`) to `VerificationCoreOpsActionKind` in `src/core/verification_model.rs`; add `#[serde(default)] pub force: bool` to `VerificationCoreOpsAction`; make `repository_source` and `revision` fields `#[serde(default)]`; update `render_coreops_action` to: emit `core-ops init <repo> <ref> [--force]` for `Init`; remove `--repo`/`--rev` from `Apply`, `Plan`, `Explain`, `Agent` branches; update `action_label` to include `Init → "init"`
-- [ ] T007 Update all 9 existing accepted scenarios in `tests/fixtures/verification/scenarios/` to add `init` steps before the first `apply`; add `init --force` before the second `apply` in `accepted-layered-upgrade-transition.yaml`, `accepted-mount-removal-ordering.yaml`, and `accepted-config-change-restart.yaml` (see `contracts/scenario-runner-changes.md` for per-scenario table)
-- [ ] T008 Run `cargo build --locked --bin core-ops` and confirm it fails only on `Commands::Init` not being dispatched in `src/main.rs` (expected compile error at this stage); fix any unexpected compile errors in T002–T007; also run `cargo clippy --all-targets -- -D warnings` on the already-compiling files (errors.rs, types.rs, verification_model.rs) to catch structural issues early
+- [X] T002 Add `#[error("state file is corrupt: {0}")] Corrupt(String)` variant to `StateError` enum in `src/core/errors.rs`
+- [X] T003 Update `read_persisted_state` in `src/io/state.rs` to return `Err(StateError::Corrupt(path.display().to_string()))` when the file exists but `parse_persisted_state_text` returns `None` (absent → `Ok(None)` unchanged; only the invalid-file path changes)
+- [X] T004 Add `#[serde(default)] pub detached: bool` field to `PersistedProvenanceState` in `src/core/types.rs`
+- [X] T005 Add `InitArgs` struct (positional `repository: String`, positional `requested_ref: String`, `--force: bool`) and `Commands::Init(InitArgs)` to `src/cli/args.rs`; remove `--repo`/`--rev` from `PlanArgs`, `ApplyArgs`, `AgentArgs`, `ExplainArgs`; update all four `--after_help` strings to remove examples that use `--repo`/`--rev`
+- [X] T006 Add `Init` variant (`#[serde(rename = "init")]`) to `VerificationCoreOpsActionKind` in `src/core/verification_model.rs`; add `#[serde(default)] pub force: bool` to `VerificationCoreOpsAction`; make `repository_source` and `revision` fields `#[serde(default)]`; update `render_coreops_action` to: emit `core-ops init <repo> <ref> [--force]` for `Init`; remove `--repo`/`--rev` from `Apply`, `Plan`, `Explain`, `Agent` branches; update `action_label` to include `Init → "init"`
+- [X] T007 Update all 9 existing accepted scenarios in `tests/fixtures/verification/scenarios/` to add `init` steps before the first `apply`; add `init --force` before the second `apply` in `accepted-layered-upgrade-transition.yaml`, `accepted-mount-removal-ordering.yaml`, and `accepted-config-change-restart.yaml` (see `contracts/scenario-runner-changes.md` for per-scenario table)
+- [X] T008 Run `cargo build --locked --bin core-ops` and confirm it fails only on `Commands::Init` not being dispatched in `src/main.rs` (expected compile error at this stage); fix any unexpected compile errors in T002–T007; also run `cargo clippy --all-targets -- -D warnings` on the already-compiling files (errors.rs, types.rs, verification_model.rs) to catch structural issues early
 
 **Checkpoint**: Foundation ready — all type changes are in place; user story phases can proceed
 
@@ -48,19 +48,19 @@
 
 ### Tests for User Story 1
 
-- [ ] T009 [P] [US1] Add unit test in `src/cli/init.rs` (or `tests/`) covering: (a) success on absent state writes `NeverRun` state with correct fields; (b) `init` without `--force` on valid existing state returns "already initialized" error; (c) `init` on corrupt state without `--force` returns "corrupt state" error (message contains file path); (d) ref validation rejects bare 40-hex commit hashes; (e) ref validation rejects `HEAD`; (f) ref validation accepts a branch name; (g) ref validation accepts a tag name; (h) `init --force` with same repo/ref preserves reconciliation history and clears detached flag; (i) `init --force` with different repo/ref resets reconciliation to NeverRun and clears retained snapshots; (j) `init` on a host where the state file parent directory does not exist creates the directory before writing; (k) deserialization of a state file JSON without `"detached"` field produces `detached == false` (backward compat guard for FR-018)
-- [ ] T010 [P] [US1] Add unit test verifying that `run_agent` with no state file returns a `CoreError` with a message directing the operator to `core-ops init` (not the old bootstrap path)
+- [X] T009 [P] [US1] Add unit test in `src/cli/init.rs` (or `tests/`) covering: (a) success on absent state writes `NeverRun` state with correct fields; (b) `init` without `--force` on valid existing state returns "already initialized" error; (c) `init` on corrupt state without `--force` returns "corrupt state" error (message contains file path); (d) ref validation rejects bare 40-hex commit hashes; (e) ref validation rejects `HEAD`; (f) ref validation accepts a branch name; (g) ref validation accepts a tag name; (h) `init --force` with same repo/ref preserves reconciliation history and clears detached flag; (i) `init --force` with different repo/ref resets reconciliation to NeverRun and clears retained snapshots; (j) `init` on a host where the state file parent directory does not exist creates the directory before writing; (k) deserialization of a state file JSON without `"detached"` field produces `detached == false` (backward compat guard for FR-018)
+- [X] T010 [P] [US1] Add unit test verifying that `run_agent` with no state file returns a `CoreError` with a message directing the operator to `core-ops init` (not the old bootstrap path)
 
 ### Implementation for User Story 1
 
-- [ ] T011 [P] [US1] Create `src/cli/init.rs` — implement `InitConfig` struct (repository, requested_ref, force, state_file override) and `run_init(config: &InitConfig) -> Result<(), CoreError>` following the contract in `contracts/cli-init.md`: read state, check for existing config, validate ref against repo, write `PersistedProvenanceState` with `NeverRun` reconciliation and `detached = false`; on `--force` with unchanged repo/ref preserve existing reconciliation and deterministic state (retained snapshots), clear detached flag only; on `--force` with changed repo/ref reset reconciliation to `NeverRun` and clear retained snapshots from `deterministic-state.json` (see `contracts/cli-init.md` Reinitialization Rules — changed tracking config discards prior snapshots); also create parent directory if absent
-- [ ] T012 [P] [US1] Update `src/cli/agent.rs` — remove `repo: String` and `rev: String` from `AgentConfig`; replace `persist_never_run_state` bootstrap block with lifecycle check: `Ok(None)` → fail with "controller not initialized" error; `Err(StateError::Corrupt(_))` → fail with "state file corrupt" error; `Ok(Some(state))` where `state.detached` → handled in US2; `Ok(Some(state))` otherwise → read `state.desired_state.repository` and `state.desired_state.requested_ref` for reconciliation; remove `CORE_OPS_REPO`/`CORE_OPS_REV` env var resolution
-- [ ] T013 [P] [US1] Update `src/cli/plan.rs` — remove `repo`/`rev` parameters from the plan invocation path; read `desired_state.repository` and `desired_state.requested_ref` from persisted state; fail with "controller not initialized" error on `Ok(None)` and "state file corrupt" error on `Err(StateError::Corrupt(_))`
-- [ ] T014 [P] [US1] Update `src/cli/apply.rs` — remove `repo`/`rev` parameters from the non-rollback apply path; read from persisted state; fail with lifecycle errors on absent/corrupt; the rollback path and detached-mode guard are handled in US2
-- [ ] T015 [P] [US1] Update `src/cli/explain.rs` — remove `--repo`/`--rev` fallback from `resolve_explain_target`; read exclusively from `desired_state.repository` and `desired_state.requested_ref`; fail with lifecycle errors on absent/corrupt
-- [ ] T016 [US1] Update `src/main.rs` — add `Commands::Init(args)` dispatch calling `run_init`; remove `resolve_env(args.repo, "CORE_OPS_REPO")` and `resolve_env(args.rev, "CORE_OPS_REV")` for all four affected command branches; audit the `.ok().flatten()` call at line 161 (post-apply audit — confirm it remains `.ok().flatten()` as best-effort only, no change needed)
-- [ ] T017 [US1] Update `src/cli/status.rs` — add `Err(StateError::Corrupt(_))` arm to the `read_persisted_state` match and report corrupt state clearly (path + recovery hint); expose in status output: (a) FR-016 fields: `desired_state.repository`, `desired_state.requested_ref`, `desired_state.last_observed_revision`, `reconciliation.last_applied_revision`; (b) derived **lifecycle state** label (Uninitialized / Corrupt / Initialized / Reconciling / Converged / Diverged / Detached) per the contract in `contracts/cli-command-changes.md`; (c) currently applied detached revision when lifecycle state is Detached (FR-017, deferred to T024 for the Detached-specific display logic, but the lifecycle label must be present here)
-- [ ] T018 [US1] Run `cargo test` and `cargo clippy --all-targets -- -D warnings`; fix all warnings; confirm init, agent, plan, apply, explain unit tests pass
+- [X] T011 [P] [US1] Create `src/cli/init.rs` — implement `InitConfig` struct (repository, requested_ref, force, state_file override) and `run_init(config: &InitConfig) -> Result<(), CoreError>` following the contract in `contracts/cli-init.md`: read state, check for existing config, validate ref against repo, write `PersistedProvenanceState` with `NeverRun` reconciliation and `detached = false`; on `--force` with unchanged repo/ref preserve existing reconciliation and deterministic state (retained snapshots), clear detached flag only; on `--force` with changed repo/ref reset reconciliation to `NeverRun` and clear retained snapshots from `deterministic-state.json` (see `contracts/cli-init.md` Reinitialization Rules — changed tracking config discards prior snapshots); also create parent directory if absent
+- [X] T012 [P] [US1] Update `src/cli/agent.rs` — remove `repo: String` and `rev: String` from `AgentConfig`; replace `persist_never_run_state` bootstrap block with lifecycle check: `Ok(None)` → fail with "controller not initialized" error; `Err(StateError::Corrupt(_))` → fail with "state file corrupt" error; `Ok(Some(state))` where `state.detached` → handled in US2; `Ok(Some(state))` otherwise → read `state.desired_state.repository` and `state.desired_state.requested_ref` for reconciliation; remove `CORE_OPS_REPO`/`CORE_OPS_REV` env var resolution
+- [X] T013 [P] [US1] Update `src/cli/plan.rs` — remove `repo`/`rev` parameters from the plan invocation path; read `desired_state.repository` and `desired_state.requested_ref` from persisted state; fail with "controller not initialized" error on `Ok(None)` and "state file corrupt" error on `Err(StateError::Corrupt(_))`
+- [X] T014 [P] [US1] Update `src/cli/apply.rs` — remove `repo`/`rev` parameters from the non-rollback apply path; read from persisted state; fail with lifecycle errors on absent/corrupt; the rollback path and detached-mode guard are handled in US2
+- [X] T015 [P] [US1] Update `src/cli/explain.rs` — remove `--repo`/`--rev` fallback from `resolve_explain_target`; read exclusively from `desired_state.repository` and `desired_state.requested_ref`; fail with lifecycle errors on absent/corrupt
+- [X] T016 [US1] Update `src/main.rs` — add `Commands::Init(args)` dispatch calling `run_init`; remove `resolve_env(args.repo, "CORE_OPS_REPO")` and `resolve_env(args.rev, "CORE_OPS_REV")` for all four affected command branches; audit the `.ok().flatten()` call at line 161 (post-apply audit — confirm it remains `.ok().flatten()` as best-effort only, no change needed)
+- [X] T017 [US1] Update `src/cli/status.rs` — add `Err(StateError::Corrupt(_))` arm to the `read_persisted_state` match and report corrupt state clearly (path + recovery hint); expose in status output: (a) FR-016 fields: `desired_state.repository`, `desired_state.requested_ref`, `desired_state.last_observed_revision`, `reconciliation.last_applied_revision`; (b) derived **lifecycle state** label (Uninitialized / Corrupt / Initialized / Reconciling / Converged / Diverged / Detached) per the contract in `contracts/cli-command-changes.md`; (c) currently applied detached revision when lifecycle state is Detached (FR-017, deferred to T024 for the Detached-specific display logic, but the lifecycle label must be present here)
+- [X] T018 [US1] Run `cargo test` and `cargo clippy --all-targets -- -D warnings`; fix all warnings; confirm init, agent, plan, apply, explain unit tests pass
 
 **Checkpoint**: `core-ops init` + all reconciliation commands work from persisted state; absent state produces actionable errors
 
@@ -98,12 +98,12 @@
 
 ### Tests for User Story 3
 
-- [ ] T026 [P] [US3] Add unit/integration test for `plan` in Detached state: verify output contains the detached header from `contracts/error-messages.md`; verify plan baseline uses `reconciliation.last_applied_revision` (the detached revision); verify exit code 0
+- [X] T026 [P] [US3] Add unit/integration test for `plan` in Detached state: verify output contains the detached header from `contracts/error-messages.md`; verify plan baseline uses `reconciliation.last_applied_revision` (the detached revision); verify exit code 0
 
 ### Implementation for User Story 3
 
-- [ ] T027 [US3] Update `src/cli/plan.rs` — detect `state.detached == true` after reading persisted state; prepend the detached-mode header from `contracts/error-messages.md` to plan output; plan otherwise behaves normally (resolves `requested_ref` to current HEAD, uses `last_applied_revision` as baseline — this is the existing three-way plan behavior)
-- [ ] T028 [US3] Run `cargo test` and `cargo clippy --all-targets -- -D warnings`; fix all warnings; verify Detached-mode plan test passes
+- [X] T027 [US3] Update `src/cli/plan.rs` — detect `state.detached == true` after reading persisted state; prepend the detached-mode header from `contracts/error-messages.md` to plan output; plan otherwise behaves normally (resolves `requested_ref` to current HEAD, uses `last_applied_revision` as baseline — this is the existing three-way plan behavior)
+- [X] T028 [US3] Run `cargo test` and `cargo clippy --all-targets -- -D warnings`; fix all warnings; verify Detached-mode plan test passes
 
 **Checkpoint**: `core-ops plan` in Detached state is fully functional and clearly indicates Detached context
 
@@ -119,14 +119,14 @@
 
 ### Tests for User Story 4
 
-- [ ] T029 [P] [US4] Add unit test for `read_persisted_state` directly: write a file with invalid JSON to a temp path; call `read_persisted_state`; assert result is `Err(StateError::Corrupt(_))` and the error string contains the file path; remove the file; assert result is `Ok(None)`
-- [ ] T030 [P] [US4] Add unit tests confirming each command (`agent`, `plan`, `apply`, `explain`) produces a visibly distinct error message for absent vs corrupt state: absent → message contains "not initialized" and names `core-ops init`; corrupt → message contains "corrupt" and names the file path and `--force`
+- [X] T029 [P] [US4] Add unit test for `read_persisted_state` directly: write a file with invalid JSON to a temp path; call `read_persisted_state`; assert result is `Err(StateError::Corrupt(_))` and the error string contains the file path; remove the file; assert result is `Ok(None)`
+- [X] T030 [P] [US4] Add unit tests confirming each command (`agent`, `plan`, `apply`, `explain`) produces a visibly distinct error message for absent vs corrupt state: absent → message contains "not initialized" and names `core-ops init`; corrupt → message contains "corrupt" and names the file path and `--force`
 
 ### Implementation for User Story 4
 
-- [ ] T031 [US4] Audit every command's corrupt-state error arm (agent.rs, plan.rs, apply.rs, explain.rs, status.rs) and confirm the error message matches the canonical string in `contracts/error-messages.md`: `"state file at {path} is corrupt or unreadable; run 'core-ops init <repository> <ref> --force' to recover"`; update any arm that uses a different message format or is missing the path; also verify rollback rejection messages for `IncompatibleScope` include both the snapshot's scope identifier and the current scope identifier (FR-015) matching the contract string: `"snapshot for revision {rev} was recorded on scope {snapshot_scope}, which is incompatible with current scope {current_scope}"`
-- [ ] T032 [US4] Confirm `src/cli/init.rs` (T011) handles `Err(StateError::Corrupt(_))` without `--force` with the canonical corrupt-state error message (not the "already initialized" message); add a test if not already covered by T009
-- [ ] T033 [US4] Run `cargo test` and `cargo clippy --all-targets -- -D warnings`; confirm all corrupt-vs-absent distinction tests pass
+- [X] T031 [US4] Audit every command's corrupt-state error arm (agent.rs, plan.rs, apply.rs, explain.rs, status.rs) and confirm the error message matches the canonical string in `contracts/error-messages.md`: `"state file at {path} is corrupt or unreadable; run 'core-ops init <repository> <ref> --force' to recover"`; update any arm that uses a different message format or is missing the path; also verify rollback rejection messages for `IncompatibleScope` include both the snapshot's scope identifier and the current scope identifier (FR-015) matching the contract string: `"snapshot for revision {rev} was recorded on scope {snapshot_scope}, which is incompatible with current scope {current_scope}"`
+- [X] T032 [US4] Confirm `src/cli/init.rs` (T011) handles `Err(StateError::Corrupt(_))` without `--force` with the canonical corrupt-state error message (not the "already initialized" message); add a test if not already covered by T009
+- [X] T033 [US4] Run `cargo test` and `cargo clippy --all-targets -- -D warnings`; confirm all corrupt-vs-absent distinction tests pass
 
 **Checkpoint**: All commands produce distinct, named errors for absent vs corrupt state; recovery path is explicit in every error
 
@@ -136,12 +136,28 @@
 
 **Purpose**: Release governance artifacts, final validation gate, documentation.
 
-- [ ] T034 Bump `version` in `Cargo.toml` from `"0.8.2"` to `"1.0.0"` (breaking CLI change: `--repo`/`--rev` removed from four commands)
-- [ ] T035 [P] Create `changes/015-controller-state-lifecycle.md` release-intent fragment declaring `bump: major` with rationale (removal of `--repo`/`--rev` from `plan`, `apply`, `agent`, `explain`)
-- [ ] T036 [P] Update `CHANGELOG.md` — add entry under `[Unreleased]` with `### Breaking Changes` (removal of `--repo`/`--rev` from four commands; operator migration: run `core-ops init` first), `### Added` (`core-ops init` command, Detached lifecycle state), `### Changed` (`agent` in Detached state exits without reconciling; `plan` in Detached state annotates output; `status` exposes repository/ref/lifecycle fields), `### Fixed` (corrupt state file now produces distinct named error instead of silent absent-state treatment)
-- [ ] T037 Run final `cargo test` and `cargo clippy --all-targets -- -D warnings` across the full change set; confirm zero warnings and zero test failures
-- [ ] T038 Verify `core-ops-verify` and `core-ops-release` binaries still build: `cargo build --locked --bin core-ops-verify --bin core-ops-release`
-- [ ] T039 Run `cargo run --bin core-ops-release -- validate --base-ref HEAD^` to confirm release-intent artifact is valid
+- [X] T034 Bump `version` in `Cargo.toml` from `"0.8.2"` to `"1.0.0"` (breaking CLI change: `--repo`/`--rev` removed from four commands)
+- [X] T035 [P] Create `changes/015-controller-state-lifecycle.md` release-intent fragment declaring `bump: major` with rationale (removal of `--repo`/`--rev` from `plan`, `apply`, `agent`, `explain`)
+- [X] T036 [P] Update `CHANGELOG.md` — add entry under `[Unreleased]` with `### Breaking Changes` (removal of `--repo`/`--rev` from four commands; operator migration: run `core-ops init` first), `### Added` (`core-ops init` command, Detached lifecycle state), `### Changed` (`agent` in Detached state exits without reconciling; `plan` in Detached state annotates output; `status` exposes repository/ref/lifecycle fields), `### Fixed` (corrupt state file now produces distinct named error instead of silent absent-state treatment)
+- [X] T037 Run final `cargo test` and `cargo clippy --all-targets -- -D warnings` across the full change set; confirm zero warnings and zero test failures
+- [X] T038 Verify `core-ops-verify` and `core-ops-release` binaries still build: `cargo build --locked --bin core-ops-verify --bin core-ops-release`
+- [X] T039 Run `cargo run --bin core-ops-release -- validate --base-ref HEAD^` to confirm release-intent artifact is valid
+
+---
+
+## Phase 8: Promote Systemd Units to Static Assets
+
+**Goal**: The canonical `core-ops.service` and `core-ops.timer` live in
+`specs/002-systemd-agent/contracts/systemd/` and are outdated (reference the
+now-removed `--repo`/`--rev` flags). Move them to a committed `systemd/`
+directory at the repo root, update them to match the post-015 CLI, and fix all
+references (CI, tests, README, quickstart).
+
+- [X] T040 Create `systemd/core-ops.service` and `systemd/core-ops.timer` at the repo root with updated content: service uses `core-ops agent` with no `--repo`/`--rev`, drops `CORE_OPS_REPO`/`CORE_OPS_REV` env vars, adds a comment directing operators to run `core-ops init` first; timer is unchanged
+- [X] T041 Update `tests/integration/test_systemd_units.rs` to reference `systemd/core-ops.service` and `systemd/core-ops.timer`
+- [X] T042 Update `.github/workflows/ci.yml` to copy from `systemd/` instead of `specs/002-systemd-agent/contracts/systemd/`
+- [X] T043 Update `README.md` and `specs/002-systemd-agent/quickstart.md` to reference `systemd/` and reflect post-015 operator flow (`core-ops init` then timer enable)
+- [X] T044 Run `cargo test` and `cargo clippy --all-targets -- -D warnings`; confirm `systemd_unit_templates_exist` passes; confirm release validation still passes
 
 ---
 

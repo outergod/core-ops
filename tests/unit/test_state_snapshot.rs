@@ -9,6 +9,7 @@ use core_ops::core::types::{
     ReconciliationProvenance, ReconciliationStatus, RetainedAppliedSnapshot, RollbackEligibility,
     RollbackTargetCandidate, TreeState, PERSISTED_PROVENANCE_SCHEMA_VERSION,
 };
+use core_ops::core::errors::StateError;
 use core_ops::io::state::{
     default_deterministic_state_path, default_state_file_path, persist_finished_state,
     persist_in_progress_state, read_deterministic_state, read_persisted_state, resolve_state_file,
@@ -28,18 +29,22 @@ fn valid_snapshot_round_trips_through_state_io() {
 }
 
 #[test]
-fn partial_snapshot_is_treated_as_absent() {
+fn partial_snapshot_is_treated_as_corrupt() {
     let path = temp_file("state_partial.json");
     fs::write(&path, "{\n  \"schema_version\": 1,\n  \"controller\": {")
         .expect("write partial state");
 
-    let loaded = read_persisted_state(&path).expect("read partial state");
-    assert_eq!(loaded, None);
+    let result = read_persisted_state(&path);
+    assert!(
+        matches!(result, Err(StateError::Corrupt(_))),
+        "expected Corrupt, got {:?}",
+        result
+    );
     let _ = fs::remove_file(path);
 }
 
 #[test]
-fn unsupported_schema_snapshot_is_treated_as_absent() {
+fn unsupported_schema_snapshot_is_treated_as_corrupt() {
     let path = temp_file("state_unsupported.json");
     let mut state = fixture_state();
     state.schema_version = 99;
@@ -49,8 +54,12 @@ fn unsupported_schema_snapshot_is_treated_as_absent() {
     )
     .expect("write unsupported state");
 
-    let loaded = read_persisted_state(&path).expect("read unsupported state");
-    assert_eq!(loaded, None);
+    let result = read_persisted_state(&path);
+    assert!(
+        matches!(result, Err(StateError::Corrupt(_))),
+        "expected Corrupt, got {:?}",
+        result
+    );
     let _ = fs::remove_file(path);
 }
 
@@ -281,7 +290,35 @@ fn fixture_state() -> PersistedProvenanceState {
             last_finished_at: Some("2026-03-23T10:06:09Z".to_string()),
             attempted_observed_divergence: None,
         },
+        detached: false,
     }
+}
+
+// T029: read_persisted_state with invalid JSON returns Corrupt with file path; absent returns Ok(None)
+#[test]
+fn corrupt_state_error_contains_file_path() {
+    let path = temp_file("corrupt_path_check.json");
+    fs::write(&path, "not valid json").expect("write invalid json");
+
+    let result = read_persisted_state(&path);
+    match result {
+        Err(StateError::Corrupt(msg)) => {
+            assert!(
+                msg.contains(path.to_str().unwrap()),
+                "corrupt error should contain file path, got: {msg}"
+            );
+        }
+        other => panic!("expected Corrupt, got {:?}", other),
+    }
+    let _ = fs::remove_file(&path);
+
+    // absent file returns Ok(None)
+    let absent_result = read_persisted_state(&path);
+    assert!(
+        matches!(absent_result, Ok(None)),
+        "absent file should return Ok(None), got {:?}",
+        absent_result
+    );
 }
 
 fn temp_file(name: &str) -> PathBuf {

@@ -3,20 +3,35 @@ use std::path::PathBuf;
 use crate::build_info::long_version_text;
 use clap::{Args, Parser, Subcommand};
 
+const INIT_AFTER_HELP: &str = "Examples:
+  core-ops init /path/to/repo main
+  core-ops init https://git.example.com/repo.git main
+  core-ops init /path/to/repo v1.0.0
+  core-ops init /path/to/repo main --force
+
+Run this command once before using plan, apply, agent, or explain.
+Use --force to overwrite existing configuration or recover from a corrupt state file.";
+
 const PLAN_AFTER_HELP: &str = "Examples:
-  core-ops plan --repo ./repo --rev main
-  core-ops plan --repo ./repo --rev main --host edge-01
+  core-ops plan
+  core-ops plan --host edge-01
+
+Requires prior initialization via 'core-ops init'. Repository and ref are
+sourced exclusively from persisted controller configuration.
 
 Human-readable plan headers keep the immutable target revision primary and
 render a meaningful requested ref secondarily, for example:
   454ac5f1 (demo-uat-v1) → 221145e6 (demo-uat-v2)";
 
 const APPLY_AFTER_HELP: &str = "Examples:
-  core-ops apply --repo ./repo --rev main
-  core-ops apply --repo ./repo --rev main --json
-  core-ops apply --repo ./repo --rev main --verbose
-  core-ops apply --repo ./repo --rev main --rollback-to rev-1
-  core-ops apply --repo ./repo --rev main --rollback-to rev-1 --rollback-plan-only
+  core-ops apply
+  core-ops apply --json
+  core-ops apply --verbose
+  core-ops apply --rollback-to rev-1
+  core-ops apply --rollback-to rev-1 --rollback-plan-only
+
+Requires prior initialization via 'core-ops init'. Repository and ref are
+sourced exclusively from persisted controller configuration.
 
 Deterministic reconciliation uses desired, last_applied, and actual state.
 Automatic retry is bounded; repeated failure or oscillation is surfaced in the
@@ -36,14 +51,13 @@ and audit flows.";
 
 const EXPLAIN_AFTER_HELP: &str = "Examples:
   core-ops explain container/frontend.container
-  core-ops explain container/frontend.container --repo ./repo
-  core-ops explain mount/var-lib-demo.mount --repo ./repo --rev main --json
+  core-ops explain mount/var-lib-demo.mount --json
 
 Explain output inspects a single known managed object using the authoritative
 plan/result model and renders full dependency and metadata context.
 
-When `--repo` and `--rev` are omitted, explain defaults to the currently
-deployed target from persisted state.";
+Requires prior initialization via 'core-ops init'. Repository and ref are
+sourced exclusively from persisted controller configuration.";
 
 const GLOBAL_AFTER_HELP: &str = "License:
   GNU Affero General Public License version 3 or later (AGPLv3+)";
@@ -63,6 +77,9 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// Initialize the controller with a source repository and tracking ref.
+    #[command(after_help = INIT_AFTER_HELP)]
+    Init(InitArgs),
     /// Compute a reconciliation plan, including native .mount/.automount artifacts with minimal [X-CoreOps] metadata and generated dependency semantics.
     #[command(after_help = PLAN_AFTER_HELP)]
     Plan(PlanArgs),
@@ -80,13 +97,21 @@ pub enum Commands {
 }
 
 #[derive(Args, Debug)]
-pub struct PlanArgs {
+pub struct InitArgs {
     /// Source repository (local path or Git URL).
+    pub repository: String,
+    /// Branch or tag name to track.
+    pub requested_ref: String,
+    /// Overwrite existing configuration; required when re-attaching from Detached state.
     #[arg(long)]
-    pub repo: String,
-    /// Git revision (branch, tag, or commit).
+    pub force: bool,
+    /// Optional path to the canonical persisted provenance status file.
     #[arg(long)]
-    pub rev: String,
+    pub state_file: Option<std::path::PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct PlanArgs {
     /// Host identity override for selecting hosts/<host>, including host-specific mount overrides.
     #[arg(long)]
     pub host: Option<String>,
@@ -109,12 +134,6 @@ pub struct PlanArgs {
 
 #[derive(Args, Debug)]
 pub struct ApplyArgs {
-    /// Source repository (local path or Git URL).
-    #[arg(long)]
-    pub repo: String,
-    /// Git revision (branch, tag, or commit).
-    #[arg(long)]
-    pub rev: String,
     /// Host identity override for selecting hosts/<host>, including host-specific mount overrides.
     #[arg(long)]
     pub host: Option<String>,
@@ -154,12 +173,6 @@ pub struct ApplyArgs {
 
 #[derive(Args, Debug)]
 pub struct AgentArgs {
-    /// Source repository (local path or Git URL).
-    #[arg(long)]
-    pub repo: Option<String>,
-    /// Git revision (branch, tag, or commit).
-    #[arg(long)]
-    pub rev: Option<String>,
     /// Host identity override for selecting hosts/<host>, including host-specific mount overrides.
     #[arg(long)]
     pub host: Option<String>,
@@ -198,12 +211,6 @@ pub struct StatusArgs {
 pub struct ExplainArgs {
     /// Managed object id or display id to inspect.
     pub object: String,
-    /// Source repository (local path or Git URL). Defaults to the currently deployed target from persisted state.
-    #[arg(long)]
-    pub repo: Option<String>,
-    /// Git revision (branch, tag, or commit). Defaults to the currently deployed target from persisted state.
-    #[arg(long)]
-    pub rev: Option<String>,
     /// Host identity override for selecting hosts/<host>.
     #[arg(long)]
     pub host: Option<String>,

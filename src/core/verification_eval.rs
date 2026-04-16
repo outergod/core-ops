@@ -297,63 +297,75 @@ fn evaluate_assertion(
         "step_command_contains" => evaluate_step_command_contains(assertion, step_results, true),
         "step_command_not_contains" => evaluate_step_command_contains(assertion, step_results, false),
         "step_stdout_contains" => {
-            let step = find_target_step(assertion, step_results)?;
-            let observed = step.stdout.clone();
-            (
-                if step
-                    .stdout
-                    .as_deref()
-                    .map(|stdout| stdout.contains(&assertion.expected_state))
-                    .unwrap_or(false)
-                {
-                    VerificationAssertionStatus::Passed
-                } else {
-                    VerificationAssertionStatus::Failed
-                },
-                observed,
-            )
+            match find_target_step(assertion, step_results)? {
+                None => (VerificationAssertionStatus::NotEvaluated, None),
+                Some(step) => {
+                    let observed = step.stdout.clone();
+                    (
+                        if step
+                            .stdout
+                            .as_deref()
+                            .map(|stdout| stdout.contains(&assertion.expected_state))
+                            .unwrap_or(false)
+                        {
+                            VerificationAssertionStatus::Passed
+                        } else {
+                            VerificationAssertionStatus::Failed
+                        },
+                        observed,
+                    )
+                }
+            }
         }
         "step_exit_code_is" => {
-            let step = find_target_step(assertion, step_results)?;
-            let expected = assertion.expected_state.parse::<i32>().map_err(|err| {
-                CoreError::new(
-                    FailureClass::Validation,
-                    format!(
-                        "assertion `{}` expected_state must parse as exit code: {err}",
-                        assertion.assertion_id
-                    ),
-                )
-            })?;
-            let observed = step.exit_code.map(|value| value.to_string());
-            (
-                if step.exit_code == Some(expected) {
-                    VerificationAssertionStatus::Passed
-                } else {
-                    VerificationAssertionStatus::Failed
-                },
-                observed,
-            )
+            match find_target_step(assertion, step_results)? {
+                None => (VerificationAssertionStatus::NotEvaluated, None),
+                Some(step) => {
+                    let expected = assertion.expected_state.parse::<i32>().map_err(|err| {
+                        CoreError::new(
+                            FailureClass::Validation,
+                            format!(
+                                "assertion `{}` expected_state must parse as exit code: {err}",
+                                assertion.assertion_id
+                            ),
+                        )
+                    })?;
+                    let observed = step.exit_code.map(|value| value.to_string());
+                    (
+                        if step.exit_code == Some(expected) {
+                            VerificationAssertionStatus::Passed
+                        } else {
+                            VerificationAssertionStatus::Failed
+                        },
+                        observed,
+                    )
+                }
+            }
         }
         "step_duration_within_ms" => {
-            let step = find_target_step(assertion, step_results)?;
-            let expected = assertion.expected_state.parse::<u64>().map_err(|err| {
-                CoreError::new(
-                    FailureClass::Validation,
-                    format!(
-                        "assertion `{}` expected_state must parse as milliseconds: {err}",
-                        assertion.assertion_id
-                    ),
-                )
-            })?;
-            let observed = step.duration_ms.map(|value| value.to_string());
-            (
-                if step.duration_ms.map(|value| value <= expected).unwrap_or(false) {
-                    VerificationAssertionStatus::Passed
-                } else {
-                    VerificationAssertionStatus::Failed
-                },
-                observed,
-            )
+            match find_target_step(assertion, step_results)? {
+                None => (VerificationAssertionStatus::NotEvaluated, None),
+                Some(step) => {
+                    let expected = assertion.expected_state.parse::<u64>().map_err(|err| {
+                        CoreError::new(
+                            FailureClass::Validation,
+                            format!(
+                                "assertion `{}` expected_state must parse as milliseconds: {err}",
+                                assertion.assertion_id
+                            ),
+                        )
+                    })?;
+                    let observed = step.duration_ms.map(|value| value.to_string());
+                    (
+                        if step.duration_ms.map(|value| value <= expected).unwrap_or(false) {
+                            VerificationAssertionStatus::Passed
+                        } else {
+                            VerificationAssertionStatus::Failed
+                        },
+                        observed,
+                    )
+                }
+            }
         }
         _ => (
             VerificationAssertionStatus::Failed,
@@ -369,19 +381,10 @@ fn evaluate_assertion(
 fn find_target_step<'a>(
     assertion: &VerificationAssertionSpec,
     step_results: &'a [VerificationStepResult],
-) -> Result<&'a VerificationStepResult, CoreError> {
-    step_results
+) -> Result<Option<&'a VerificationStepResult>, CoreError> {
+    Ok(step_results
         .iter()
-        .find(|step| step.step_id == assertion.target)
-        .ok_or_else(|| {
-            CoreError::new(
-                FailureClass::Validation,
-                format!(
-                    "assertion `{}` references unknown step `{}`",
-                    assertion.assertion_id, assertion.target
-                ),
-            )
-        })
+        .find(|step| step.step_id == assertion.target))
 }
 
 fn evaluate_step_command_contains(

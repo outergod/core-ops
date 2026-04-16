@@ -25,13 +25,18 @@ steps:
   - step_id: boot
     step_type: boot
     target: guest
+  - step_id: init
+    step_type: coreops_action
+    target: guest
+    action:
+      action: init
+      repository_source: fixture
+      revision: demo-mount-v1
   - step_id: apply
     step_type: coreops_action
     target: guest
     action:
       action: apply
-      repository_source: fixture
-      revision: demo-mount-v1
       mode: humane
   - step_id: inspect-service-unit
     step_type: guest_command
@@ -56,8 +61,6 @@ steps:
     target: guest
     action:
       action: apply
-      repository_source: fixture
-      revision: demo-mount-v1
       mode: humane
   - step_id: check-mount-active-after-reboot
     step_type: guest_command
@@ -68,6 +71,11 @@ steps:
     target: guest
     command: sudo systemctl is-active immich.service
 assertions:
+  - assertion_id: init-succeeded
+    assertion_type: step_exit_code_is
+    target: init
+    expected_state: "0"
+    failure_message: Init did not exit successfully.
   - assertion_id: initial-apply-succeeded
     assertion_type: step_exit_code_is
     target: apply

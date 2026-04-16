@@ -25,8 +25,8 @@ fn accepted_scenario_fixture_parses_and_validates() {
             .revisions,
         vec!["demo-uat-v1", "demo-uat-v2"]
     );
-    assert_eq!(scenario.steps.len(), 3);
-    assert_eq!(scenario.assertions.len(), 1);
+    assert_eq!(scenario.steps.len(), 4);
+    assert_eq!(scenario.assertions.len(), 2);
 }
 
 #[test]

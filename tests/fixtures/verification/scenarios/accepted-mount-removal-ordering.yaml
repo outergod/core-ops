@@ -27,27 +27,48 @@ steps:
   - step_id: boot
     step_type: boot
     target: guest
+  - step_id: init-baseline
+    step_type: coreops_action
+    target: guest
+    action:
+      action: init
+      repository_source: fixture
+      revision: demo-mount-remove-v1
   - step_id: apply-baseline
     step_type: coreops_action
     target: guest
     action:
       action: apply
-      repository_source: fixture
-      revision: demo-mount-remove-v1
       mode: humane
+  - step_id: init-removal
+    step_type: coreops_action
+    target: guest
+    action:
+      action: init
+      repository_source: fixture
+      revision: demo-mount-remove-v2
+      force: true
   - step_id: apply-removal
     step_type: coreops_action
     target: guest
     action:
       action: apply
-      repository_source: fixture
-      revision: demo-mount-remove-v2
       mode: humane
   - step_id: verify-managed-artifacts-removed
     step_type: guest_command
     target: guest
     command: sudo sh -lc 'test ! -e /etc/containers/systemd/immich.container && test ! -e /etc/containers/systemd/var-lib-immich-media.mount && echo removed'
 assertions:
+  - assertion_id: init-baseline-succeeded
+    assertion_type: step_exit_code_is
+    target: init-baseline
+    expected_state: "0"
+    failure_message: Baseline init did not exit successfully.
+  - assertion_id: init-removal-succeeded
+    assertion_type: step_exit_code_is
+    target: init-removal
+    expected_state: "0"
+    failure_message: Removal init did not exit successfully.
   - assertion_id: baseline-apply-succeeded
     assertion_type: step_exit_code_is
     target: apply-baseline

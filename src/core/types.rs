@@ -516,6 +516,8 @@ pub struct PersistedProvenanceState {
     pub controller: ControllerProvenance,
     pub desired_state: DesiredStateProvenance,
     pub reconciliation: ReconciliationProvenance,
+    #[serde(default)]
+    pub detached: bool,
 }
 
 impl PersistedProvenanceState {

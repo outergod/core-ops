@@ -1,0 +1,19 @@
+[Unit]
+Description=CoreOps Quadlet GitOps Agent
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Run 'core-ops init <repository> <ref>' once before enabling this service.
+# The repository and ref are persisted in /var/lib/core-ops/status.json and
+# read automatically by the agent — no flags needed here.
+#
+# Optional overrides (uncomment to use):
+# Environment=CORE_OPS_QUADLET_DIR=/etc/containers/systemd
+# Environment=CORE_OPS_STATE_FILE=/var/lib/core-ops/status.json
+# Environment=CORE_OPS_AUDIT_DIR=/var/log/core-ops
+ExecStart=/usr/bin/core-ops agent
+
+[Install]
+WantedBy=multi-user.target

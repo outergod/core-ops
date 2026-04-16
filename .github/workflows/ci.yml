@@ -69,8 +69,8 @@ jobs:
           esac
           release_identity="v$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')"
           cp "target/${{ matrix.target }}/release/core-ops" "dist/core-ops-linux-${artifact_arch}"
-          cp specs/002-systemd-agent/contracts/systemd/core-ops.service dist/core-ops.service
-          cp specs/002-systemd-agent/contracts/systemd/core-ops.timer dist/core-ops.timer
+          cp systemd/core-ops.service dist/core-ops.service
+          cp systemd/core-ops.timer dist/core-ops.timer
           cp LICENSE dist/LICENSE
           cp CHANGELOG.md dist/CHANGELOG.md
           cp README.md dist/README.md

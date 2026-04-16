@@ -26,26 +26,37 @@ steps:
   - step_id: boot
     step_type: boot
     target: guest
+  - step_id: init-baseline
+    step_type: coreops_action
+    target: guest
+    action:
+      action: init
+      repository_source: fixture
+      revision: config-v1
   - step_id: apply-baseline
     step_type: coreops_action
     target: guest
     action:
       action: apply
-      repository_source: fixture
-      revision: config-v1
       host: test-vm
       mode: humane
   - step_id: check-service-active-baseline
     step_type: guest_command
     target: guest
     command: sudo systemctl is-active runner.service
+  - step_id: init-config-change
+    step_type: coreops_action
+    target: guest
+    action:
+      action: init
+      repository_source: fixture
+      revision: config-v2
+      force: true
   - step_id: apply-config-change
     step_type: coreops_action
     target: guest
     action:
       action: apply
-      repository_source: fixture
-      revision: config-v2
       host: test-vm
       mode: humane
   - step_id: check-service-active-after-change
@@ -53,6 +64,16 @@ steps:
     target: guest
     command: sudo systemctl is-active runner.service
 assertions:
+  - assertion_id: init-baseline-succeeded
+    assertion_type: step_exit_code_is
+    target: init-baseline
+    expected_state: "0"
+    failure_message: Baseline init did not exit successfully.
+  - assertion_id: init-config-change-succeeded
+    assertion_type: step_exit_code_is
+    target: init-config-change
+    expected_state: "0"
+    failure_message: Config-change init did not exit successfully.
   - assertion_id: baseline-apply-succeeded
     assertion_type: step_exit_code_is
     target: apply-baseline

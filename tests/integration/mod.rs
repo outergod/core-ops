@@ -62,3 +62,4 @@ mod test_release_governance_semver;
 mod test_release_governance_validation;
 mod test_release_governance_workflow;
 mod test_rollback;
+mod test_rollback_lifecycle;

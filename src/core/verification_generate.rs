@@ -369,6 +369,7 @@ fn default_action_for_class(class: VerificationScenarioClass) -> VerificationCor
         host: None,
         mode: None,
         output_contract: None,
+        force: false,
     }
 }
 

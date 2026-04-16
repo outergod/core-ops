@@ -28,6 +28,43 @@ cargo clippy --all-targets -- -D warnings
 cargo run --bin core-ops-release -- validate --base-ref HEAD^
 ```
 
+## Release Governance
+
+The `core-ops-release` binary governs the release process. Its two subcommands are:
+
+```bash
+# Preview what CHANGELOG.md will look like from current changes/ fragments
+cargo run --bin core-ops-release -- changelog
+
+# Validate that the current change set is releasable (run before every commit/PR)
+cargo run --bin core-ops-release -- validate --base-ref HEAD^
+```
+
+**Fragment lifecycle — the one rule that prevents stale entries:**
+
+1. **Create** `changes/<feature-id>.md` when starting a releasable change.
+2. **Keep** it through the PR and until the release is tagged and published.
+3. **Delete** it immediately after the release is tagged — before any further development.
+   Fragments left behind will accumulate in the next `[Unreleased]` entry.
+
+**CHANGELOG.md is machine-managed** between `<!-- core-ops-release:start -->` and
+`<!-- core-ops-release:end -->`. Never edit that section by hand. Instead:
+
+```bash
+# Write the generated content into CHANGELOG.md
+cargo run --bin core-ops-release -- changelog > /tmp/new-changelog.md
+# Then copy the [Unreleased] block from /tmp/new-changelog.md into CHANGELOG.md
+```
+
+Or just let the release job do it — CI rewrites the section automatically on tag.
+
+**Declared vs required bump**: `release_intent` in the fragment must be ≥ the bump
+inferred from file changes (`patch` for modified source, `minor` for added source,
+`major` for deleted/renamed source). Declaring a higher intent than required is allowed
+(e.g. `major` when only source was added) because the governance model cannot detect
+breaking changes inside modified files. Use `major` whenever a public CLI surface is
+removed or renamed.
+
 ## Code Style
 
 Follow standard Rust conventions. No new abstractions without justification.
