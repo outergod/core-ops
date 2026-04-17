@@ -27,8 +27,9 @@ use crate::io::repo::load_desired_state;
 use crate::io::state::{
     latest_retained_snapshot_for_scope, persist_finished_state, persist_in_progress_state,
     read_deterministic_state, read_deterministic_state as load_deterministic_state,
-    record_convergence_outcome, record_rollback_outcome, resolve_state_file,
-    retain_successful_snapshot, write_deterministic_state, DETERMINISTIC_STATE_FILE_NAME,
+    read_persisted_state, record_convergence_outcome, record_rollback_outcome, resolve_state_file,
+    retain_successful_snapshot, write_deterministic_state, write_persisted_state,
+    DETERMINISTIC_STATE_FILE_NAME,
 };
 
 pub fn apply(
@@ -767,6 +768,40 @@ pub fn execute_rollback_with_report(
         reload_systemd,
         Some(state_path.clone()),
     )?;
+
+    // After a successful rollback, mark controller as Detached.
+    // This write is part of rollback success criteria — failure here means the controller
+    // may remain attached and the next agent tick could reconcile away the recovered snapshot.
+    if output.result.run.status == RunStatus::Success {
+        match read_persisted_state(&state_path) {
+            Ok(Some(mut provenance)) => {
+                provenance.detached = true;
+                write_persisted_state(&state_path, &provenance).map_err(|err| {
+                    CoreError::new(
+                        FailureClass::Apply,
+                        format!(
+                            "rollback succeeded but failed to persist detached state to {}: {}; \
+                             re-run rollback to recover",
+                            state_path.display(),
+                            err
+                        ),
+                    )
+                })?;
+            }
+            Ok(None) => {}
+            Err(err) => {
+                return Err(CoreError::new(
+                    FailureClass::Apply,
+                    format!(
+                        "rollback succeeded but could not read state at {} to mark detached: {}; \
+                         re-run rollback to recover",
+                        state_path.display(),
+                        err
+                    ),
+                ));
+            }
+        }
+    }
 
     let mut deterministic_state =
         load_or_init_deterministic_state(&deterministic_state_path).map_err(map_apply_error)?;

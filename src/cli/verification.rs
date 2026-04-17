@@ -1998,6 +1998,7 @@ fn prepare_runtime_bindings(
     let local_runtime = workspace.join("runtime");
     let local_repo = materialize_repo_fixture(scenario, &local_runtime)?;
     let core_ops_binary = resolve_core_ops_binary()?;
+    let core_ops_binary = patch_binary_for_guest(&core_ops_binary, &local_runtime)?;
 
     guest_boundary.run_command(
         guest,
@@ -2224,6 +2225,59 @@ fn resolve_core_ops_binary() -> Result<std::path::PathBuf, CoreError> {
         FailureClass::Validation,
         "unable to locate core-ops binary for VM-backed verification; build it first or set CORE_OPS_VERIFY_CORE_OPS_BIN",
     ))
+}
+
+/// Copy the binary and patch its ELF interpreter/rpath so it runs on a standard Linux guest
+/// (e.g. Fedora CoreOS) even when built with a Nix toolchain that embeds Nix store paths.
+/// If the binary already uses a standard interpreter or `patchelf` is unavailable, the copy
+/// is returned as-is — the deploy step will surface any incompatibility clearly.
+fn patch_binary_for_guest(binary: &Path, workspace: &Path) -> Result<std::path::PathBuf, CoreError> {
+    std::fs::create_dir_all(workspace).map_err(|err| {
+        CoreError::new(FailureClass::Apply, format!("failed to create workspace for binary patching: {err}"))
+    })?;
+    let patched = workspace.join("core-ops");
+    std::fs::copy(binary, &patched).map_err(|err| {
+        CoreError::new(FailureClass::Apply, format!("failed to copy binary for guest deployment: {err}"))
+    })?;
+
+    // Only patch if the interpreter is Nix-store-rooted; standard system binaries need no change.
+    let interpreter_output = Command::new("patchelf")
+        .arg("--print-interpreter")
+        .arg(&patched)
+        .output();
+    let needs_patch = match interpreter_output {
+        Ok(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).trim().starts_with("/nix/")
+        }
+        _ => false,
+    };
+
+    if needs_patch {
+        let patch = Command::new("patchelf")
+            .arg("--set-interpreter")
+            .arg("/lib64/ld-linux-x86-64.so.2")
+            .arg("--set-rpath")
+            .arg("/lib64:/usr/lib64")
+            .arg(&patched)
+            .output()
+            .map_err(|err| {
+                CoreError::new(
+                    FailureClass::Apply,
+                    format!("patchelf not available but binary has Nix interpreter — guest will fail to execute it: {err}"),
+                )
+            })?;
+        if !patch.status.success() {
+            return Err(CoreError::new(
+                FailureClass::Apply,
+                format!(
+                    "patchelf failed to rewrite interpreter for guest deployment: {}",
+                    String::from_utf8_lossy(&patch.stderr).trim()
+                ),
+            ));
+        }
+    }
+
+    Ok(patched)
 }
 
 fn run_local_command(command: &mut Command, context: &str) -> Result<(), CoreError> {

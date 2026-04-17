@@ -22,50 +22,51 @@ pub struct ExplainCommandOutput {
     pub machine: String,
 }
 
-pub fn resolve_explain_target(
-    repo: Option<&str>,
-    revision: Option<&str>,
-) -> Result<(String, String), CoreError> {
-    if let (Some(repo), Some(revision)) = (repo, revision) {
-        return Ok((repo.to_string(), revision.to_string()));
-    }
-
+pub fn resolve_explain_target() -> Result<(String, String), CoreError> {
+    use crate::core::errors::StateError;
     let state_path = resolve_state_file(None);
-    let state = read_persisted_state(&state_path).map_err(|err| {
-        CoreError::new(
-            crate::core::types::FailureClass::Plan,
-            format!(
-                "failed to read persisted state {}: {}",
-                state_path.display(),
-                err
-            ),
-        )
-    })?;
-    let state = state.ok_or_else(|| {
-        CoreError::new(
-            crate::core::types::FailureClass::Plan,
-            format!(
-                "cannot infer explain target without persisted state {}; provide --repo and --rev",
-                state_path.display()
-            ),
-        )
-    })?;
+    let state = match read_persisted_state(&state_path) {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            return Err(CoreError::new(
+                crate::core::types::FailureClass::Plan,
+                format!(
+                    "not initialized; run 'core-ops init <repository> <ref>' first ({})",
+                    state_path.display()
+                ),
+            ));
+        }
+        Err(StateError::Corrupt(path)) => {
+            return Err(CoreError::new(
+                crate::core::types::FailureClass::Plan,
+                format!(
+                    "state file at {} is corrupt or unreadable; run 'core-ops init <repository> <ref> --force' to recover",
+                    path
+                ),
+            ));
+        }
+        Err(err) => {
+            return Err(CoreError::new(
+                crate::core::types::FailureClass::Plan,
+                err.to_string(),
+            ));
+        }
+    };
 
-    let resolved_repo = repo
-        .map(ToString::to_string)
-        .unwrap_or_else(|| state.desired_state.repository.clone());
-    let resolved_revision = revision
-        .map(ToString::to_string)
-        .unwrap_or_else(|| state.desired_state.requested_ref.clone());
-
-    if resolved_repo.trim().is_empty() || resolved_revision.trim().is_empty() {
+    if state.detached {
         return Err(CoreError::new(
             crate::core::types::FailureClass::Plan,
-            "persisted state does not contain a usable repository/ref; provide --repo and --rev",
+            format!(
+                "controller is in Detached state; run 'core-ops init --force <repository> <ref>' to reinitialize ({})",
+                state_path.display()
+            ),
         ));
     }
 
-    Ok((resolved_repo, resolved_revision))
+    Ok((
+        state.desired_state.repository,
+        state.desired_state.requested_ref,
+    ))
 }
 
 pub fn explain(
@@ -200,14 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_explain_target_prefers_explicit_values() {
-        let resolved = resolve_explain_target(Some("file:///repo"), Some("demo"))
-            .expect("resolve explicit target");
-        assert_eq!(resolved, ("file:///repo".to_string(), "demo".to_string()));
-    }
-
-    #[test]
-    fn resolve_explain_target_uses_persisted_state_for_missing_values() {
+    fn resolve_explain_target_reads_from_persisted_state() {
         let state_path = temp_state_file("core_ops_explain_target");
         let previous = std::env::var_os(STATE_FILE_ENV);
         std::env::set_var(STATE_FILE_ENV, &state_path);
@@ -219,7 +213,7 @@ mod tests {
         )
         .expect("persist state");
 
-        let resolved = resolve_explain_target(None, None).expect("resolve from persisted state");
+        let resolved = resolve_explain_target().expect("resolve from persisted state");
         assert_eq!(
             resolved,
             (
@@ -228,11 +222,57 @@ mod tests {
             )
         );
 
-        let partial =
-            resolve_explain_target(Some("file:///override"), None).expect("resolve mixed target");
-        assert_eq!(
-            partial,
-            ("file:///override".to_string(), "demo-uat-v1".to_string())
+        let _ = std::fs::remove_file(&state_path);
+        if let Some(previous) = previous {
+            std::env::set_var(STATE_FILE_ENV, previous);
+        } else {
+            std::env::remove_var(STATE_FILE_ENV);
+        }
+    }
+
+    #[test]
+    fn resolve_explain_target_fails_when_state_absent() {
+        let state_path = temp_state_file("core_ops_explain_absent");
+        let previous = std::env::var_os(STATE_FILE_ENV);
+        std::env::set_var(STATE_FILE_ENV, &state_path);
+
+        let err = resolve_explain_target().expect_err("should fail without state");
+        assert!(
+            err.message.contains("not initialized"),
+            "unexpected: {}",
+            err.message
+        );
+
+        if let Some(previous) = previous {
+            std::env::set_var(STATE_FILE_ENV, previous);
+        } else {
+            std::env::remove_var(STATE_FILE_ENV);
+        }
+    }
+
+    // T030: explain with corrupt state → distinct error mentioning "corrupt", file path, and --force
+    #[test]
+    fn resolve_explain_target_fails_with_distinct_corrupt_message() {
+        let state_path = temp_state_file("core_ops_explain_corrupt");
+        let previous = std::env::var_os(STATE_FILE_ENV);
+        std::env::set_var(STATE_FILE_ENV, &state_path);
+        std::fs::write(&state_path, "not valid json").expect("write corrupt state");
+
+        let err = resolve_explain_target().expect_err("should fail on corrupt state");
+        assert!(
+            err.message.contains("corrupt"),
+            "error should mention corrupt, got: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains(state_path.to_str().unwrap()),
+            "error should contain file path, got: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("--force"),
+            "error should mention --force recovery, got: {}",
+            err.message
         );
 
         let _ = std::fs::remove_file(&state_path);

@@ -18,7 +18,10 @@ use core_ops::core::types::{
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::{build_observed_snapshot, read_observed_state};
 use core_ops::io::repo::load_desired_state;
-use core_ops::io::state::{persist_success_state, write_deterministic_state, STATE_FILE_ENV};
+use core_ops::io::state::{
+    persist_never_run_state, persist_success_state, write_deterministic_state,
+    write_persisted_state, STATE_FILE_ENV,
+};
 
 fn temp_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -246,7 +249,7 @@ fn cli_plan_exposes_machine_readable_plan_output() {
 #[test]
 fn cli_plan_json_stdout_remains_machine_parseable_with_audit_dir() {
     let repo = temp_dir("core_ops_repo_plan_json_audit");
-    let _rev = init_git_repo(&repo);
+    let rev = init_git_repo(&repo);
 
     let host_quadlets = temp_dir("core_ops_host_plan_json_audit");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
@@ -254,17 +257,18 @@ fn cli_plan_json_stdout_remains_machine_parseable_with_audit_dir() {
     let audit_dir = temp_dir("core_ops_plan_audit_dir");
     fs::create_dir_all(&audit_dir).expect("create audit dir");
 
+    let state_file = temp_dir("core_ops_plan_json_audit_state.json");
+    persist_never_run_state(&state_file, repo.to_str().expect("repo path"), &rev)
+        .expect("write init state");
+
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_core-ops"))
         .arg("plan")
-        .arg("--repo")
-        .arg(repo.to_str().expect("repo path"))
-        .arg("--rev")
-        .arg("HEAD")
         .arg("--quadlet-dir")
         .arg(host_quadlets.to_str().expect("quadlet dir"))
         .arg("--audit-dir")
         .arg(audit_dir.to_str().expect("audit dir"))
         .arg("--json")
+        .env(STATE_FILE_ENV, &state_file)
         .output()
         .expect("run core-ops plan");
 
@@ -1399,4 +1403,93 @@ fn config_file_add_no_restart_for_new_container() {
         }),
         "expected NO RestartUnit for new container when config file is added fresh"
     );
+}
+
+// T026: plan in Detached state prepends the detached header from the contract
+#[test]
+fn plan_in_detached_state_prepends_detached_header() {
+    use core_ops::core::reconcile::never_run_provenance;
+    use core_ops::core::types::{
+        ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState, ReconciliationStatus,
+        TreeState, PERSISTED_PROVENANCE_SCHEMA_VERSION,
+    };
+
+    let _lock = path_lock().lock().expect("path lock");
+    let repo = temp_dir("core_ops_repo_plan_detached");
+    let rev = init_git_repo(&repo);
+
+    let host_quadlets = temp_dir("core_ops_host_plan_detached");
+    fs::create_dir_all(&host_quadlets).expect("create host quadlets");
+
+    let state_dir = temp_dir("core_ops_state_plan_detached");
+    fs::create_dir_all(&state_dir).expect("create state dir");
+    let state_file = state_dir.join("status.json");
+
+    // Build a detached state with last_applied_revision = rev
+    let mut reconciliation = never_run_provenance();
+    reconciliation.status = ReconciliationStatus::Success;
+    reconciliation.last_applied_revision = Some(rev.clone());
+    reconciliation.last_attempted_revision = Some(rev.clone());
+    reconciliation.last_started_at = Some("2026-01-01T00:00:00Z".to_string());
+    reconciliation.last_finished_at = Some("2026-01-01T00:01:00Z".to_string());
+    let state = PersistedProvenanceState {
+        schema_version: PERSISTED_PROVENANCE_SCHEMA_VERSION,
+        controller: ControllerProvenance {
+            version: None,
+            revision: None,
+            build_time: None,
+            tree_state: TreeState::Unknown,
+        },
+        desired_state: DesiredStateProvenance {
+            repository: repo.to_str().unwrap().to_string(),
+            requested_ref: "main".to_string(),
+            last_observed_revision: None,
+            last_observed_at: None,
+        },
+        reconciliation,
+        detached: true,
+    };
+    write_persisted_state(&state_file, &state).expect("write detached state");
+
+    let _guard = EnvGuard {
+        key: STATE_FILE_ENV.to_string(),
+        previous: std::env::var_os(STATE_FILE_ENV),
+    };
+    std::env::set_var(STATE_FILE_ENV, &state_file);
+
+    let deps = ReconcileDependencies {
+        load_desired: &|| load_desired_state(repo.to_str().unwrap(), &rev).map_err(map_io_error),
+        read_observed: &|desired| {
+            read_observed_state(&host_quadlets, Some(desired), Some("obs".to_string()))
+                .map_err(map_io_error)
+        },
+        apply_plan: &|_, _| Ok(()),
+    };
+
+    let output = plan_cmd::plan(&deps, false).expect("plan in detached state should succeed");
+    let summary = strip_ansi(&output.summary);
+
+    // Verify detached header is prepended
+    assert!(
+        summary.starts_with("[DETACHED] plan computed against detached revision "),
+        "summary should start with detached header, got: {summary}"
+    );
+    assert!(
+        summary.contains(&rev),
+        "detached header should contain the detached revision"
+    );
+    assert!(
+        summary.contains("re-attaching to main"),
+        "detached header should mention the requested_ref"
+    );
+
+    // Verify the plan body is still present after the header
+    assert!(
+        summary.contains("Plan for "),
+        "plan body should follow the detached header"
+    );
+
+    let _ = fs::remove_dir_all(state_dir);
+    let _ = fs::remove_dir_all(host_quadlets);
+    let _ = fs::remove_dir_all(repo);
 }

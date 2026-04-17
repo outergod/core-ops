@@ -27,15 +27,20 @@ fn execution_plan_preserves_step_order_and_default_timeouts() {
     let plan = build_execution_plan(&scenario, "run-1", VerificationRunMode::Local, None)
         .expect("execution plan");
 
-    assert_eq!(plan.step_sequence.len(), 3);
+    assert_eq!(plan.step_sequence.len(), 4);
     assert_eq!(plan.step_sequence[0].step_id, "boot");
-    assert_eq!(plan.step_sequence[1].step_id, "apply");
-    assert_eq!(plan.step_sequence[2].step_id, "reapply");
+    assert_eq!(plan.step_sequence[1].step_id, "init");
+    assert_eq!(plan.step_sequence[2].step_id, "apply");
+    assert_eq!(plan.step_sequence[3].step_id, "reapply");
     assert_eq!(plan.step_sequence[0].effective_timeout, "300s");
     assert_eq!(plan.step_sequence[1].effective_timeout, "300s");
     assert_eq!(
         plan.step_sequence[1].command_or_action.as_deref(),
-        Some("sudo core-ops apply --repo fixtures/repos/frontend --rev demo-uat-v2 --quadlet-dir /etc/containers/systemd --systemd-unit-dir /etc/systemd/system")
+        Some("sudo core-ops init fixtures/repos/frontend demo-uat-v2")
+    );
+    assert_eq!(
+        plan.step_sequence[2].command_or_action.as_deref(),
+        Some("sudo core-ops apply --quadlet-dir /etc/containers/systemd --systemd-unit-dir /etc/systemd/system")
     );
 }
 
@@ -90,6 +95,7 @@ fn execution_plan_renders_supported_command_surfaces_for_public_interfaces() {
                 host: None,
                 mode: Some("json".to_string()),
                 output_contract: Some("machine-readable".to_string()),
+                force: false,
             }),
             command: None,
             legacy_command_or_action: None,
@@ -108,6 +114,7 @@ fn execution_plan_renders_supported_command_surfaces_for_public_interfaces() {
                 host: None,
                 mode: None,
                 output_contract: None,
+                force: false,
             }),
             command: None,
             legacy_command_or_action: None,
@@ -126,6 +133,7 @@ fn execution_plan_renders_supported_command_surfaces_for_public_interfaces() {
                 host: None,
                 mode: None,
                 output_contract: None,
+                force: false,
             }),
             command: None,
             legacy_command_or_action: None,
@@ -148,7 +156,7 @@ fn execution_plan_renders_supported_command_surfaces_for_public_interfaces() {
     assert_eq!(
         plan.step_sequence[0].command_or_action.as_deref(),
         Some(
-            "sudo core-ops plan --repo fixtures/repos/frontend --rev demo-uat-v2 --quadlet-dir /etc/containers/systemd --systemd-unit-dir /etc/systemd/system --json"
+            "sudo core-ops plan --quadlet-dir /etc/containers/systemd --systemd-unit-dir /etc/systemd/system --json"
         )
     );
     assert_eq!(
@@ -158,7 +166,7 @@ fn execution_plan_renders_supported_command_surfaces_for_public_interfaces() {
     assert_eq!(
         plan.step_sequence[2].command_or_action.as_deref(),
         Some(
-            "sudo core-ops agent --repo fixtures/repos/frontend --rev demo-uat-v2 --quadlet-dir /etc/containers/systemd --systemd-unit-dir /etc/systemd/system"
+            "sudo core-ops agent --quadlet-dir /etc/containers/systemd --systemd-unit-dir /etc/systemd/system"
         )
     );
 }

@@ -216,9 +216,9 @@ pub fn evaluate_release_governance(
 
     if effective_classification == ReleaseClassification::Releasable {
         match (declared_bump, effective_bump) {
-            (Some(declared), Some(required)) if declared != required => {
+            (Some(declared), Some(required)) if declared < required => {
                 mismatch_reasons.push(format!(
-                    "declared release intent {} does not match required {}",
+                    "declared release intent {} is lower than required {}",
                     declared.label(),
                     required.label()
                 ))
@@ -231,8 +231,8 @@ pub fn evaluate_release_governance(
         }
 
         match (version_bump, effective_bump) {
-            (Some(actual), Some(required)) if actual != required => mismatch_reasons.push(format!(
-                "Cargo.toml version bump {} does not match required {}",
+            (Some(actual), Some(required)) if actual < required => mismatch_reasons.push(format!(
+                "Cargo.toml version bump {} is lower than required {}",
                 actual.label(),
                 required.label()
             )),

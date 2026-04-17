@@ -399,6 +399,7 @@ fn command_surface_assertions_cover_machine_human_agent_and_timing_interfaces() 
                 host: None,
                 mode: Some("json".to_string()),
                 output_contract: Some("machine-readable".to_string()),
+                force: false,
             }),
             command: None,
             legacy_command_or_action: None,
@@ -417,6 +418,7 @@ fn command_surface_assertions_cover_machine_human_agent_and_timing_interfaces() 
                 host: None,
                 mode: Some("humane".to_string()),
                 output_contract: None,
+                force: false,
             }),
             command: None,
             legacy_command_or_action: None,
@@ -435,6 +437,7 @@ fn command_surface_assertions_cover_machine_human_agent_and_timing_interfaces() 
                 host: None,
                 mode: None,
                 output_contract: None,
+                force: false,
             }),
             command: None,
             legacy_command_or_action: None,
@@ -453,6 +456,7 @@ fn command_surface_assertions_cover_machine_human_agent_and_timing_interfaces() 
                 host: None,
                 mode: None,
                 output_contract: None,
+                force: false,
             }),
             command: None,
             legacy_command_or_action: None,
@@ -742,12 +746,12 @@ fn transient_guest_command_timeout_classifies_step_and_run_as_timeout() {
     .expect("execute");
 
     assert_eq!(view.overall_outcome, VerificationRunOutcome::Timeout);
+    // The first CoreopsAction step (init) times out before apply is reached.
     let timed_out_step = view
         .step_results
         .iter()
-        .find(|step| step.step_id == "apply")
-        .expect("apply step");
-    assert_eq!(timed_out_step.status, core_ops::core::types::VerificationStepStatus::TimedOut);
+        .find(|step| step.status == core_ops::core::types::VerificationStepStatus::TimedOut)
+        .expect("timed out step");
     assert!(timed_out_step
         .details
         .as_deref()

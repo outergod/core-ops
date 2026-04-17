@@ -57,7 +57,7 @@ fn validate_fails_when_additive_change_declares_patch() {
     assert!(!output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Required bump: minor"));
-    assert!(stdout.contains("declared release intent patch does not match required minor"));
+    assert!(stdout.contains("declared release intent patch is lower than required minor"));
 }
 
 #[test]

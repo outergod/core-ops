@@ -18,7 +18,7 @@ fn readme_documents_binary_installation_sequence() {
     assert!(contents.contains("install -m 0644 core-ops.timer /etc/systemd/system/core-ops.timer"));
     assert!(contents.contains("core-ops.service"));
     assert!(contents.contains("core-ops.timer"));
-    assert!(contents.contains("systemctl enable core-ops.service"));
+    assert!(contents.contains("core-ops init"));
     assert!(contents.contains("systemctl enable --now core-ops.timer"));
 }
 

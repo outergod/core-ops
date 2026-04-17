@@ -9,8 +9,8 @@ fn quickstart_mentions_systemd_units_and_env() {
 
     assert!(contents.contains("core-ops.service"));
     assert!(contents.contains("core-ops.timer"));
-    assert!(contents.contains("CORE_OPS_REPO"));
-    assert!(contents.contains("CORE_OPS_REV"));
+    assert!(contents.contains("core-ops init"));
+    assert!(contents.contains("CORE_OPS_STATE_FILE"));
 }
 
 #[test]

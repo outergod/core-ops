@@ -137,15 +137,25 @@ install -m 0644 core-ops.timer /etc/systemd/system/core-ops.timer
 No external runtime dependencies are required beyond a supported host.
 
 For unattended host-native execution, the supported integration path uses the
-published canonical `core-ops.service` and `core-ops.timer` units. After
-placing those unit files, configure them through a systemd drop-in and enable
-the timer:
+published canonical `core-ops.service` and `core-ops.timer` units (also
+available in `systemd/` in this repository). Initialize once, then enable the
+timer:
+
+```bash
+# One-time setup: persist repository and tracking ref
+core-ops init <repository-url> <ref>
+
+# Install and enable the timer
+install -m 0644 core-ops.service /etc/systemd/system/core-ops.service
+install -m 0644 core-ops.timer /etc/systemd/system/core-ops.timer
+systemctl daemon-reload
+systemctl enable --now core-ops.timer
+```
+
+To override the quadlet directory or other defaults, use a systemd drop-in:
 
 ```bash
 systemctl edit core-ops.service
-systemctl daemon-reload
-systemctl enable core-ops.service
-systemctl enable --now core-ops.timer
 ```
 
 ---

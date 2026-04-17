@@ -145,7 +145,8 @@ impl Drop for EnvGuard {
 fn status_output_reflects_canonical_success_snapshot_contents() {
     let output = format_status_text(&fixture("valid-success.json"));
 
-    assert!(output.starts_with("provenance\n"));
+    assert!(output.contains("lifecycle_state: Converged"));
+    assert!(output.contains("provenance\n"));
     assert!(output.contains("\"repository\": \"file:///var/lib/core-ops/repo\""));
     assert!(output.contains("\"requested_ref\": \"main\""));
     assert!(output.contains("\"status\": \"success\""));
@@ -213,7 +214,16 @@ fn status_output_reports_absent_for_invalid_or_missing_snapshot() {
     let invalid_output = render_status_from_path(&invalid);
     let missing_output = render_status_from_path(&missing);
 
-    assert!(invalid_output.contains("\"status\": \"absent\""));
+    assert!(
+        invalid_output.contains("lifecycle_state: Corrupt"),
+        "invalid: {}",
+        invalid_output
+    );
+    assert!(
+        missing_output.contains("lifecycle_state: Uninitialized"),
+        "missing: {}",
+        missing_output
+    );
     assert!(missing_output.contains("\"status\": \"absent\""));
 }
 
@@ -230,7 +240,11 @@ fn status_output_rebuilds_after_invalid_snapshot_is_replaced() {
     fs::write(&path, "{\n  \"schema_version\": 1,\n  \"controller\": {").expect("write invalid");
 
     let absent = render_status_from_path(&path);
-    assert!(absent.contains("\"status\": \"absent\""));
+    assert!(
+        absent.contains("lifecycle_state: Corrupt"),
+        "corrupt output: {}",
+        absent
+    );
 
     persist_success_state(&path, "file:///var/lib/core-ops/repo", "main", "deadbeef")
         .expect("rebuild snapshot");

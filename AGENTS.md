@@ -50,6 +50,46 @@ tests/
 - Intentional metadata-only release preparation must be declared with
   `release_preparation: true` in the checked-in release fragment.
 
+### Release governance commands
+
+The `core-ops-release` binary has exactly two subcommands — do not guess others:
+
+```bash
+# Preview what CHANGELOG.md [Unreleased] will look like from current fragments
+cargo run --bin core-ops-release -- changelog
+
+# Validate the change set before committing or opening a PR
+cargo run --bin core-ops-release -- validate --base-ref HEAD^
+```
+
+`validate` checks that a fragment exists, `release_intent` is ≥ the inferred bump,
+and `CHANGELOG.md` matches the generated output.
+
+### CHANGELOG.md is machine-managed
+
+The block between `<!-- core-ops-release:start -->` and `<!-- core-ops-release:end -->`
+is owned by `core-ops-release`. **Never edit it by hand.** Copy the output of
+`cargo run --bin core-ops-release -- changelog` and replace the managed block with it.
+
+### Fragment lifecycle
+
+| Stage | Action |
+|---|---|
+| Start releasable work | Create `changes/<feature-id>.md` |
+| PR open / CI running | Keep the fragment |
+| Release tagged and published | **Delete the fragment** |
+
+Fragments that survive past their release will appear in the next `[Unreleased]` entry.
+Delete them as part of releasing, not as a follow-up.
+
+### Bump rules and breaking changes
+
+The governance model infers a minimum bump from file-change types:
+`src/` modified → `patch`, `src/` added → `minor`, `src/` deleted/renamed → `major`.
+It cannot detect breaking changes inside modified files (e.g. removing a CLI flag).
+Declare `major` in the fragment whenever a public CLI surface is removed or renamed —
+declaring higher than inferred is allowed.
+
 ## Code Style
 
 Rust (stable toolchain): Follow standard conventions

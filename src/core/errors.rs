@@ -90,4 +90,6 @@ pub enum StateError {
     Io(String),
     #[error("state serialization error: {0}")]
     Serialization(String),
+    #[error("state file is corrupt: {0}")]
+    Corrupt(String),
 }

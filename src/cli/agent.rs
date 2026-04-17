@@ -2,18 +2,14 @@ use std::path::PathBuf;
 
 use crate::cli::apply as apply_cmd;
 use crate::core::audit::build_audit_event;
-use crate::core::errors::CoreError;
+use crate::core::errors::{CoreError, StateError};
 use crate::core::types::{FailureClass, ReconcileRun, RunLock};
 use crate::io::audit as audit_io;
 use crate::io::lock::FileRunLock;
-use crate::io::state::{
-    persist_never_run_state, read_persisted_state, resolve_state_file, STATE_FILE_ENV,
-};
+use crate::io::state::{read_persisted_state, resolve_state_file, STATE_FILE_ENV};
 
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
-    pub repo: String,
-    pub rev: String,
     pub quadlet_dir: PathBuf,
     pub audit_dir: Option<PathBuf>,
     pub state_file: Option<PathBuf>,
@@ -22,17 +18,45 @@ pub struct AgentConfig {
 }
 
 #[derive(Debug)]
+pub enum AgentExitReason {
+    Completed(AgentOutput),
+    Uninitialized,
+    Detached { revision: String },
+}
+
+#[derive(Debug)]
 pub struct AgentOutput {
     pub run: ReconcileRun,
     pub report: String,
 }
 
-pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
+pub fn run_agent(config: &AgentConfig) -> Result<AgentExitReason, CoreError> {
     let state_path = resolve_state_file(config.state_file.clone());
-    if !state_path.exists() {
-        persist_never_run_state(&state_path, &config.repo, &config.rev)
-            .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
+
+    let state = match read_persisted_state(&state_path) {
+        Ok(Some(s)) => s,
+        Ok(None) => return Ok(AgentExitReason::Uninitialized),
+        Err(StateError::Corrupt(path)) => {
+            return Err(CoreError::new(
+                FailureClass::Apply,
+                format!("state file at {path} is corrupt or unreadable; run 'core-ops init <repository> <ref> --force' to recover"),
+            ));
+        }
+        Err(err) => return Err(CoreError::new(FailureClass::Apply, err.to_string())),
+    };
+
+    if state.detached {
+        let revision = state
+            .reconciliation
+            .last_applied_revision
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        return Ok(AgentExitReason::Detached { revision });
     }
+
+    let repo = state.desired_state.repository.clone();
+    let rev = state.desired_state.requested_ref.clone();
+
     std::env::set_var(STATE_FILE_ENV, &state_path);
     let lock_path = config
         .lock_path
@@ -44,8 +68,8 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
 
     let result = apply_cmd::apply_with_report(
-        &config.repo,
-        &config.rev,
+        &repo,
+        &rev,
         &config.quadlet_dir,
         config.reload_systemd,
         Some(state_path.clone()),
@@ -84,8 +108,8 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentOutput, CoreError> {
         }
     }
 
-    Ok(AgentOutput {
+    Ok(AgentExitReason::Completed(AgentOutput {
         run,
         report: output.human_report,
-    })
+    }))
 }

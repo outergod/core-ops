@@ -26,23 +26,44 @@ steps:
   - step_id: boot
     step_type: boot
     target: guest
+  - step_id: init-baseline
+    step_type: coreops_action
+    target: guest
+    action:
+      action: init
+      repository_source: fixture
+      revision: demo-uat-v2
   - step_id: apply-baseline
     step_type: coreops_action
     target: guest
     action:
       action: apply
-      repository_source: fixture
-      revision: demo-uat-v2
       mode: humane
+  - step_id: init-upgrade
+    step_type: coreops_action
+    target: guest
+    action:
+      action: init
+      repository_source: fixture
+      revision: demo-uat-v3
+      force: true
   - step_id: apply-upgrade
     step_type: coreops_action
     target: guest
     action:
       action: apply
-      repository_source: fixture
-      revision: demo-uat-v3
       mode: humane
 assertions:
+  - assertion_id: init-baseline-succeeded
+    assertion_type: step_exit_code_is
+    target: init-baseline
+    expected_state: "0"
+    failure_message: Baseline init did not exit successfully.
+  - assertion_id: init-upgrade-succeeded
+    assertion_type: step_exit_code_is
+    target: init-upgrade
+    expected_state: "0"
+    failure_message: Upgrade init did not exit successfully.
   - assertion_id: baseline-apply-succeeded
     assertion_type: step_exit_code_is
     target: apply-baseline

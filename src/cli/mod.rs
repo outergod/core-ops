@@ -4,6 +4,7 @@ pub mod args;
 pub mod common;
 pub mod diagnostics;
 pub mod explain;
+pub mod init;
 pub mod plan;
 pub mod report;
 pub mod status;
