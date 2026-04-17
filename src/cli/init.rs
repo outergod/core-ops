@@ -1,3 +1,5 @@
+use std::process::Command;
+
 use crate::cli::args::InitArgs;
 use crate::core::errors::{CoreError, StateError};
 use crate::core::types::FailureClass;
@@ -35,6 +37,8 @@ pub fn run_init(args: &InitArgs) -> Result<(), CoreError> {
         ));
     }
 
+    validate_repository_and_ref(&args.repository, &args.requested_ref)?;
+
     write_init_state(
         &state_path,
         &args.repository,
@@ -42,4 +46,46 @@ pub fn run_init(args: &InitArgs) -> Result<(), CoreError> {
         existing.as_ref(),
     )
     .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))
+}
+
+fn validate_repository_and_ref(repository: &str, requested_ref: &str) -> Result<(), CoreError> {
+    let output = Command::new("git")
+        .arg("ls-remote")
+        .arg("--exit-code")
+        .arg(repository)
+        .arg(requested_ref)
+        .output()
+        .map_err(|err| {
+            CoreError::new(
+                FailureClass::Validation,
+                format!("failed to invoke git to validate repository: {err}"),
+            )
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            format!(
+                "repository '{}' is not reachable or ref '{}' was not found; \
+                 use a branch or tag name (not a commit SHA): {}",
+                repository,
+                requested_ref,
+                stderr.trim()
+            ),
+        ));
+    }
+
+    if output.stdout.is_empty() {
+        return Err(CoreError::new(
+            FailureClass::Validation,
+            format!(
+                "ref '{}' was not found in repository '{}'; \
+                 use a branch or tag name, not a commit SHA",
+                requested_ref, repository
+            ),
+        ));
+    }
+
+    Ok(())
 }

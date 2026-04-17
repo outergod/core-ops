@@ -98,7 +98,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let mut streamed_human_output = false;
             let output = if let Some(target_revision_id) = rollback_to.as_deref() {
                 // Rollback is permitted from Detached state — only require repo (not ref) from state.
-                let (repo_source, _) = resolve_repo_from_state(None)?;
+                let (repo_source, _) = resolve_repo_from_state(state_file.clone())?;
                 apply_cmd::execute_rollback_with_report(
                     &repo_source,
                     target_revision_id,
@@ -108,7 +108,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                     rollback_plan_only,
                 )?
             } else if json {
-                let (repo_source, rev) = resolve_from_state(None)?;
+                let (repo_source, rev) = resolve_from_state(state_file.clone())?;
                 apply_cmd::apply_with_report(
                     &repo_source,
                     &rev,
@@ -117,7 +117,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                     state_file.clone(),
                 )?
             } else {
-                let (repo_source, rev) = resolve_from_state(None)?;
+                let (repo_source, rev) = resolve_from_state(state_file.clone())?;
                 let stdout = io::stdout();
                 let interactive = stdout.is_terminal();
                 streamed_human_output = true;

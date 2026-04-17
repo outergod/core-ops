@@ -770,11 +770,36 @@ pub fn execute_rollback_with_report(
     )?;
 
     // After a successful rollback, mark controller as Detached.
-    // This persists regardless of whether convergence was recorded.
+    // This write is part of rollback success criteria — failure here means the controller
+    // may remain attached and the next agent tick could reconcile away the recovered snapshot.
     if output.result.run.status == RunStatus::Success {
-        if let Ok(Some(mut provenance)) = read_persisted_state(&state_path) {
-            provenance.detached = true;
-            let _ = write_persisted_state(&state_path, &provenance);
+        match read_persisted_state(&state_path) {
+            Ok(Some(mut provenance)) => {
+                provenance.detached = true;
+                write_persisted_state(&state_path, &provenance).map_err(|err| {
+                    CoreError::new(
+                        FailureClass::Apply,
+                        format!(
+                            "rollback succeeded but failed to persist detached state to {}: {}; \
+                             re-run rollback to recover",
+                            state_path.display(),
+                            err
+                        ),
+                    )
+                })?;
+            }
+            Ok(None) => {}
+            Err(err) => {
+                return Err(CoreError::new(
+                    FailureClass::Apply,
+                    format!(
+                        "rollback succeeded but could not read state at {} to mark detached: {}; \
+                         re-run rollback to recover",
+                        state_path.display(),
+                        err
+                    ),
+                ));
+            }
         }
     }
 
