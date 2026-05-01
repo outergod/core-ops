@@ -108,15 +108,32 @@ for svc_dir in "$REPO/services"/*/; do
         done
     fi
 
-    # 1.b quadlet-overrides/<unit>.<ext>.d/* → quadlet/<unit>.<ext>.d/*
+    # 1.b quadlet-overrides/<unit>.<ext>.d/* → {quadlet,systemd}/<unit>.<ext>.d/*
+    # Drop-ins must follow their base unit. Phase 1.a already moved
+    # *.socket / *.mount / *.timer / *.target / *.path / *.automount
+    # from quadlet/ to systemd/, so a `traefik.socket.d` drop-in
+    # belongs at services/<svc>/systemd/traefik.socket.d/, not under
+    # quadlet/. Routing all drop-ins to quadlet/ would produce a tree
+    # the new parser rejects via cross-kind validation.
     if [[ -d "$svc_dir/quadlet-overrides" ]]; then
         for dropin_dir in "$svc_dir/quadlet-overrides"/*.d; do
             [[ -d "$dropin_dir" ]] || continue
             dropin_name=$(basename "$dropin_dir")
-            mkdir -p "$svc_dir/quadlet/$dropin_name"
+            unit="${dropin_name%.d}"
+            unit_ext="${unit##*.}"
+            if is_systemd_ext "$unit_ext"; then
+                target_root="$svc_dir/systemd"
+            elif is_quadlet_ext "$unit_ext"; then
+                target_root="$svc_dir/quadlet"
+            else
+                printf 'error: drop-in %s targets unit with unrecognized extension .%s\n' \
+                    "$dropin_dir" "$unit_ext" >&2
+                exit 65
+            fi
+            mkdir -p "$target_root/$dropin_name"
             for conf in "$dropin_dir"/*; do
                 [[ -f "$conf" ]] || continue
-                mv -- "$conf" "$svc_dir/quadlet/$dropin_name/$(basename "$conf")"
+                mv -- "$conf" "$target_root/$dropin_name/$(basename "$conf")"
             done
             rmdir -- "$dropin_dir"
         done
@@ -180,6 +197,7 @@ for host_dir in "$REPO/hosts"/*/; do
             [[ -d "$dropin_dir" ]] || continue
             dropin_name=$(basename "$dropin_dir")
             unit="${dropin_name%.d}"
+            unit_ext="${unit##*.}"
             owner=$(unit_owner "$unit") || {
                 rc=$?
                 if [[ $rc -eq 1 ]]; then
@@ -188,7 +206,21 @@ for host_dir in "$REPO/hosts"/*/; do
                 fi
                 exit 65
             }
-            target_dir="$host_dir/$owner/quadlet/$dropin_name"
+            # Same routing rule as Phase 1.b: drop-ins follow their
+            # base unit's payload kind. A legacy host
+            # overrides/quadlet/traefik.socket.d/ ends up at
+            # hosts/<h>/<svc>/systemd/traefik.socket.d/, not under
+            # quadlet/.
+            if is_systemd_ext "$unit_ext"; then
+                kind_dir="systemd"
+            elif is_quadlet_ext "$unit_ext"; then
+                kind_dir="quadlet"
+            else
+                printf 'error: host drop-in %s targets unit with unrecognized extension .%s\n' \
+                    "$dropin_dir" "$unit_ext" >&2
+                exit 65
+            fi
+            target_dir="$host_dir/$owner/$kind_dir/$dropin_name"
             mkdir -p "$target_dir"
             for conf in "$dropin_dir"/*; do
                 [[ -f "$conf" ]] || continue

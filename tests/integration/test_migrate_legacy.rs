@@ -154,6 +154,108 @@ fn migration_script_is_idempotent() {
     );
 }
 
+/// Codex P1 on PR #28 (53404ab follow-up): drop-ins must follow their
+/// base unit's payload kind through migration. A legacy
+/// `services/<svc>/quadlet-overrides/<unit>.socket.d/` (where socket
+/// is now a systemd-kind extension) must land at
+/// `services/<svc>/systemd/<unit>.socket.d/`, not under `quadlet/`.
+/// Same rule for host overrides under `hosts/<h>/overrides/quadlet/`.
+/// Without this routing, the migrated tree fails the new parser's
+/// cross-kind drop-in check.
+#[test]
+fn migration_routes_systemd_kind_dropins_to_systemd_subtree() {
+    let tmp = TempDir::new().expect("tempdir");
+    let repo = tmp.path();
+
+    // Service with a base socket (Phase 1.a will move it to systemd/),
+    // a legacy quadlet-overrides drop-in TARGETING THE SOCKET, and a
+    // base container.
+    std::fs::create_dir_all(repo.join("services/web/quadlet")).unwrap();
+    std::fs::create_dir_all(
+        repo.join("services/web/quadlet-overrides/web.socket.d"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(
+        repo.join("services/web/quadlet-overrides/web.container.d"),
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("services/web/quadlet/web.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("services/web/quadlet/web.socket"),
+        "[Socket]\nListenStream=80\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("services/web/quadlet-overrides/web.socket.d/10-defaults.conf"),
+        "[Socket]\nNoDelay=true\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("services/web/quadlet-overrides/web.container.d/10-resources.conf"),
+        "[Service]\nMemoryMax=256M\n",
+    )
+    .unwrap();
+    // Host with the same kind of cross-kind override.
+    std::fs::create_dir_all(
+        repo.join("hosts/host-a/overrides/quadlet/web.socket.d"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(
+        repo.join("hosts/host-a/overrides/quadlet/web.container.d"),
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("hosts/host-a/host.yaml"),
+        "host: host-a\nservices:\n  - web\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("hosts/host-a/overrides/quadlet/web.socket.d/20-host.conf"),
+        "[Socket]\nListenStream=8080\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("hosts/host-a/overrides/quadlet/web.container.d/20-host.conf"),
+        "[Service]\nEnvironment=HOST=a\n",
+    )
+    .unwrap();
+
+    let output = run_migration(repo);
+    assert!(
+        output.status.success(),
+        "migration failed: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Service-level drop-ins routed by kind.
+    assert!(
+        repo.join("services/web/systemd/web.socket.d/10-defaults.conf").exists(),
+        "socket drop-in must route to systemd/ subtree"
+    );
+    assert!(
+        repo.join("services/web/quadlet/web.container.d/10-resources.conf").exists(),
+        "container drop-in must stay in quadlet/ subtree"
+    );
+    // Host-level drop-ins routed by kind.
+    assert!(
+        repo.join("hosts/host-a/web/systemd/web.socket.d/20-host.conf").exists(),
+        "host socket drop-in must route to <svc>/systemd/"
+    );
+    assert!(
+        repo.join("hosts/host-a/web/quadlet/web.container.d/20-host.conf").exists(),
+        "host container drop-in must route to <svc>/quadlet/"
+    );
+
+    // Migrated tree must load cleanly through the new parser.
+    let rev = git_init_commit(repo);
+    let _ = load_with_host(repo, &rev, "host-a")
+        .expect("post-migration tree must load with kind-aware dropin routing");
+}
+
 /// Codex P2 on PR #28: when two services share the same config-root
 /// AND host.yaml selects both, the host config override at
 /// `overrides/config/etc/<root>/...` cannot be unambiguously routed
