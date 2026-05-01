@@ -256,6 +256,97 @@ fn host_overlay_for_unselected_service_rejected() {
     );
 }
 
+// ---- Codex P1 #3: enforce full identifier regex ----
+//
+// Without the full pattern check, a `config-root: foo/bar` in
+// service.yaml would create destinations like `/etc/foo/bar/...`
+// while observed-state scans collapsed the managed root to
+// `/etc/foo`, flagging unrelated files for removal. Identifiers
+// must match `[A-Za-z0-9][A-Za-z0-9._-]*`.
+#[test]
+fn config_root_with_slash_rejected() {
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc = services.join("alpha");
+    std::fs::create_dir_all(svc.join("quadlet")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/alpha.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    std::fs::write(svc.join("service.yaml"), "config-root: foo/bar\n").unwrap();
+    write_host_yaml(&hosts, "example-host", &["alpha"]);
+    let rev = git_init_commit(tmp.path());
+
+    let err =
+        load_with_host(tmp.path(), &rev, "example-host").expect_err("expected rejection");
+    assert!(
+        matches!(err, RepoError::InvalidIdentifier(ref name) if name == "foo/bar"),
+        "expected InvalidIdentifier(foo/bar), got {err:?}"
+    );
+    assert!(
+        err.to_string().contains("[A-Za-z0-9][A-Za-z0-9._-]*"),
+        "diagnostic must surface the documented pattern: {err}"
+    );
+}
+
+#[test]
+fn service_id_with_space_rejected() {
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc = services.join("bad name");
+    std::fs::create_dir_all(svc.join("quadlet")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/bad.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    write_host_yaml(&hosts, "example-host", &["bad name"]);
+    let rev = git_init_commit(tmp.path());
+
+    let err =
+        load_with_host(tmp.path(), &rev, "example-host").expect_err("expected rejection");
+    assert!(
+        matches!(err, RepoError::InvalidIdentifier(ref name) if name == "bad name"),
+        "expected InvalidIdentifier(\"bad name\"), got {err:?}"
+    );
+}
+
+// ---- Codex P2 #3: drop-in target extension must match payload kind ----
+//
+// `services/<svc>/systemd/api.container.d/` is rejected: the target
+// unit `api.container` is a Quadlet kind, not a Systemd-payload kind.
+// Without this cross-check, a cross-kind typo silently attaches to a
+// real `quadlet/api.container` if it happens to exist.
+#[test]
+fn dropin_target_kind_mismatched_with_payload_subtree_rejected() {
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc = services.join("alpha");
+    std::fs::create_dir_all(svc.join("quadlet")).unwrap();
+    std::fs::create_dir_all(svc.join("systemd/api.container.d")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/api.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    // Cross-kind typo: container drop-in placed under systemd/.
+    std::fs::write(
+        svc.join("systemd/api.container.d/10-resources.conf"),
+        "[Service]\nMemoryMax=256M\n",
+    )
+    .unwrap();
+    write_host_yaml(&hosts, "example-host", &["alpha"]);
+    let rev = git_init_commit(tmp.path());
+
+    let err =
+        load_with_host(tmp.path(), &rev, "example-host").expect_err("expected rejection");
+    assert!(
+        matches!(
+            err,
+            RepoError::InvalidPayloadKindFile { kind: "systemd", .. }
+        ),
+        "expected InvalidPayloadKindFile(kind=systemd), got {err:?}"
+    );
+}
+
 // ---- FR-009: reserved-name rejection ----
 
 #[test]

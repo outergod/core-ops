@@ -55,6 +55,11 @@ pub enum RepoError {
     /// Service id, host id, or payload-kind name begins with `_` or `.`,
     /// which is reserved for future metadata.
     ReservedName(String),
+    /// Identifier (service id, host id, or `config-root`) does not match
+    /// the documented pattern `[A-Za-z0-9][A-Za-z0-9._-]*`. Without this
+    /// check, values containing `/` could escape `/etc/<config-root>/`
+    /// at observed-state scan time and drive unintended removals.
+    InvalidIdentifier(String),
     /// Host overlay attempted to introduce a base unit; only drop-ins
     /// (`<unit>.<ext>.d/<file>.conf`) and `config/` whole-file
     /// replacements are permitted.
@@ -116,6 +121,11 @@ impl std::fmt::Display for RepoError {
             RepoError::ReservedName(name) => write!(
                 f,
                 "reserved name '{}' (must not begin with '_' or '.')",
+                name
+            ),
+            RepoError::InvalidIdentifier(name) => write!(
+                f,
+                "invalid identifier '{}' (must match [A-Za-z0-9][A-Za-z0-9._-]*)",
                 name
             ),
             RepoError::HostOverlayBaseUnit(path) => write!(
@@ -455,11 +465,11 @@ fn load_service_definition(
         match file_name.as_str() {
             "quadlet" => {
                 artifacts.extend(read_payload_units(&path, PayloadKind::Quadlet)?);
-                base_dropins.extend(read_payload_dropins(&path)?);
+                base_dropins.extend(read_payload_dropins(&path, PayloadKind::Quadlet)?);
             }
             "systemd" => {
                 artifacts.extend(read_payload_units(&path, PayloadKind::Systemd)?);
-                base_dropins.extend(read_payload_dropins(&path)?);
+                base_dropins.extend(read_payload_dropins(&path, PayloadKind::Systemd)?);
             }
             "config" => {
                 config_files.extend(read_config_files(&path, &config_root)?);
@@ -1137,7 +1147,10 @@ fn read_payload_units(
     Ok(artifacts)
 }
 
-fn read_payload_dropins(payload_dir: &Path) -> Result<Vec<DropInSource>, RepoError> {
+fn read_payload_dropins(
+    payload_dir: &Path,
+    kind: PayloadKind,
+) -> Result<Vec<DropInSource>, RepoError> {
     let mut dropins = Vec::new();
     if !payload_dir.exists() {
         return Ok(dropins);
@@ -1156,6 +1169,23 @@ fn read_payload_dropins(payload_dir: &Path) -> Result<Vec<DropInSource>, RepoErr
             continue;
         }
         if let Some(target) = dropin_target_from_dir(&file_name) {
+            // Validate that the target unit's extension matches THIS
+            // payload kind. Without this check, a typo like
+            // `services/<svc>/systemd/api.container.d/` would silently
+            // attach to a `quadlet/api.container` base unit (validation
+            // is by unit name, not subtree). Codex P2 on PR #28.
+            let (_, target_quadlet_type) = parse_quadlet_name(&target).map_err(|_| {
+                RepoError::InvalidPayloadKindFile {
+                    path: path.clone(),
+                    kind: kind.name(),
+                }
+            })?;
+            if !kind.accepts(&target_quadlet_type) {
+                return Err(RepoError::InvalidPayloadKindFile {
+                    path,
+                    kind: kind.name(),
+                });
+            }
             dropins.extend(read_dropins(&path, &target)?);
         } else {
             // A non-`.d` directory in a payload-kind subtree is rejected
@@ -1169,13 +1199,32 @@ fn read_payload_dropins(payload_dir: &Path) -> Result<Vec<DropInSource>, RepoErr
     Ok(dropins)
 }
 
-/// Validates that an identifier (service id, host id, or payload-kind
-/// directory name used in an identifier-like position) does not begin
-/// with `_` or `.`. Per FR-009 these prefixes are reserved for future
-/// metadata.
+/// Validates that an identifier (service id, host id, or
+/// `config-root`) matches the documented pattern
+/// `[A-Za-z0-9][A-Za-z0-9._-]*` AND does not begin with `_` or `.`
+/// (FR-009 reserves those prefixes for future metadata).
+///
+/// The full-pattern check matters because `config-root` flows
+/// directly into target paths (`/etc/<config-root>/...`). Without it,
+/// a value like `foo/bar` would create destinations under `/etc/foo`
+/// while observed-state scans collapsed to the first path segment,
+/// causing unrelated `/etc/foo` files to be flagged for removal.
 fn validate_id(name: &str) -> Result<(), RepoError> {
     if name.starts_with('_') || name.starts_with('.') {
         return Err(RepoError::ReservedName(name.to_string()));
+    }
+    let mut chars = name.chars();
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return Err(RepoError::InvalidIdentifier(name.to_string())),
+    };
+    if !first.is_ascii_alphanumeric() {
+        return Err(RepoError::InvalidIdentifier(name.to_string()));
+    }
+    for c in chars {
+        if !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+            return Err(RepoError::InvalidIdentifier(name.to_string()));
+        }
     }
     Ok(())
 }
