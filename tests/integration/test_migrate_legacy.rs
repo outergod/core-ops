@@ -83,7 +83,10 @@ fn destinations_from_state(state: &core_ops::core::types::DesiredState) -> Vec<S
             core_ops::core::types::QuadletType::Socket
             | core_ops::core::types::QuadletType::Mount
             | core_ops::core::types::QuadletType::Automount
-            | core_ops::core::types::QuadletType::SocketDropIn => {
+            | core_ops::core::types::QuadletType::SocketDropIn
+            | core_ops::core::types::QuadletType::Timer
+            | core_ops::core::types::QuadletType::Target
+            | core_ops::core::types::QuadletType::Path => {
                 format!("/etc/systemd/system/{}", workload.systemd_unit_name)
             }
         })

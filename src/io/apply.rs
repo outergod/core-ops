@@ -404,7 +404,10 @@ fn target_dir_for_workload(quadlet_dir: &Path, workload: &Workload) -> PathBuf {
         QuadletType::Socket
         | QuadletType::SocketDropIn
         | QuadletType::Mount
-        | QuadletType::Automount => systemd_unit_dir(),
+        | QuadletType::Automount
+        | QuadletType::Timer
+        | QuadletType::Target
+        | QuadletType::Path => systemd_unit_dir(),
         QuadletType::ConfigFile => PathBuf::from("/"),
         _ => quadlet_dir.to_path_buf(),
     }

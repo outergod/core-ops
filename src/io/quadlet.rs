@@ -112,6 +112,9 @@ pub(crate) fn parse_quadlet_name(file_name: &str) -> Result<(String, QuadletType
         "network" => QuadletType::Network,
         "mount" => QuadletType::Mount,
         "automount" => QuadletType::Automount,
+        "timer" => QuadletType::Timer,
+        "target" => QuadletType::Target,
+        "path" => QuadletType::Path,
         _ => return Err(QuadletError::UnsupportedExtension(ext.to_string())),
     };
 

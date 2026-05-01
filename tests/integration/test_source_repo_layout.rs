@@ -93,6 +93,59 @@ fn example_04_host_overlay_loads() {
     );
 }
 
+// ---- Full systemd unit extension set (.timer / .target / .path) ----
+//
+// `contracts/layout.md` and SKILL.md §5 advertise that
+// `services/<svc>/systemd/` accepts `.socket`, `.timer`, `.target`,
+// `.mount`, and `.path`. This test guards the contract: a service
+// whose `systemd/` tree contains a timer, a target, and a path unit
+// loads cleanly and surfaces all three as workloads. Codex-flagged
+// regression on PR #28.
+#[test]
+fn systemd_payload_accepts_timer_target_and_path_extensions() {
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc_quadlet = services.join("scheduler/quadlet");
+    let svc_systemd = services.join("scheduler/systemd");
+    std::fs::create_dir_all(&svc_quadlet).unwrap();
+    std::fs::create_dir_all(&svc_systemd).unwrap();
+    std::fs::write(
+        svc_quadlet.join("scheduler.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    std::fs::write(
+        svc_systemd.join("scheduler.timer"),
+        "[Timer]\nOnCalendar=hourly\n[Install]\nWantedBy=timers.target\n",
+    )
+    .unwrap();
+    std::fs::write(
+        svc_systemd.join("scheduler.target"),
+        "[Unit]\nDescription=scheduler readiness target\n",
+    )
+    .unwrap();
+    std::fs::write(
+        svc_systemd.join("scheduler.path"),
+        "[Path]\nPathChanged=/var/lib/scheduler/inbox\n[Install]\nWantedBy=paths.target\n",
+    )
+    .unwrap();
+    write_host_yaml(&hosts, "example-host", &["scheduler"]);
+    let rev = git_init_commit(tmp.path());
+
+    let state = load_with_host(tmp.path(), &rev, "example-host").expect("load");
+    let names = unit_names(&state);
+    for unit in [
+        "scheduler.container",
+        "scheduler.timer",
+        "scheduler.target",
+        "scheduler.path",
+    ] {
+        assert!(
+            names.iter().any(|n| n == unit),
+            "missing {unit} in {names:?}"
+        );
+    }
+}
+
 // ---- FR-009: reserved-name rejection ----
 
 #[test]

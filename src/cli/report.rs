@@ -3348,6 +3348,9 @@ fn quadlet_type_label(quadlet_type: Option<QuadletType>) -> &'static str {
         Some(QuadletType::Volume) => "volume",
         Some(QuadletType::Pod) => "pod",
         Some(QuadletType::Network) => "network",
+        Some(QuadletType::Timer) => "timer",
+        Some(QuadletType::Target) => "target",
+        Some(QuadletType::Path) => "path",
         None => "unknown",
     }
 }
@@ -3365,6 +3368,9 @@ fn action_label(
                     | Some(QuadletType::SocketDropIn)
                     | Some(QuadletType::Mount)
                     | Some(QuadletType::Automount)
+                    | Some(QuadletType::Timer)
+                    | Some(QuadletType::Target)
+                    | Some(QuadletType::Path)
             ) {
                 "WriteUnit".to_string()
             } else {
@@ -3378,6 +3384,9 @@ fn action_label(
                     | Some(QuadletType::SocketDropIn)
                     | Some(QuadletType::Mount)
                     | Some(QuadletType::Automount)
+                    | Some(QuadletType::Timer)
+                    | Some(QuadletType::Target)
+                    | Some(QuadletType::Path)
             ) {
                 "RemoveUnit".to_string()
             } else {

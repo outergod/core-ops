@@ -1067,6 +1067,9 @@ impl PayloadKind {
                 | (PayloadKind::Systemd, QuadletType::Socket)
                 | (PayloadKind::Systemd, QuadletType::Mount)
                 | (PayloadKind::Systemd, QuadletType::Automount)
+                | (PayloadKind::Systemd, QuadletType::Timer)
+                | (PayloadKind::Systemd, QuadletType::Target)
+                | (PayloadKind::Systemd, QuadletType::Path)
         )
     }
 }

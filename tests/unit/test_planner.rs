@@ -28,6 +28,9 @@ fn workload_with_type(name: &str, quadlet_type: QuadletType) -> Workload {
         QuadletType::Volume => "volume",
         QuadletType::Pod => "pod",
         QuadletType::Network => "network",
+        QuadletType::Timer => "timer",
+        QuadletType::Target => "target",
+        QuadletType::Path => "path",
     };
     Workload {
         name: name.to_string(),

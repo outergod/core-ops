@@ -326,6 +326,16 @@ pub enum QuadletType {
     Pod,
     Volume,
     Network,
+    /// Native systemd timer unit (`*.timer`). Loaded from
+    /// `services/<svc>/systemd/`. Treated as a passive native unit
+    /// like `Socket` (no Quadlet generator semantics).
+    Timer,
+    /// Native systemd target unit (`*.target`). Synchronization point;
+    /// other units typically declare `WantedBy=<target>.target`.
+    Target,
+    /// Native systemd path unit (`*.path`). Activates a paired service
+    /// when a watched filesystem location changes.
+    Path,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
