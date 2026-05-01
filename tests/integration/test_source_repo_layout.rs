@@ -146,6 +146,74 @@ fn systemd_payload_accepts_timer_target_and_path_extensions() {
     }
 }
 
+// ---- Codex P2 #1: reject unrecognized non-.d directories in payload trees ----
+//
+// A typo like `quadlet/foo.container.dropin/` would silently drop
+// drop-ins on the floor. Strict-layout contract demands fail-fast.
+#[test]
+fn unrecognized_non_dropin_directory_rejected() {
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc = services.join("alpha");
+    std::fs::create_dir_all(svc.join("quadlet")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/alpha.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    // Typo: `dropin` instead of `.d`. Should be rejected, not skipped.
+    std::fs::create_dir_all(svc.join("quadlet/alpha.container.dropin")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/alpha.container.dropin/10-resources.conf"),
+        "[Service]\nMemoryMax=256M\n",
+    )
+    .unwrap();
+    write_host_yaml(&hosts, "example-host", &["alpha"]);
+    let rev = git_init_commit(tmp.path());
+
+    let err =
+        load_with_host(tmp.path(), &rev, "example-host").expect_err("expected rejection");
+    assert!(
+        matches!(err, RepoError::LegacyArtifact(ref p) if p.ends_with("alpha.container.dropin")),
+        "expected LegacyArtifact pointing at the typo, got {err:?}"
+    );
+}
+
+// ---- Codex P2 #2: literal `etc/` subdir under config/ is legitimate ----
+//
+// FR-002 says `config/<rel>` is generic. A user wanting destination
+// `/etc/<config-root>/etc/foo/bar` puts the source at
+// `services/<svc>/config/etc/foo/bar`. The parser previously rejected
+// any `config/etc/` as legacy; the legacy mirror pattern is detected
+// elsewhere (top-level quadlets/, quadlet-overrides/, hosts/<h>/overrides/).
+#[test]
+fn literal_etc_subdir_under_config_is_legitimate() {
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc = services.join("alpha");
+    std::fs::create_dir_all(svc.join("quadlet")).unwrap();
+    std::fs::create_dir_all(svc.join("config/etc/dnsmasq.d")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/alpha.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    std::fs::write(
+        svc.join("config/etc/dnsmasq.d/10-upstream.conf"),
+        "server=1.1.1.1\n",
+    )
+    .unwrap();
+    write_host_yaml(&hosts, "example-host", &["alpha"]);
+    let rev = git_init_commit(tmp.path());
+
+    let state = load_with_host(tmp.path(), &rev, "example-host").expect("load");
+    assert!(
+        state
+            .managed_config_paths
+            .contains(&"/etc/alpha/etc/dnsmasq.d/10-upstream.conf".to_string()),
+        "expected /etc/alpha/etc/dnsmasq.d/10-upstream.conf in {:?}",
+        state.managed_config_paths
+    );
+}
+
 // ---- FR-009: reserved-name rejection ----
 
 #[test]

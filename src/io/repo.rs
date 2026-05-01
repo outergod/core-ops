@@ -853,12 +853,14 @@ fn read_config_files(
     if !config_dir.exists() {
         return Ok(files);
     }
-    // Reject the legacy `config/etc/...` mirror layout. The new contract
-    // is `config/<rel>` → `/etc/<config-root>/<rel>` with no `etc/` mirror.
-    let legacy_etc = config_dir.join("etc");
-    if legacy_etc.exists() {
-        return Err(RepoError::LegacyArtifact(legacy_etc));
-    }
+    // FR-002: `config/<rel>` is generic — a literal subdir named `etc`
+    // (e.g. `config/etc/foo` deploying to `/etc/<config-root>/etc/foo`)
+    // is legitimate. The legacy `config/etc/<config-root>/<rel>` mirror
+    // is detected at migration time by `scripts/migrate-legacy-source-
+    // repo.sh` (which flattens it) and at load time by other unambiguous
+    // markers (top-level `quadlets/`, `services/<svc>/quadlet-overrides/`,
+    // `hosts/<h>/overrides/`); the parser does NOT special-case `etc/`
+    // here.
     for entry in walk_config_dir(config_dir)? {
         let rel = entry
             .strip_prefix(config_dir)
@@ -1139,6 +1141,13 @@ fn read_payload_dropins(payload_dir: &Path) -> Result<Vec<DropInSource>, RepoErr
         }
         if let Some(target) = dropin_target_from_dir(&file_name) {
             dropins.extend(read_dropins(&path, &target)?);
+        } else {
+            // A non-`.d` directory in a payload-kind subtree is rejected
+            // rather than silently ignored: a typo like
+            // `quadlet/foo.container.dropin/` would otherwise drop the
+            // operator's drop-ins on the floor. Strict-layout contract
+            // demands fail-fast (Codex P2 on PR #28).
+            return Err(RepoError::LegacyArtifact(path));
         }
     }
     Ok(dropins)
