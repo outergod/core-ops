@@ -23,6 +23,7 @@ mod test_repo_load;
 mod test_repo_unavailable;
 mod test_retry;
 mod test_service_selection;
+mod test_skill_install;
 mod test_socket_dropins;
 mod test_source_repo_layout;
 mod test_systemd_units;
