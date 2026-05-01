@@ -154,6 +154,67 @@ fn migration_script_is_idempotent() {
     );
 }
 
+/// Codex P2 on PR #28: when two services share the same config-root
+/// AND host.yaml selects both, the host config override at
+/// `overrides/config/etc/<root>/...` cannot be unambiguously routed
+/// to one service. The migration script must fail loudly rather than
+/// silently picking the first match.
+#[test]
+fn migration_phase_2b_rejects_ambiguous_config_override() {
+    let tmp = TempDir::new().expect("tempdir");
+    let repo = tmp.path();
+
+    // Two services that both end up with config-root: traefik post-migration:
+    // - traefik (svc-id == config-root, no service.yaml needed)
+    // - traefik-dnschallenge (variant; the migration synthesizes service.yaml)
+    std::fs::create_dir_all(repo.join("services/traefik/quadlet")).unwrap();
+    std::fs::write(
+        repo.join("services/traefik/quadlet/traefik.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(repo.join("services/traefik-dnschallenge/quadlet")).unwrap();
+    std::fs::create_dir_all(repo.join("services/traefik-dnschallenge/config/etc/traefik")).unwrap();
+    std::fs::write(
+        repo.join("services/traefik-dnschallenge/quadlet/traefik-dnschallenge.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("services/traefik-dnschallenge/config/etc/traefik/cert.toml"),
+        "[certs]\n",
+    )
+    .unwrap();
+
+    // Host selects BOTH services. The host override is a config file
+    // under `overrides/config/etc/traefik/...`. Two candidates qualify;
+    // host.yaml narrowing leaves both. The script must fail.
+    std::fs::create_dir_all(repo.join("hosts/example-host/overrides/config/etc/traefik")).unwrap();
+    std::fs::write(
+        repo.join("hosts/example-host/host.yaml"),
+        "host: example-host\nservices:\n  - traefik\n  - traefik-dnschallenge\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("hosts/example-host/overrides/config/etc/traefik/traefik.toml"),
+        "[ambiguous]\n",
+    )
+    .unwrap();
+
+    let output = run_migration(repo);
+    assert!(
+        !output.status.success(),
+        "ambiguous config override must fail loudly; stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ambiguous") && stderr.contains("traefik"),
+        "diagnostic must explain the ambiguity: {stderr}"
+    );
+}
+
 #[test]
 fn migration_emits_service_yaml_for_variant_config_root() {
     let staged = stage_fixture();

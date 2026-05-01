@@ -16,6 +16,11 @@ pub fn systemd_unit_for_quadlet_file(unit_file: &str) -> String {
         "socket" => format!("{stem}.socket"),
         "mount" => format!("{stem}.mount"),
         "automount" => format!("{stem}.automount"),
+        // Native systemd unit kinds preserve their extension verbatim
+        // — `backup.timer` runs as `backup.timer`, NOT `backup.service`.
+        "timer" => format!("{stem}.timer"),
+        "target" => format!("{stem}.target"),
+        "path" => format!("{stem}.path"),
         "volume" => format!("{stem}-volume.service"),
         "network" => format!("{stem}-network.service"),
         "pod" => format!("{stem}-pod.service"),
@@ -84,4 +89,56 @@ pub fn apply_service_mount_dependencies(
 fn join_values(values: &[String]) -> String {
     let deduped: BTreeSet<&str> = values.iter().map(String::as_str).collect();
     deduped.into_iter().collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::systemd_unit_for_quadlet_file;
+
+    #[test]
+    fn timer_target_and_path_units_keep_their_native_extension() {
+        // Codex P1 on PR #28: native systemd unit kinds (.timer,
+        // .target, .path) MUST resolve to their own extension, not
+        // fall through to the catch-all `.service` mapping. A
+        // `backup.timer` workload runs as `backup.timer`; mapping it
+        // to `backup.service` would query/start the wrong unit.
+        assert_eq!(
+            systemd_unit_for_quadlet_file("backup.timer"),
+            "backup.timer"
+        );
+        assert_eq!(
+            systemd_unit_for_quadlet_file("readiness.target"),
+            "readiness.target"
+        );
+        assert_eq!(
+            systemd_unit_for_quadlet_file("inbox.path"),
+            "inbox.path"
+        );
+    }
+
+    #[test]
+    fn quadlet_kinds_resolve_to_their_runtime_units() {
+        // Sanity guards for the existing arms — if these regress, the
+        // controller queries the wrong runtime unit.
+        assert_eq!(
+            systemd_unit_for_quadlet_file("alpha.container"),
+            "alpha.service"
+        );
+        assert_eq!(
+            systemd_unit_for_quadlet_file("alpha.socket"),
+            "alpha.socket"
+        );
+        assert_eq!(
+            systemd_unit_for_quadlet_file("alpha.mount"),
+            "alpha.mount"
+        );
+        assert_eq!(
+            systemd_unit_for_quadlet_file("alpha.automount"),
+            "alpha.automount"
+        );
+        assert_eq!(
+            systemd_unit_for_quadlet_file("alpha.volume"),
+            "alpha-volume.service"
+        );
+    }
 }

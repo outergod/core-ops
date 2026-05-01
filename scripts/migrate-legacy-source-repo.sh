@@ -199,31 +199,65 @@ for host_dir in "$REPO/hosts"/*/; do
         rmdir -- "$overrides/quadlet" 2>/dev/null || true
     fi
 
-    # 2.b host config overrides
+    # 2.b host config overrides.
+    # Collect the set of services this host selects from host.yaml so
+    # ambiguous config-root matches can be filtered down. Multiple
+    # services CAN share a config-root (a base + a variant); the
+    # winning owner for THIS host is whichever match appears in
+    # host.yaml's services list. If still ambiguous after that filter,
+    # fail loudly rather than picking one implicitly.
+    host_yaml="$host_dir/host.yaml"
+    selected_services=()
+    if [[ -f "$host_yaml" ]]; then
+        while IFS= read -r line; do
+            selected_services+=("$line")
+        done < <(awk '/^services:/{flag=1; next} /^[a-zA-Z]/{flag=0} flag && /^  - /{sub(/^  - /, ""); print}' "$host_yaml")
+    fi
     if [[ -d "$overrides/config/etc" ]]; then
         for root_dir in "$overrides/config/etc"/*/; do
             [[ -d "$root_dir" ]] || continue
             config_root=$(basename "$root_dir")
-            # Find the owning service: the one whose service.yaml
-            # declares this config-root, or whose svc-id matches.
-            owner=""
+            # Collect every service whose svc-id or service.yaml's
+            # config-root matches.
+            matches=()
             for svc_dir in "$REPO/services"/*/; do
                 [[ -d "$svc_dir" ]] || continue
                 svc=$(basename "$svc_dir")
                 if [[ "$svc" == "$config_root" ]] && [[ ! -f "$svc_dir/service.yaml" ]]; then
-                    owner=$svc
-                    break
+                    matches+=("$svc")
+                    continue
                 fi
                 if [[ -f "$svc_dir/service.yaml" ]] && grep -q "^config-root: ${config_root}\b" "$svc_dir/service.yaml"; then
-                    owner=$svc
-                    break
+                    matches+=("$svc")
                 fi
             done
-            if [[ -z "$owner" ]]; then
+            if [[ ${#matches[@]} -eq 0 ]]; then
                 printf 'error: host config override under %s has no matching service (config-root=%s)\n' \
                     "$root_dir" "$config_root" >&2
                 exit 65
             fi
+            # Narrow ambiguous matches by host.yaml selection.
+            if [[ ${#matches[@]} -gt 1 ]] && [[ ${#selected_services[@]} -gt 0 ]]; then
+                narrowed=()
+                for candidate in "${matches[@]}"; do
+                    for selected in "${selected_services[@]}"; do
+                        if [[ "$candidate" == "$selected" ]]; then
+                            narrowed+=("$candidate")
+                            break
+                        fi
+                    done
+                done
+                if [[ ${#narrowed[@]} -gt 0 ]]; then
+                    matches=("${narrowed[@]}")
+                fi
+            fi
+            if [[ ${#matches[@]} -ne 1 ]]; then
+                printf 'error: host config override under %s is ambiguous (config-root=%s matched: %s)\n' \
+                    "$root_dir" "$config_root" "${matches[*]}" >&2
+                printf 'rename one of the colliding services or split the override by service before re-running migration\n' >&2
+                exit 65
+            fi
+            owner=${matches[0]}
             while IFS= read -r -d '' file; do
                 rel=${file#"$root_dir"}
                 target="$host_dir/$owner/config/$rel"

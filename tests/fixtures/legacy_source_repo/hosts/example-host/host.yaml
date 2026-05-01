@@ -1,4 +1,3 @@
 host: example-host
 services:
   - traefik
-  - traefik-dnschallenge
