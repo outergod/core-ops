@@ -119,8 +119,16 @@ pub fn write_host_yaml(hosts_dir: &Path, host: &str, services: &[&str]) {
 }
 
 pub fn load_with_host(repo: &Path, rev: &str, host: &str) -> Result<DesiredState, RepoError> {
+    load_source_with_host(repo.to_str().expect("utf-8 path"), rev, host)
+}
+
+pub fn load_source_with_host(
+    repo_source: &str,
+    rev: &str,
+    host: &str,
+) -> Result<DesiredState, RepoError> {
     let _lock = path_lock().lock().expect("path lock");
     let _guard = HostGuard::capture();
     std::env::set_var(HOST_OVERRIDE_ENV, host);
-    load_desired_state(repo.to_str().expect("utf-8 path"), rev)
+    load_desired_state(repo_source, rev)
 }
