@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::integration::env_lock::path_lock;
+use crate::integration::source_repo_support::{init_alpha_repo, HostGuard};
+use core_ops::io::repo::HOST_OVERRIDE_ENV;
 use core_ops::cli::apply::{apply_with_report, apply_with_report_streaming};
 use core_ops::cli::report::{
     build_apply_output, build_result_output, format_apply_output_report,
@@ -46,50 +48,8 @@ fn strip_ansi(value: &str) -> String {
     output
 }
 
-fn init_git_repo(repo: &PathBuf) -> String {
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(repo)
-        .output()
-        .expect("git init");
-
-    let quadlets = repo.join("quadlets");
-    std::fs::create_dir_all(&quadlets).expect("create quadlets");
-    std::fs::write(
-        quadlets.join("alpha.container"),
-        "[Container]\nImage=alpine",
-    )
-    .expect("write quadlet");
-
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add");
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("commit")
-        .arg("-m")
-        .arg("fixture")
-        .env("GIT_AUTHOR_NAME", "fixture")
-        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
-        .env("GIT_COMMITTER_NAME", "fixture")
-        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
-        .output()
-        .expect("git commit");
-
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse");
-
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+fn init_git_repo(repo: &Path) -> String {
+    init_alpha_repo(repo, "example-host")
 }
 
 fn write_systemctl_stub(dir: &Path, log_path: &Path) -> PathBuf {
@@ -123,7 +83,9 @@ impl Drop for PathGuard {
 
 #[test]
 fn apply_report_uses_phase_aware_human_and_machine_output() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_apply_report");
     let rev = init_git_repo(&repo);
 
@@ -164,7 +126,9 @@ fn apply_report_uses_phase_aware_human_and_machine_output() {
 
 #[test]
 fn apply_report_only_narrates_phases_in_verbose_mode() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_apply_narration");
     let rev = init_git_repo(&repo);
 
@@ -214,7 +178,9 @@ fn apply_report_only_narrates_phases_in_verbose_mode() {
 
 #[test]
 fn apply_report_distinguishes_first_run_and_recovery_headers() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_apply_first_run");
     let rev = init_git_repo(&repo);
 
@@ -330,7 +296,9 @@ fn apply_report_surfaces_verification_failures_for_unchanged_objects() {
 
 #[test]
 fn apply_streaming_report_emits_progress_then_terminal_lines() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_apply_streaming");
     let rev = init_git_repo(&repo);
 
@@ -372,7 +340,9 @@ fn apply_streaming_report_emits_progress_then_terminal_lines() {
 
 #[test]
 fn apply_report_fails_when_persisted_state_path_is_unreadable() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_apply_unreadable_state");
     let rev = init_git_repo(&repo);
 

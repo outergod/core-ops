@@ -2,6 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::integration::env_lock::path_lock;
+use crate::integration::source_repo_support::{git_init_commit, HostGuard};
+use core_ops::io::repo::HOST_OVERRIDE_ENV;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::{reconcile_apply, ReconcileDependencies};
 use core_ops::io::apply::apply_plan;
@@ -19,52 +21,35 @@ fn temp_dir(prefix: &str) -> PathBuf {
     path
 }
 
-fn init_git_repo(repo: &PathBuf) -> String {
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(repo)
-        .output()
-        .expect("git init");
-
-    let quadlets = repo.join("quadlets");
-    fs::create_dir_all(&quadlets).expect("create quadlets");
+fn init_git_repo(repo: &Path) -> String {
+    fs::create_dir_all(repo).expect("create repo");
+    let svc_quadlet = repo.join("services/triad/quadlet");
+    let svc_systemd = repo.join("services/triad/systemd");
+    let hosts = repo.join("hosts/example-host");
+    fs::create_dir_all(&svc_quadlet).expect("quadlet dir");
+    fs::create_dir_all(&svc_systemd).expect("systemd dir");
+    fs::create_dir_all(&hosts).expect("hosts dir");
     fs::write(
-        quadlets.join("alpha.container"),
-        "[Container]\nImage=alpine",
+        svc_quadlet.join("alpha.container"),
+        "[Container]\nImage=alpine\n",
     )
     .expect("write container");
-    fs::write(quadlets.join("beta.socket"), "[Socket]\nListenStream=8080").expect("write socket");
-    fs::write(quadlets.join("gamma.volume"), "[Volume]\nDriver=local").expect("write volume");
-
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add");
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("commit")
-        .arg("-m")
-        .arg("fixture")
-        .env("GIT_AUTHOR_NAME", "fixture")
-        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
-        .env("GIT_COMMITTER_NAME", "fixture")
-        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
-        .output()
-        .expect("git commit");
-
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse");
-
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    fs::write(
+        svc_systemd.join("beta.socket"),
+        "[Socket]\nListenStream=8080\n",
+    )
+    .expect("write socket");
+    fs::write(
+        svc_quadlet.join("gamma.volume"),
+        "[Volume]\nDriver=local\n",
+    )
+    .expect("write volume");
+    fs::write(
+        hosts.join("host.yaml"),
+        "host: example-host\nservices:\n  - triad\n",
+    )
+    .expect("write host.yaml");
+    git_init_commit(repo)
 }
 
 fn write_systemctl_stub(dir: &Path) {
@@ -103,7 +88,9 @@ esac
 
 #[test]
 fn verification_rules_accept_volume_inactive() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_verify_rules");
     let rev = init_git_repo(&repo);
 

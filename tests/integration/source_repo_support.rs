@@ -118,6 +118,32 @@ pub fn write_host_yaml(hosts_dir: &Path, host: &str, services: &[&str]) {
     std::fs::write(dir.join("host.yaml"), body).expect("host.yaml");
 }
 
+/// Builds a minimal services/alpha/quadlet/alpha.container fixture
+/// with `[Container]\nImage=alpine\n` plus hosts/<host>/host.yaml
+/// selecting `alpha`, then commits the tree under `repo` (creating
+/// `repo` first if it does not exist) and returns the resulting
+/// commit SHA. This is the canonical alpha-fixture every "is the
+/// loader/planner/applier basically working?" integration test
+/// builds; per-test variations should inline their own setup.
+pub fn init_alpha_repo(repo: &Path, host: &str) -> String {
+    std::fs::create_dir_all(repo).expect("create repo dir");
+    let services = repo.join("services/alpha/quadlet");
+    let hosts = repo.join(format!("hosts/{host}"));
+    std::fs::create_dir_all(&services).expect("services");
+    std::fs::create_dir_all(&hosts).expect("hosts");
+    std::fs::write(
+        services.join("alpha.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .expect("write quadlet");
+    std::fs::write(
+        hosts.join("host.yaml"),
+        format!("host: {host}\nservices:\n  - alpha\n"),
+    )
+    .expect("write host.yaml");
+    git_init_commit(repo)
+}
+
 pub fn load_with_host(repo: &Path, rev: &str, host: &str) -> Result<DesiredState, RepoError> {
     load_source_with_host(repo.to_str().expect("utf-8 path"), rev, host)
 }
