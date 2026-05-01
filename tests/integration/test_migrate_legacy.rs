@@ -256,6 +256,143 @@ fn migration_routes_systemd_kind_dropins_to_systemd_subtree() {
         .expect("post-migration tree must load with kind-aware dropin routing");
 }
 
+/// Codex P1 on PR #28 (923e728 follow-up): legacy host trees can store
+/// drop-ins directly under `hosts/<h>/overrides/<unit>.<ext>.d/`
+/// (spec-003 original shape) — no `quadlet/` wrapper. Earlier the
+/// script only handled the `overrides/quadlet/...` shape; bare-shape
+/// repos got skipped, leaving `overrides/` behind, and the new loader
+/// hard-failed on the leftover legacy artifact.
+#[test]
+fn migration_handles_bare_overrides_dropin_shape() {
+    let tmp = TempDir::new().expect("tempdir");
+    let repo = tmp.path();
+
+    std::fs::create_dir_all(repo.join("services/web/quadlet")).unwrap();
+    std::fs::write(
+        repo.join("services/web/quadlet/web.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("services/web/quadlet/web.socket"),
+        "[Socket]\nListenStream=80\n",
+    )
+    .unwrap();
+    // Spec-003 host override layout: drop-ins directly under overrides/
+    std::fs::create_dir_all(
+        repo.join("hosts/host-a/overrides/web.container.d"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(
+        repo.join("hosts/host-a/overrides/web.socket.d"),
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("hosts/host-a/overrides/web.container.d/20-host.conf"),
+        "[Service]\nEnvironment=HOST=a\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("hosts/host-a/overrides/web.socket.d/20-host.conf"),
+        "[Socket]\nListenStream=8080\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("hosts/host-a/host.yaml"),
+        "host: host-a\nservices:\n  - web\n",
+    )
+    .unwrap();
+
+    let output = run_migration(repo);
+    assert!(
+        output.status.success(),
+        "migration must handle bare overrides/<unit>.d shape: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Container drop-in routes to <svc>/quadlet/, socket to <svc>/systemd/.
+    assert!(
+        repo.join("hosts/host-a/web/quadlet/web.container.d/20-host.conf").exists()
+    );
+    assert!(
+        repo.join("hosts/host-a/web/systemd/web.socket.d/20-host.conf").exists()
+    );
+    // overrides/ scaffold removed (Codex's "leftover legacy artifact" gone).
+    assert!(
+        !repo.join("hosts/host-a/overrides").exists(),
+        "overrides/ directory must be cleaned up after migration"
+    );
+
+    // The migrated tree must load through the new parser (proves the
+    // leftover-overrides-dir issue is fixed).
+    let rev = git_init_commit(repo);
+    let _ = load_with_host(repo, &rev, "host-a")
+        .expect("post-migration tree must load with bare-overrides shape");
+}
+
+/// Codex P2 on PR #28: the legacy ownership resolver greps
+/// `^config-root: ${config_root}\b` — a `.` in `config_root` (valid
+/// per the identifier regex) would act as a regex wildcard and match
+/// unintended `service.yaml` values, e.g. `config-root: a.c` matches
+/// `config-root: aXc`. Fix: parse service.yaml with awk and compare
+/// the value as a literal string.
+#[test]
+fn migration_config_root_match_is_literal_not_regex() {
+    let tmp = TempDir::new().expect("tempdir");
+    let repo = tmp.path();
+
+    // Service whose config-root contains a literal char that would be a
+    // regex metacharacter — `Y` here, but the bug surfaces with any
+    // single char including `.`. We use `aYc` and `a.c` as the two
+    // values: under the buggy grep, the host override under
+    // `overrides/config/etc/a.c/` matched `aYc` (because `.` is a
+    // wildcard). Post-fix: awk fixed-string compare correctly only
+    // matches a literal `a.c`.
+    std::fs::create_dir_all(repo.join("services/quux/quadlet")).unwrap();
+    std::fs::write(
+        repo.join("services/quux/quadlet/quux.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("services/quux/service.yaml"),
+        "config-root: aYc\n",
+    )
+    .unwrap();
+    // Host override under `a.c` (literal dot). Should NOT match `aYc`.
+    std::fs::create_dir_all(
+        repo.join("hosts/host-a/overrides/config/etc/a.c"),
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("hosts/host-a/overrides/config/etc/a.c/dot.toml"),
+        "[dot]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("hosts/host-a/host.yaml"),
+        "host: host-a\nservices:\n  - quux\n",
+    )
+    .unwrap();
+
+    let output = run_migration(repo);
+    // Expected outcome: script fails because no service has config-root=a.c.
+    // The pre-fix grep would have matched aYc and silently routed the
+    // override to quux (wrong service).
+    assert!(
+        !output.status.success(),
+        "ambiguous-or-no-match must fail loudly with literal compare; \
+         stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("no matching service"),
+        "diagnostic must explain no service matched: {stderr}"
+    );
+}
+
 /// Codex P2 on PR #28: when two services share the same config-root
 /// AND host.yaml selects both, the host config override at
 /// `overrides/config/etc/<root>/...` cannot be unambiguously routed

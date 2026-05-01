@@ -53,6 +53,66 @@ is_systemd_ext() {
     return 1
 }
 
+# Extract the `config-root` value from a service.yaml as a literal
+# string (no regex interpretation). Returns empty if the file is
+# missing or the key is absent. Replaces grep-based matching that
+# would interpolate user data into a regex (a `.` in an identifier
+# would otherwise act as a wildcard match).
+service_config_root() {
+    local manifest=$1
+    [[ -f "$manifest" ]] || return 0
+    awk '
+        /^config-root:[[:space:]]*/ {
+            sub(/^config-root:[[:space:]]*/, "")
+            sub(/[[:space:]]+$/, "")
+            print
+            exit
+        }
+    ' "$manifest"
+}
+
+# migrate_host_dropin <dropin_dir> <host_dir>
+# Moves a single host-level <unit>.<ext>.d/ directory into
+# hosts/<h>/<svc>/{quadlet,systemd}/<dropin_name>/, resolving the
+# owning service via unit_owner and the payload kind via the unit's
+# extension. Used by both legacy host-overlay shapes
+# (overrides/<unit>.<ext>.d/ and overrides/quadlet/<unit>.<ext>.d/).
+migrate_host_dropin() {
+    local dropin_dir=$1
+    local target_host_dir=$2
+    local dropin_name
+    dropin_name=$(basename "$dropin_dir")
+    local unit="${dropin_name%.d}"
+    local unit_ext="${unit##*.}"
+    local owner
+    owner=$(unit_owner "$unit") || {
+        local rc=$?
+        if [[ $rc -eq 1 ]]; then
+            printf 'error: host drop-in %s references unit %s which is not owned by any service\n' \
+                "$dropin_dir" "$unit" >&2
+        fi
+        exit 65
+    }
+    local kind_dir
+    if is_systemd_ext "$unit_ext"; then
+        kind_dir="systemd"
+    elif is_quadlet_ext "$unit_ext"; then
+        kind_dir="quadlet"
+    else
+        printf 'error: host drop-in %s targets unit with unrecognized extension .%s\n' \
+            "$dropin_dir" "$unit_ext" >&2
+        exit 65
+    fi
+    local target_dir="$target_host_dir/$owner/$kind_dir/$dropin_name"
+    mkdir -p "$target_dir"
+    local conf
+    for conf in "$dropin_dir"/*; do
+        [[ -f "$conf" ]] || continue
+        mv -- "$conf" "$target_dir/$(basename "$conf")"
+    done
+    rmdir -- "$dropin_dir"
+}
+
 # unit_owner <unit-with-extension>
 # Resolves which service id owns <unit>.<ext> by scanning every
 # services/<svc>/quadlet/ and services/<svc>/systemd/ directory.
@@ -164,10 +224,12 @@ for svc_dir in "$REPO/services"/*/; do
             if [[ "$config_root" != "$svc" ]]; then
                 manifest="$svc_dir/service.yaml"
                 if [[ -f "$manifest" ]]; then
-                    # Already migrated or hand-authored; sanity-check the value.
-                    if ! grep -q "^config-root: ${config_root}\b" "$manifest"; then
-                        printf 'error: %s exists but does not declare config-root: %s\n' \
-                            "$manifest" "$config_root" >&2
+                    # Already migrated or hand-authored; sanity-check the value
+                    # via fixed-string comparison (regex would mistreat dots).
+                    declared=$(service_config_root "$manifest")
+                    if [[ "$declared" != "$config_root" ]]; then
+                        printf 'error: %s exists but declares config-root=%q (expected %q)\n' \
+                            "$manifest" "$declared" "$config_root" >&2
                         exit 65
                     fi
                 else
@@ -191,44 +253,42 @@ for host_dir in "$REPO/hosts"/*/; do
     overrides="$host_dir/overrides"
     [[ -d "$overrides" ]] || continue
 
-    # 2.a host quadlet drop-ins
+    # 2.a host drop-ins. Two legacy shapes exist in the wild:
+    #   (i)   hosts/<h>/overrides/<unit>.<ext>.d/         (spec-003 original)
+    #   (ii)  hosts/<h>/overrides/quadlet/<unit>.<ext>.d/ (intermediate)
+    # Both route via migrate_host_dropin to
+    # hosts/<h>/<svc>/{quadlet,systemd}/<unit>.<ext>.d/ — drop-ins
+    # follow their base unit's payload kind.
+
+    # (i) bare overrides/<unit>.<ext>.d
+    for entry in "$overrides"/*; do
+        [[ -d "$entry" ]] || continue
+        name=$(basename "$entry")
+        case "$name" in
+            quadlet|systemd|config) continue ;;  # handled below or by 2.b
+        esac
+        if [[ "$name" == *.d ]]; then
+            migrate_host_dropin "$entry" "$host_dir"
+        fi
+    done
+
+    # (ii) overrides/quadlet/<unit>.<ext>.d
     if [[ -d "$overrides/quadlet" ]]; then
         for dropin_dir in "$overrides/quadlet"/*.d; do
             [[ -d "$dropin_dir" ]] || continue
-            dropin_name=$(basename "$dropin_dir")
-            unit="${dropin_name%.d}"
-            unit_ext="${unit##*.}"
-            owner=$(unit_owner "$unit") || {
-                rc=$?
-                if [[ $rc -eq 1 ]]; then
-                    printf 'error: host drop-in %s references unit %s which is not owned by any service\n' \
-                        "$dropin_dir" "$unit" >&2
-                fi
-                exit 65
-            }
-            # Same routing rule as Phase 1.b: drop-ins follow their
-            # base unit's payload kind. A legacy host
-            # overrides/quadlet/traefik.socket.d/ ends up at
-            # hosts/<h>/<svc>/systemd/traefik.socket.d/, not under
-            # quadlet/.
-            if is_systemd_ext "$unit_ext"; then
-                kind_dir="systemd"
-            elif is_quadlet_ext "$unit_ext"; then
-                kind_dir="quadlet"
-            else
-                printf 'error: host drop-in %s targets unit with unrecognized extension .%s\n' \
-                    "$dropin_dir" "$unit_ext" >&2
-                exit 65
-            fi
-            target_dir="$host_dir/$owner/$kind_dir/$dropin_name"
-            mkdir -p "$target_dir"
-            for conf in "$dropin_dir"/*; do
-                [[ -f "$conf" ]] || continue
-                mv -- "$conf" "$target_dir/$(basename "$conf")"
-            done
-            rmdir -- "$dropin_dir"
+            migrate_host_dropin "$dropin_dir" "$host_dir"
         done
         rmdir -- "$overrides/quadlet" 2>/dev/null || true
+    fi
+    # Some legacy trees split host overrides between quadlet/ and
+    # systemd/ subdirs. Treat both the same way (the routing decision
+    # is per-unit, not per-source-subdir).
+    if [[ -d "$overrides/systemd" ]]; then
+        for dropin_dir in "$overrides/systemd"/*.d; do
+            [[ -d "$dropin_dir" ]] || continue
+            migrate_host_dropin "$dropin_dir" "$host_dir"
+        done
+        rmdir -- "$overrides/systemd" 2>/dev/null || true
     fi
 
     # 2.b host config overrides.
@@ -259,8 +319,11 @@ for host_dir in "$REPO/hosts"/*/; do
                     matches+=("$svc")
                     continue
                 fi
-                if [[ -f "$svc_dir/service.yaml" ]] && grep -q "^config-root: ${config_root}\b" "$svc_dir/service.yaml"; then
-                    matches+=("$svc")
+                if [[ -f "$svc_dir/service.yaml" ]]; then
+                    declared=$(service_config_root "$svc_dir/service.yaml")
+                    if [[ "$declared" == "$config_root" ]]; then
+                        matches+=("$svc")
+                    fi
                 fi
             done
             if [[ ${#matches[@]} -eq 0 ]]; then
