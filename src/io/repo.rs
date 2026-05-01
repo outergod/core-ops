@@ -217,6 +217,7 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     }
     overlays.config_overrides =
         filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
+    validate_config_destination_conflicts(&host_decl.services, &catalog, &overlays)?;
     let all_artifacts = selected_service_artifacts(&host_decl.services, &catalog);
     validate_dropin_targets(&host_decl.services, &catalog, &overlays, &all_artifacts)?;
 
@@ -258,6 +259,7 @@ fn load_layered_desired_state(
     }
     overlays.config_overrides =
         filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
+    validate_config_destination_conflicts(&host_decl.services, &catalog, &overlays)?;
     let all_artifacts = selected_service_artifacts(&host_decl.services, &catalog);
     validate_dropin_targets(&host_decl.services, &catalog, &overlays, &all_artifacts)?;
     let mut config_paths = collect_config_paths(&host_decl.services, &catalog, &overlays);
@@ -976,6 +978,51 @@ fn validate_config_overrides(
             .collect::<Vec<_>>()
             .join(", ")
     ))
+}
+
+/// FR-011: reject any source repository in which two distinct files
+/// compute to the same final destination path. Scans `config/` files
+/// across all selected services for collisions, then scans the host
+/// overlay set for collisions among override entries. Host overrides
+/// intentionally win over base files at the same target — that's
+/// override semantics, not a conflict — so we do NOT cross-check base
+/// vs. overlay. Quadlet / native unit name collisions across services
+/// are caught downstream by `validate_workloads`'s `DuplicateUnitName`.
+fn validate_config_destination_conflicts(
+    selected_services: &[String],
+    catalog: &ServiceCatalog,
+    overlays: &HostOverlaySet,
+) -> Result<(), RepoError> {
+    let mut by_target: std::collections::BTreeMap<String, PathBuf> =
+        std::collections::BTreeMap::new();
+    for svc_id in selected_services {
+        let Some(svc) = catalog.services.get(svc_id) else {
+            continue;
+        };
+        for cf in &svc.config_files {
+            let source = PathBuf::from(&cf.source_path);
+            if let Some(existing) = by_target.insert(cf.target_path.clone(), source.clone()) {
+                return Err(RepoError::DestinationConflict {
+                    target: PathBuf::from(&cf.target_path),
+                    a: existing,
+                    b: source,
+                });
+            }
+        }
+    }
+    let mut overlay_by_target: std::collections::BTreeMap<String, PathBuf> =
+        std::collections::BTreeMap::new();
+    for cf in &overlays.config_overrides {
+        let source = PathBuf::from(&cf.source_path);
+        if let Some(existing) = overlay_by_target.insert(cf.target_path.clone(), source.clone()) {
+            return Err(RepoError::DestinationConflict {
+                target: PathBuf::from(&cf.target_path),
+                a: existing,
+                b: source,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn filter_config_overrides(
