@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::integration::env_lock::path_lock;
+use crate::integration::source_repo_support::HostGuard;
 use core_ops::cli::report::{build_explain_output, format_explain_output_report};
+use core_ops::io::repo::HOST_OVERRIDE_ENV;
 use core_ops::io::state::{DETERMINISTIC_STATE_FILE_NAME, STATE_FILE_ENV};
 
 fn temp_dir(prefix: &str) -> PathBuf {
@@ -17,7 +19,13 @@ fn temp_dir(prefix: &str) -> PathBuf {
     path
 }
 
-fn init_git_repo(repo: &PathBuf) -> String {
+/// Initializes a git repo with `-b main`, lays down hosts/example-host/
+/// host.yaml selecting alpha, and creates the first commit holding
+/// services/alpha/quadlet/alpha.container with the default content.
+/// Returns the resulting commit SHA. Subsequent revs are produced by
+/// re-calling commit_quadlet with new content.
+fn init_git_repo(repo: &Path) -> String {
+    fs::create_dir_all(repo).expect("create repo");
     std::process::Command::new("git")
         .arg("init")
         .arg("-b")
@@ -25,13 +33,20 @@ fn init_git_repo(repo: &PathBuf) -> String {
         .arg(repo)
         .output()
         .expect("git init");
+    let hosts = repo.join("hosts/example-host");
+    fs::create_dir_all(&hosts).expect("hosts");
+    fs::write(
+        hosts.join("host.yaml"),
+        "host: example-host\nservices:\n  - alpha\n",
+    )
+    .expect("write host.yaml");
     commit_quadlet(repo, "[Container]\nImage=alpine:3.19\n")
 }
 
-fn commit_quadlet(repo: &PathBuf, contents: &str) -> String {
-    let quadlets = repo.join("quadlets");
-    fs::create_dir_all(&quadlets).expect("create quadlets");
-    fs::write(quadlets.join("alpha.container"), contents).expect("write quadlet");
+fn commit_quadlet(repo: &Path, contents: &str) -> String {
+    let svc = repo.join("services/alpha/quadlet");
+    fs::create_dir_all(&svc).expect("services");
+    fs::write(svc.join("alpha.container"), contents).expect("write quadlet");
 
     std::process::Command::new("git")
         .arg("-C")
@@ -99,7 +114,9 @@ esac
 
 #[test]
 fn failed_reconciliation_preserves_last_applied_revision_and_desired_state_fields() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_provenance");
     let first_revision = init_git_repo(&repo);
 
@@ -179,7 +196,9 @@ fn failed_reconciliation_preserves_last_applied_revision_and_desired_state_field
 
 #[test]
 fn desired_state_provenance_remains_host_scoped() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_host_scope");
     let revision = init_git_repo(&repo);
 
@@ -216,7 +235,16 @@ fn desired_state_provenance_remains_host_scoped() {
     let desired_state = snapshot["desired_state"]
         .as_object()
         .expect("desired_state object");
-    assert_eq!(desired_state.len(), 4);
+    // Spec 016 added an optional `layout-version` field to
+    // DesiredStateProvenance; build_state populates it with Some("1"),
+    // so the host-scoped object now carries 5 keys instead of 4.
+    assert_eq!(desired_state.len(), 5);
+    assert_eq!(
+        desired_state
+            .get("layout-version")
+            .and_then(Value::as_str),
+        Some("1")
+    );
     assert_eq!(
         desired_state
             .get("last_observed_revision")
@@ -229,7 +257,9 @@ fn desired_state_provenance_remains_host_scoped() {
 
 #[test]
 fn deterministic_apply_persists_convergence_state_next_to_status_snapshot() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_deterministic_state");
     let revision = init_git_repo(&repo);
 
@@ -303,7 +333,9 @@ fn deterministic_apply_persists_convergence_state_next_to_status_snapshot() {
 
 #[test]
 fn apply_report_uses_retained_baseline_for_unchanged_reruns() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_apply_baseline");
     let revision = init_git_repo(&repo);
 
