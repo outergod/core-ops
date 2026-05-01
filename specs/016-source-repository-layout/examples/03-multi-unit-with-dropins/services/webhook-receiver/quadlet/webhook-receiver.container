@@ -1,0 +1,15 @@
+[Unit]
+Description=Webhook receiver — multi-unit example service
+After=network-online.target webhook-receiver.socket
+Requires=webhook-receiver.socket
+
+[Container]
+Image=ghcr.io/example/webhook-receiver:latest
+PublishPort=8080:8080
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target
