@@ -1,0 +1,5 @@
+# Deployed to /etc/traefik/traefik.yaml on the host.
+# The destination derives from service.yaml's config-root, NOT the
+# service identifier (`traefik-dnschallenge`).
+log:
+  level: INFO
