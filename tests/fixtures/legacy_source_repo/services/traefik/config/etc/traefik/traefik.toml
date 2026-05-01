@@ -1,0 +1,3 @@
+# /etc/traefik/traefik.toml — base
+[entryPoints.web]
+address = ":80"

@@ -1,0 +1,2 @@
+[certificates]
+key-file = "/var/lib/traefik/cert.key"

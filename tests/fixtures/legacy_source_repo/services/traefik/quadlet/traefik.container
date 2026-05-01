@@ -1,0 +1,10 @@
+[Unit]
+Description=traefik reverse proxy
+
+[Container]
+Image=docker.io/library/traefik:v3.0
+PublishPort=80:80
+PublishPort=443:443
+
+[Install]
+WantedBy=default.target

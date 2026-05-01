@@ -1,0 +1,5 @@
+/etc/containers/systemd/traefik-dnschallenge.container
+/etc/containers/systemd/traefik.container
+/etc/systemd/system/traefik.socket
+/etc/traefik/cert.toml
+/etc/traefik/traefik.toml

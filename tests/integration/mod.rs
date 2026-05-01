@@ -7,6 +7,7 @@ mod test_apply_report;
 mod test_config_cleanup;
 mod test_host_overrides;
 mod test_idempotence;
+mod test_migrate_legacy;
 mod test_journald_audit;
 mod test_journald_unavailable;
 mod test_no_enable_disable;
