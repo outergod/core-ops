@@ -36,6 +36,7 @@ fn detached_state_fixture(revision: &str) -> PersistedProvenanceState {
             requested_ref: "main".to_string(),
             last_observed_revision: None,
             last_observed_at: None,
+            layout_version: None,
         },
         reconciliation: never_run_provenance(),
         detached: false,

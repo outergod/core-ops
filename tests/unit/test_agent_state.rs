@@ -58,6 +58,7 @@ fn agent_with_detached_state_returns_detached_exit_reason() {
             requested_ref: "main".to_string(),
             last_observed_revision: None,
             last_observed_at: None,
+            layout_version: None,
         },
         reconciliation: never_run_provenance(),
         detached: true,

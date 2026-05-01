@@ -1445,6 +1445,7 @@ fn plan_in_detached_state_prepends_detached_header() {
             requested_ref: "main".to_string(),
             last_observed_revision: None,
             last_observed_at: None,
+            layout_version: None,
         },
         reconciliation,
         detached: true,
