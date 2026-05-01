@@ -262,13 +262,30 @@ for host_dir in "$REPO/hosts"/*/; do
 
     # (i) bare overrides/<unit>.<ext>.d
     for entry in "$overrides"/*; do
-        [[ -d "$entry" ]] || continue
         name=$(basename "$entry")
         case "$name" in
             quadlet|systemd|config) continue ;;  # handled below or by 2.b
         esac
+        if [[ ! -d "$entry" ]]; then
+            # A file directly under overrides/ (e.g. README.md) isn't
+            # a recognized legacy artifact at this scope. Fail loudly
+            # rather than leave it behind for the loader to reject.
+            printf 'error: unrecognized host override entry %s (expected <unit>.<ext>.d/ directories under overrides/)\n' \
+                "$entry" >&2
+            exit 65
+        fi
         if [[ "$name" == *.d ]]; then
             migrate_host_dropin "$entry" "$host_dir"
+        else
+            # A directory whose name doesn't end in `.d` is a typo
+            # (`web.container.dropin/`, `web.container.d.bak/`, etc.).
+            # Codex P2 on PR #28: silently skipping leaves the legacy
+            # `overrides/` dir behind, the loader hard-fails on it, and
+            # the operator sees "migration succeeded" plus an unrelated
+            # load error. Fail loudly here.
+            printf 'error: unrecognized host override directory %s (expected <unit>.<ext>.d/)\n' \
+                "$entry" >&2
+            exit 65
         fi
     done
 
@@ -364,8 +381,18 @@ for host_dir in "$REPO/hosts"/*/; do
         find "$overrides/config" -type d -empty -delete 2>/dev/null || true
     fi
 
-    # Remove the empty overrides/ scaffold (only if everything was migrated).
-    rmdir -- "$overrides" 2>/dev/null || true
+    # Remove the empty overrides/ scaffold. Failing here means some
+    # legacy artifact wasn't migrated and the loader will reject the
+    # tree — surface that as a script failure rather than hiding it
+    # behind a successful exit.
+    if [[ -d "$overrides" ]]; then
+        if ! rmdir -- "$overrides" 2>/dev/null; then
+            printf 'error: %s is non-empty after migration; remaining content:\n' \
+                "$overrides" >&2
+            find "$overrides" -mindepth 1 -maxdepth 2 >&2
+            exit 65
+        fi
+    fi
 done
 
 exit 0

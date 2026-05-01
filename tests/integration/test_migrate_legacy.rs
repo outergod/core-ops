@@ -393,6 +393,56 @@ fn migration_config_root_match_is_literal_not_regex() {
     );
 }
 
+/// Codex P2 on PR #28 (e0795c8 follow-up): the bare-shape iteration
+/// of Phase 2.a previously skipped any directory not ending in `.d`,
+/// silently. A typo like `overrides/web.container.dropin/` got
+/// passed over, the script reported success, and the leftover
+/// `overrides/` directory tripped the loader's legacy-artifact
+/// rejection — operator sees "migration succeeded" plus an unrelated
+/// load error.
+#[test]
+fn migration_rejects_typoed_host_override_directory() {
+    let tmp = TempDir::new().expect("tempdir");
+    let repo = tmp.path();
+
+    std::fs::create_dir_all(repo.join("services/web/quadlet")).unwrap();
+    std::fs::write(
+        repo.join("services/web/quadlet/web.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(repo.join("hosts/host-a/overrides")).unwrap();
+    std::fs::write(
+        repo.join("hosts/host-a/host.yaml"),
+        "host: host-a\nservices:\n  - web\n",
+    )
+    .unwrap();
+    // Typo: `.dropin` instead of `.d`.
+    std::fs::create_dir_all(
+        repo.join("hosts/host-a/overrides/web.container.dropin"),
+    )
+    .unwrap();
+    std::fs::write(
+        repo.join("hosts/host-a/overrides/web.container.dropin/20-host.conf"),
+        "[Service]\nMemoryMax=128M\n",
+    )
+    .unwrap();
+
+    let output = run_migration(repo);
+    assert!(
+        !output.status.success(),
+        "typoed override directory must fail loudly; stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("web.container.dropin")
+            && stderr.contains("expected <unit>.<ext>.d"),
+        "diagnostic must name the typo and the expected pattern: {stderr}"
+    );
+}
+
 /// Codex P2 on PR #28: when two services share the same config-root
 /// AND host.yaml selects both, the host config override at
 /// `overrides/config/etc/<root>/...` cannot be unambiguously routed
