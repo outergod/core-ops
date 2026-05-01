@@ -629,7 +629,12 @@ fn walk_host_service_overlay(
             return Err(RepoError::HostOverlayBaseUnit(path));
         }
         match file_name.as_str() {
-            "quadlet" | "systemd" => {
+            kind_name @ ("quadlet" | "systemd") => {
+                let kind = if kind_name == "quadlet" {
+                    PayloadKind::Quadlet
+                } else {
+                    PayloadKind::Systemd
+                };
                 for child in fs::read_dir(&path).map_err(|err| RepoError::Io(err.to_string()))? {
                     let child = child.map_err(|err| RepoError::Io(err.to_string()))?;
                     let cpath = child.path();
@@ -645,6 +650,22 @@ fn walk_host_service_overlay(
                         return Err(RepoError::HostOverlayBaseUnit(cpath));
                     }
                     if let Some(target) = dropin_target_from_dir(&cname) {
+                        // Cross-kind drop-in check: a `*.container.d/`
+                        // under a `systemd/` overlay (or `*.socket.d/`
+                        // under `quadlet/`) is a typo, not legitimate
+                        // configuration. Reject. Codex P2 on PR #28.
+                        let (_, target_quadlet_type) = parse_quadlet_name(&target).map_err(
+                            |_| RepoError::InvalidPayloadKindFile {
+                                path: cpath.clone(),
+                                kind: kind.name(),
+                            },
+                        )?;
+                        if !kind.accepts(&target_quadlet_type) {
+                            return Err(RepoError::InvalidPayloadKindFile {
+                                path: cpath,
+                                kind: kind.name(),
+                            });
+                        }
                         dropins.extend(read_dropins(&cpath, &target)?);
                     } else {
                         return Err(RepoError::LegacyArtifact(cpath));

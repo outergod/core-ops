@@ -347,6 +347,47 @@ fn dropin_target_kind_mismatched_with_payload_subtree_rejected() {
     );
 }
 
+// ---- Codex P2 #4: host overlay drop-in target kind cross-check ----
+//
+// Same fix as `dropin_target_kind_mismatched_with_payload_subtree_rejected`
+// but for the host overlay path (walk_host_service_overlay). A typo
+// `hosts/<h>/<svc>/systemd/api.container.d/` is rejected — container
+// drop-ins under a systemd subtree would otherwise silently override
+// a real `quadlet/api.container` if it exists.
+#[test]
+fn host_overlay_dropin_target_kind_mismatch_rejected() {
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc = services.join("alpha");
+    std::fs::create_dir_all(svc.join("quadlet")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/api.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    write_host_yaml(&hosts, "example-host", &["alpha"]);
+    // Cross-kind typo: container drop-in under systemd/ in the host
+    // overlay tree.
+    let overlay_systemd =
+        hosts.join("example-host/alpha/systemd/api.container.d");
+    std::fs::create_dir_all(&overlay_systemd).unwrap();
+    std::fs::write(
+        overlay_systemd.join("20-host.conf"),
+        "[Service]\nMemoryMax=128M\n",
+    )
+    .unwrap();
+    let rev = git_init_commit(tmp.path());
+
+    let err =
+        load_with_host(tmp.path(), &rev, "example-host").expect_err("expected rejection");
+    assert!(
+        matches!(
+            err,
+            RepoError::InvalidPayloadKindFile { kind: "systemd", .. }
+        ),
+        "expected InvalidPayloadKindFile(kind=systemd), got {err:?}"
+    );
+}
+
 // ---- FR-009: reserved-name rejection ----
 
 #[test]
