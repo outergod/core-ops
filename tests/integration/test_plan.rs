@@ -695,7 +695,7 @@ fn machine_plan_output_retains_dependencies_when_default_human_plan_collapses_un
 
 #[test]
 fn cli_plan_uses_retained_snapshot_baseline_for_expected_deletions() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let state_dir = temp_dir("core_ops_plan_retained_snapshot");
     fs::create_dir_all(&state_dir).expect("create state dir");
     let state_file = state_dir.join("status.json");

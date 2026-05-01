@@ -31,7 +31,7 @@ fn socket_dropin_workload(name: &str, contents: &str) -> Workload {
 
 #[test]
 fn observed_state_ignores_unmanaged_socket_dropins() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let quadlet_dir = temp_dir("core_ops_socket_dropins_quadlets");
     std::fs::create_dir_all(&quadlet_dir).expect("create quadlet dir");
 

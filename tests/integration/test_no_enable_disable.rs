@@ -39,7 +39,7 @@ exit 1\n",
 
 #[test]
 fn apply_skips_enable_disable_for_generated_units() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = temp_dir("core_ops_no_enable_disable");
     fs::create_dir_all(&temp).expect("temp dir");
 

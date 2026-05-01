@@ -9,7 +9,7 @@ use core_ops::io::apply::apply_plan;
 
 #[test]
 fn managed_mount_removal_fails_when_target_is_still_busy() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = std::env::temp_dir().join(format!(
         "core_ops_mount_remove_{}",
         std::time::SystemTime::now()

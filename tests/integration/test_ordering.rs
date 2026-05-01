@@ -54,7 +54,7 @@ fn plan_orders_volume_before_container_before_socket() {
     let host_quadlets = temp_dir("core_ops_host_ordering");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
 
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let _guard = HostGuard::capture();
     std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
 

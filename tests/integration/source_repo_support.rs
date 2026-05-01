@@ -153,7 +153,7 @@ pub fn load_source_with_host(
     rev: &str,
     host: &str,
 ) -> Result<DesiredState, RepoError> {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let _guard = HostGuard::capture();
     std::env::set_var(HOST_OVERRIDE_ENV, host);
     load_desired_state(repo_source, rev)

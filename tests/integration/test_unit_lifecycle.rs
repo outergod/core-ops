@@ -38,7 +38,7 @@ exit 0\n",
 
 #[test]
 fn apply_executes_unit_lifecycle_actions() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = temp_dir("core_ops_lifecycle");
     fs::create_dir_all(&temp).expect("temp dir");
 
@@ -87,7 +87,7 @@ fn apply_executes_unit_lifecycle_actions() {
 
 #[test]
 fn apply_preserves_start_restart_order() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = temp_dir("core_ops_order");
     fs::create_dir_all(&temp).expect("temp dir");
 
@@ -146,7 +146,7 @@ fn apply_preserves_start_restart_order() {
 
 #[test]
 fn apply_fails_before_writing_when_runtime_unit_target_is_invalid() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = temp_dir("core_ops_invalid_runtime_target");
     fs::create_dir_all(&temp).expect("temp dir");
 

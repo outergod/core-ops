@@ -73,7 +73,7 @@ fn removes_stale_config_files_under_managed_root() {
 
 #[test]
 fn mount_related_config_reapply_is_idempotent() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let quadlet_dir = temp_dir("core_ops_mount_config_quadlets");
     let systemd_dir = temp_dir("core_ops_mount_config_systemd");
     std::fs::create_dir_all(&quadlet_dir).expect("create quadlet dir");
