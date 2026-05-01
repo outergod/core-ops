@@ -1,0 +1,3 @@
+host: example-host
+services:
+  - whoami

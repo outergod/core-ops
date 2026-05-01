@@ -64,7 +64,7 @@ Single Rust project at repository root:
 
 > Write these tests FIRST. Confirm they FAIL before implementation begins.
 
-- [ ] T101 [P] [US1] Author `specs/016-source-repository-layout/examples/01-minimal-single-service/` — one service (no `service.yaml`), one Quadlet `*.container`, one `config/` file; documented `README.md` describing the example
+- [X] T101 [P] [US1] Author `specs/016-source-repository-layout/examples/01-minimal-single-service/` — one service (no `service.yaml`), one Quadlet `*.container`, one `config/` file; documented `README.md` describing the example
 - [ ] T102 [P] [US1] Author `specs/016-source-repository-layout/examples/02-variant-config-root/` — one service whose id differs from `config-root` (modeled on `traefik-dnschallenge` → `/etc/traefik/`), with `service.yaml` and a `config/` file; `README.md`
 - [ ] T103 [P] [US1] Author `specs/016-source-repository-layout/examples/03-multi-unit-with-dropins/` — service with both `quadlet/` (one `*.container` + drop-in) and `systemd/` (one `*.socket` + drop-in); `README.md`
 - [ ] T104 [P] [US1] Author `specs/016-source-repository-layout/examples/04-host-overlay/` — base service with units, plus a host directly under `hosts/<id>/<svc>/` contributing a drop-in and a `config/` whole-file replacement; `README.md`
