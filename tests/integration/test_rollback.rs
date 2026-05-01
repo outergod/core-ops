@@ -252,7 +252,7 @@ fn rollback_contract_document_matches_current_report_surface() {
 
 #[test]
 fn rollback_plan_only_executes_the_reachable_cli_helper() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let previous_host = std::env::var_os("CORE_OPS_HOST");
     std::env::set_var("CORE_OPS_HOST", "kadath");
     let _host_guard = HostGuard {
@@ -268,16 +268,22 @@ fn rollback_plan_only_executes_the_reachable_cli_helper() {
         .arg(&repo_dir)
         .output()
         .expect("git init");
-    std::fs::create_dir_all(repo_dir.join("quadlets")).expect("quadlets dir");
+    std::fs::create_dir_all(repo_dir.join("services/alpha/quadlet")).expect("quadlet dir");
+    std::fs::create_dir_all(repo_dir.join("hosts/kadath")).expect("hosts dir");
     std::fs::write(
-        repo_dir.join("quadlets/alpha.container"),
+        repo_dir.join("hosts/kadath/host.yaml"),
+        "host: kadath\nservices:\n  - alpha\n",
+    )
+    .expect("write host.yaml");
+    std::fs::write(
+        repo_dir.join("services/alpha/quadlet/alpha.container"),
         "[Container]\nImage=alpine:3.19\n",
     )
     .expect("write rev1");
     for message in ["rev1", "rev2"] {
         if message == "rev2" {
             std::fs::write(
-                repo_dir.join("quadlets/alpha.container"),
+                repo_dir.join("services/alpha/quadlet/alpha.container"),
                 "[Container]\nImage=alpine:3.20\n",
             )
             .expect("write rev2");
@@ -411,7 +417,7 @@ fn rollback_plan_only_executes_the_reachable_cli_helper() {
 
 #[test]
 fn representative_rollback_plan_and_execution_complete_within_sc003_budget() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let previous_host = std::env::var_os("CORE_OPS_HOST");
     std::env::set_var("CORE_OPS_HOST", "kadath");
     let _host_guard = HostGuard {
@@ -427,16 +433,22 @@ fn representative_rollback_plan_and_execution_complete_within_sc003_budget() {
         .arg(&repo_dir)
         .output()
         .expect("git init");
-    fs::create_dir_all(repo_dir.join("quadlets")).expect("quadlets dir");
+    fs::create_dir_all(repo_dir.join("services/alpha/quadlet")).expect("quadlet dir");
+    fs::create_dir_all(repo_dir.join("hosts/kadath")).expect("hosts dir");
     fs::write(
-        repo_dir.join("quadlets/alpha.container"),
+        repo_dir.join("hosts/kadath/host.yaml"),
+        "host: kadath\nservices:\n  - alpha\n",
+    )
+    .expect("write host.yaml");
+    fs::write(
+        repo_dir.join("services/alpha/quadlet/alpha.container"),
         "[Container]\nImage=alpine:3.19\n",
     )
     .expect("write rev1");
     for message in ["rev1", "rev2"] {
         if message == "rev2" {
             fs::write(
-                repo_dir.join("quadlets/alpha.container"),
+                repo_dir.join("services/alpha/quadlet/alpha.container"),
                 "[Container]\nImage=alpine:3.20\n",
             )
             .expect("write rev2");
