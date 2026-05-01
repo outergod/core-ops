@@ -1,7 +1,7 @@
 ---
 change_id: 016-source-repository-layout
 release_intent: major
-summary: Formalize source repository layout; remove legacy parser; add core-ops skill install
+summary: Formalize source repository layout (payload-kind subdirs, optional service.yaml, host overlays mirroring service shape); remove legacy parser (quadlets/, quadlet-overrides/, hosts/<h>/overrides/); add `core-ops skill install` subcommand emitting an agentskills.io-standard bundle; ship four in-tree example shapes (minimal, variant-config-root, multi-unit, host-overlay) plus `scripts/migrate-legacy-source-repo.sh` for one-pass conversion of legacy repositories
 scope: source-repo
 release_preparation: false
 ---
