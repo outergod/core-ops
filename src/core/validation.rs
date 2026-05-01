@@ -29,7 +29,10 @@ pub fn validate_service_selection(
         if !catalog.services.contains_key(service) {
             return Err(ValidationError::new(
                 ValidationErrorKind::UndefinedServiceSelection,
-                format!("undefined service selection: {}", service),
+                format!(
+                    "host '{}' selects undefined service '{}': services/{} does not exist",
+                    host.host, service, service
+                ),
             ));
         }
     }
