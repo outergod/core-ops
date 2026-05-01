@@ -214,6 +214,48 @@ fn literal_etc_subdir_under_config_is_legitimate() {
     );
 }
 
+// ---- Codex P1 #2: host overlay must reference a service host.yaml selects ----
+//
+// Without this check, a typo like `hosts/<h>/traefic-dnschallenge/`
+// (note: missing 'k') would silently attach drop-ins via raw unit-name
+// matching, causing cross-service drift instead of failing fast.
+#[test]
+fn host_overlay_for_unselected_service_rejected() {
+    let (tmp, services, hosts) = materialize_skeleton();
+    // Real service: traefik-dnschallenge.
+    let svc = services.join("traefik-dnschallenge");
+    std::fs::create_dir_all(svc.join("quadlet")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/traefik-dnschallenge.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    // Host selects the real service.
+    write_host_yaml(&hosts, "example-host", &["traefik-dnschallenge"]);
+    // Operator typo: directory named `traefic-dnschallenge` (missing 'k').
+    // It happens to contain a drop-in whose target unit name DOES exist
+    // (so the previous behaviour silently applied the drop-in).
+    let typo_overlay = hosts.join(
+        "example-host/traefic-dnschallenge/quadlet/traefik-dnschallenge.container.d",
+    );
+    std::fs::create_dir_all(&typo_overlay).unwrap();
+    std::fs::write(
+        typo_overlay.join("10-typo.conf"),
+        "[Service]\nMemoryMax=128M\n",
+    )
+    .unwrap();
+    let rev = git_init_commit(tmp.path());
+
+    let err = load_with_host(tmp.path(), &rev, "example-host")
+        .expect_err("expected host overlay typo rejection");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("traefic-dnschallenge")
+            && msg.contains("host.yaml does not select"),
+        "diagnostic must name the typo and explain the rule: {msg}"
+    );
+}
+
 // ---- FR-009: reserved-name rejection ----
 
 #[test]

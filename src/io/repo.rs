@@ -210,7 +210,7 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     let catalog = load_service_catalog(&services_dir)?;
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
-    let mut overlays = load_host_overrides(&host_dir, &catalog)?;
+    let mut overlays = load_host_overrides(&host_dir, &catalog, &host_decl.services)?;
     let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
@@ -252,7 +252,7 @@ fn load_layered_desired_state(
     let catalog = load_service_catalog(&services_dir)?;
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
-    let mut overlays = load_host_overrides(&host_dir, &catalog)?;
+    let mut overlays = load_host_overrides(&host_dir, &catalog, &host_decl.services)?;
     let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
@@ -523,6 +523,7 @@ fn load_service_manifest(service_dir: &Path) -> Result<Option<ServiceManifest>, 
 fn load_host_overrides(
     host_dir: &Path,
     catalog: &ServiceCatalog,
+    selected_services: &[String],
 ) -> Result<HostOverlaySet, RepoError> {
     let host_name = host_dir
         .file_name()
@@ -559,10 +560,25 @@ fn load_host_overrides(
             return Err(RepoError::ReservedName(file_name));
         }
         let svc_id = &file_name;
-        // Resolve config-root via catalog. Default to svc_id when the
-        // service is not in catalog (validate_service_selection covers
-        // the host.yaml-selected case; an overlay directory for an
-        // unselected service would be flagged elsewhere).
+        // The overlay directory's name MUST be a service this host
+        // selects. A typo like `hosts/<h>/traefic-dnschallenge/` (note
+        // the missing 'k') would otherwise inject drop-ins keyed by raw
+        // unit name, with the parser falling back to using the
+        // typo-name as the config-root and validate_dropin_targets only
+        // checking unit-name existence — silent cross-service drift.
+        // validate_service_selection already guarantees every entry in
+        // `selected_services` exists in the catalog, so checking
+        // membership here covers both "unknown service" and "known but
+        // unselected" in a single shot.
+        if !selected_services.iter().any(|s| s == svc_id) {
+            return Err(RepoError::ValidationFailed(format!(
+                "host '{host_name}' has overlay directory '{svc_id}' but \
+                 host.yaml does not select that service; did you typo the \
+                 directory name? (expected one of {selected_services:?})"
+            )));
+        }
+        // Service is guaranteed in the catalog because
+        // validate_service_selection covers the host.yaml selection.
         let config_root = catalog
             .services
             .get(svc_id)
