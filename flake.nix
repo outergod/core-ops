@@ -53,6 +53,10 @@
           jq
           envsubst
           stdenv.cc.cc
+          just
+          butane
+          libvirt
+          virt-manager
         ] ++ [
           rustToolchain
           rustAnalyzer
