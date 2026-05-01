@@ -94,6 +94,8 @@ pub enum Commands {
     /// Explain a single managed object using the authoritative reconciliation model.
     #[command(after_help = EXPLAIN_AFTER_HELP)]
     Explain(ExplainArgs),
+    /// Manage agent skill bundles (authoring aids).
+    Skill(SkillArgs),
 }
 
 #[derive(Args, Debug)]
@@ -205,6 +207,38 @@ pub struct StatusArgs {
     /// `/var/lib/core-ops/status.json`.
     #[arg(long)]
     pub state_file: Option<PathBuf>,
+}
+
+/// Top-level args for `core-ops skill <op>`.
+#[derive(Args, Debug)]
+pub struct SkillArgs {
+    #[command(subcommand)]
+    pub op: SkillOp,
+}
+
+/// Operations under `core-ops skill`. Currently only `install` is
+/// defined; future operations (e.g. `list`, `uninstall`) MAY land here.
+#[derive(Subcommand, Debug)]
+pub enum SkillOp {
+    /// Install the bundled `core-ops-source-repo` agent skill.
+    Install(SkillInstallArgs),
+}
+
+/// Args for `core-ops skill install`. Per
+/// `specs/016-source-repository-layout/contracts/skill-cli.md`,
+/// `--global` and `--print` are mutually exclusive; default mode
+/// writes the bundle to `<cwd>/.agents/skills/core-ops-source-repo/`.
+#[derive(Args, Debug)]
+pub struct SkillInstallArgs {
+    /// Write the skill bundle to `$HOME/.agents/skills/core-ops-source-repo/`
+    /// instead of `<cwd>/.agents/skills/core-ops-source-repo/`.
+    #[arg(long, conflicts_with = "print")]
+    pub global: bool,
+    /// Write the skill bundle to standard output and perform no
+    /// filesystem writes. Output is a concatenation of header lines
+    /// `==> <relative-path> <==` followed by each entry's bytes.
+    #[arg(long, conflicts_with = "global")]
+    pub print: bool,
 }
 
 #[derive(Args, Debug)]

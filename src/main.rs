@@ -1,7 +1,7 @@
 use clap::Parser;
 use core_ops::build_info::{BUILD_REVISION, BUILD_TIME, BUILD_TREE_STATE};
 use core_ops::cli::agent as agent_cmd;
-use core_ops::cli::args::{Cli, Commands};
+use core_ops::cli::args::{Cli, Commands, SkillOp};
 use core_ops::cli::common as cli_common;
 use core_ops::cli::init as init_cmd;
 use core_ops::cli::{apply as apply_cmd, explain as explain_cmd, plan as plan_cmd};
@@ -276,6 +276,17 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             }
             Ok(())
         }
+        Commands::Skill(args) => match args.op {
+            SkillOp::Install(install_args) => {
+                match core_ops::cli::skill::run(&install_args) {
+                    Ok(()) => Ok(()),
+                    Err(report) => {
+                        eprintln!("{report:?}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+        },
     }
 }
 
