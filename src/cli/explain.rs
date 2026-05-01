@@ -189,6 +189,17 @@ fn deterministic_state_path(status_path: &Path) -> std::path::PathBuf {
 mod tests {
     use super::resolve_explain_target;
     use crate::io::state::{persist_success_state, STATE_FILE_ENV};
+    use std::sync::{Mutex, OnceLock};
+
+    /// All three tests in this module mutate the process-global
+    /// STATE_FILE_ENV variable; without coordination they race when
+    /// run in parallel and one test reads another's setup. Acquire
+    /// this mutex at the top of each test (poison-resilient via
+    /// into_inner) to serialize them.
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     fn temp_state_file(prefix: &str) -> std::path::PathBuf {
         let mut path = std::env::temp_dir();
@@ -202,6 +213,7 @@ mod tests {
 
     #[test]
     fn resolve_explain_target_reads_from_persisted_state() {
+        let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
         let state_path = temp_state_file("core_ops_explain_target");
         let previous = std::env::var_os(STATE_FILE_ENV);
         std::env::set_var(STATE_FILE_ENV, &state_path);
@@ -232,6 +244,7 @@ mod tests {
 
     #[test]
     fn resolve_explain_target_fails_when_state_absent() {
+        let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
         let state_path = temp_state_file("core_ops_explain_absent");
         let previous = std::env::var_os(STATE_FILE_ENV);
         std::env::set_var(STATE_FILE_ENV, &state_path);
@@ -253,6 +266,7 @@ mod tests {
     // T030: explain with corrupt state → distinct error mentioning "corrupt", file path, and --force
     #[test]
     fn resolve_explain_target_fails_with_distinct_corrupt_message() {
+        let _guard = env_lock().lock().unwrap_or_else(|err| err.into_inner());
         let state_path = temp_state_file("core_ops_explain_corrupt");
         let previous = std::env::var_os(STATE_FILE_ENV);
         std::env::set_var(STATE_FILE_ENV, &state_path);
