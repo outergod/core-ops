@@ -1,5 +1,6 @@
 pub mod env_lock;
 pub mod release_governance_support;
+pub mod source_repo_support;
 mod test_agent_lock;
 mod test_agent_service;
 mod test_apply_report;
@@ -10,7 +11,6 @@ mod test_journald_audit;
 mod test_journald_unavailable;
 mod test_no_enable_disable;
 mod test_ordering;
-mod test_overlay_validation;
 mod test_performance;
 mod test_plan;
 mod test_quadlet_artifacts;

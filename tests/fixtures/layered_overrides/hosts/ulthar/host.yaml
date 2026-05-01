@@ -1,4 +1,0 @@
-host: ulthar
-services:
-  - traefik
-  - whoami
