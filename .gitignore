@@ -21,3 +21,6 @@ Thumbs.db
 /infra/ignition/*.bu
 /infra/ignition/*.ign
 /.agent/
+
+# Claude Code session-internal state
+/.claude/
