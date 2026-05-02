@@ -393,6 +393,69 @@ fn migration_config_root_match_is_literal_not_regex() {
     );
 }
 
+/// Codex P1 on PR #28 (a2f0885 follow-up): the migration's `mv`
+/// operations previously clobbered pre-existing destination files
+/// silently — a partially-migrated tree (where the operator
+/// pre-staged the new layout for some files, then re-ran migration)
+/// would have its hand-edited contents overwritten. Violates the
+/// "MUST NOT corrupt a partially-migrated tree" contract.
+#[test]
+fn migration_refuses_to_clobber_existing_destination() {
+    let tmp = TempDir::new().expect("tempdir");
+    let repo = tmp.path();
+
+    // Legacy etc-mirror config that Phase 1.c would flatten:
+    // services/runner/config/etc/runner/runner.env → services/runner/config/runner.env
+    std::fs::create_dir_all(repo.join("services/runner/quadlet")).unwrap();
+    std::fs::write(
+        repo.join("services/runner/quadlet/runner.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(repo.join("services/runner/config/etc/runner")).unwrap();
+    std::fs::write(
+        repo.join("services/runner/config/etc/runner/runner.env"),
+        "FROM_LEGACY=yes\n",
+    )
+    .unwrap();
+    // Pre-existing destination — operator already staged a different
+    // value at the post-migration path. Silent overwrite would lose
+    // their work.
+    std::fs::write(
+        repo.join("services/runner/config/runner.env"),
+        "FROM_OPERATOR_HAND_EDIT=do-not-clobber\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(repo.join("hosts/test-vm")).unwrap();
+    std::fs::write(
+        repo.join("hosts/test-vm/host.yaml"),
+        "host: test-vm\nservices:\n  - runner\n",
+    )
+    .unwrap();
+
+    let output = run_migration(repo);
+    assert!(
+        !output.status.success(),
+        "must refuse to overwrite existing destination; stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("refusing to overwrite"),
+        "diagnostic must explain the refusal: {stderr}"
+    );
+
+    // Operator's content must be untouched.
+    let preserved =
+        std::fs::read_to_string(repo.join("services/runner/config/runner.env")).unwrap();
+    assert!(
+        preserved.contains("FROM_OPERATOR_HAND_EDIT"),
+        "operator's hand-edit must survive the rejected migration: {:?}",
+        preserved
+    );
+}
+
 /// Codex P2 on PR #28 (e0795c8 follow-up): the bare-shape iteration
 /// of Phase 2.a previously skipped any directory not ending in `.d`,
 /// silently. A typo like `overrides/web.container.dropin/` got

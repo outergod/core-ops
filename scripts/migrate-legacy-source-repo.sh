@@ -71,6 +71,23 @@ service_config_root() {
     ' "$manifest"
 }
 
+# Safe move: refuse to clobber a pre-existing destination. The script's
+# safety contract is "MUST NOT corrupt a partially-migrated tree" —
+# silently overwriting an operator-authored file at the target path
+# would violate it (Codex P1 on PR #28). Use this in place of bare `mv`
+# wherever the destination is reachable by hand-editing or partial
+# re-runs.
+safe_mv() {
+    local src=$1
+    local dst=$2
+    if [[ -e "$dst" ]]; then
+        printf 'error: refusing to overwrite existing file %s with %s; remove or back up the destination and re-run\n' \
+            "$dst" "$src" >&2
+        exit 65
+    fi
+    mv -- "$src" "$dst"
+}
+
 # migrate_host_dropin <dropin_dir> <host_dir>
 # Moves a single host-level <unit>.<ext>.d/ directory into
 # hosts/<h>/<svc>/{quadlet,systemd}/<dropin_name>/, resolving the
@@ -108,7 +125,7 @@ migrate_host_dropin() {
     local conf
     for conf in "$dropin_dir"/*; do
         [[ -f "$conf" ]] || continue
-        mv -- "$conf" "$target_dir/$(basename "$conf")"
+        safe_mv "$conf" "$target_dir/$(basename "$conf")"
     done
     rmdir -- "$dropin_dir"
 }
@@ -160,7 +177,7 @@ for svc_dir in "$REPO/services"/*/; do
             ext="${unit_name##*.}"
             if is_systemd_ext "$ext"; then
                 mkdir -p "$svc_dir/systemd"
-                mv -- "$unit_path" "$svc_dir/systemd/$unit_name"
+                safe_mv "$unit_path" "$svc_dir/systemd/$unit_name"
             elif ! is_quadlet_ext "$ext"; then
                 printf 'error: unrecognized unit extension %s in %s\n' "$ext" "$unit_path" >&2
                 exit 65
@@ -193,7 +210,7 @@ for svc_dir in "$REPO/services"/*/; do
             mkdir -p "$target_root/$dropin_name"
             for conf in "$dropin_dir"/*; do
                 [[ -f "$conf" ]] || continue
-                mv -- "$conf" "$target_root/$dropin_name/$(basename "$conf")"
+                safe_mv "$conf" "$target_root/$dropin_name/$(basename "$conf")"
             done
             rmdir -- "$dropin_dir"
         done
@@ -214,7 +231,7 @@ for svc_dir in "$REPO/services"/*/; do
                 rel=${file#"$root_dir"}
                 target="$svc_dir/config/$rel"
                 mkdir -p "$(dirname "$target")"
-                mv -- "$file" "$target"
+                safe_mv "$file" "$target"
             done < <(find "$root_dir" -type f -print0)
             # Remove now-empty subdirectories rooted at <root>/.
             find "$root_dir" -type d -empty -delete 2>/dev/null || true
@@ -374,7 +391,7 @@ for host_dir in "$REPO/hosts"/*/; do
                 rel=${file#"$root_dir"}
                 target="$host_dir/$owner/config/$rel"
                 mkdir -p "$(dirname "$target")"
-                mv -- "$file" "$target"
+                safe_mv "$file" "$target"
             done < <(find "$root_dir" -type f -print0)
             find "$root_dir" -type d -empty -delete 2>/dev/null || true
         done

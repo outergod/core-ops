@@ -207,23 +207,28 @@ fn read_native_mount_units(
 }
 
 /// Read native systemd timer / target / path units from the systemd
-/// unit dir, scoped to those declared in `desired`. Without this, a
-/// desired `*.timer` workload would never match an observed entry,
-/// causing reconcile to plan it as a fresh create on every run —
-/// repeated write/reload/start churn (Codex P1 on PR #28).
+/// unit dir. Includes a file under either of these conditions:
 ///
-/// Stale-detection (operator removed a unit from the source repo but
-/// the file remains on disk) is intentionally NOT supported here: the
-/// units carry no managed-by marker (the contents are author-supplied
-/// verbatim), so we cannot distinguish CoreOps-managed leftovers from
-/// system-authored units. Removing a unit from the source repo
-/// requires an out-of-band cleanup until a marker is introduced.
+///  - it appears in the desired set (so reconcile pairs it with the
+///    desired entry — without this, every reconcile would plan the
+///    desired unit as a fresh create, churning write/reload/start
+///    indefinitely — Codex P1 on PR #28); or
+///  - it carries the managed-by marker injected by
+///    `normalize_native_unit_contents` on write but is NO LONGER in
+///    desired — a stale CoreOps leftover that the planner needs to
+///    surface so it can emit `RemoveQuadlet` / `StopUnit` (Codex P1
+///    follow-up: without stale-discovery, removing a *.timer/.target/
+///    .path from the source repo leaves the file and runtime unit
+///    behind indefinitely).
+///
+/// User-authored unrelated units in `/etc/systemd/system/` are
+/// ignored: they neither match the desired set nor carry the marker.
 fn read_native_passive_units(
     dir: &Path,
     desired: &DesiredState,
 ) -> Result<Vec<Workload>, ObservedError> {
     let desired_units = desired_native_passive_unit_names(desired);
-    if desired_units.is_empty() || !dir.exists() {
+    if !dir.exists() {
         return Ok(Vec::new());
     }
     let mut workloads = Vec::new();
@@ -248,10 +253,12 @@ fn read_native_passive_units(
         } else {
             continue;
         };
-        if !desired_units.contains(unit_name) {
+        let contents = std::fs::read_to_string(&path)?;
+        let is_desired = desired_units.contains(unit_name);
+        let is_managed_stale = contents.contains(crate::io::quadlet::SOCKET_MANAGED_MARKER);
+        if !is_desired && !is_managed_stale {
             continue;
         }
-        let contents = std::fs::read_to_string(&path)?;
         workloads.push(Workload {
             name: Path::new(&unit_name)
                 .file_stem()
@@ -586,6 +593,56 @@ mod tests {
                 scopes: vec![BoundaryScope::QuadletSystemd],
             },
         }
+    }
+
+    #[test]
+    fn passive_units_with_managed_marker_surface_when_dropped_from_desired() {
+        // Codex P1 follow-up on PR #28: stale CoreOps-managed
+        // *.timer/*.target/*.path units must surface in observed
+        // state even after they've been dropped from desired, so the
+        // planner can emit RemoveQuadlet / StopUnit. Detected via the
+        // managed-by marker that workload_from_artifact injects on
+        // write.
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("backup.timer"),
+            "# managed-by: core-ops\n[Timer]\nOnCalendar=hourly\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("readiness.target"),
+            "# managed-by: core-ops\n[Unit]\nDescription=ready\n",
+        )
+        .unwrap();
+        // A user-authored timer without the marker, NOT in desired.
+        // Must be ignored (we can't tell it's CoreOps-managed; safer
+        // to leave alone than risk removing operator content).
+        std::fs::write(
+            dir.path().join("user-thing.timer"),
+            "[Timer]\nOnCalendar=daily\n",
+        )
+        .unwrap();
+
+        // Desired set is EMPTY — the operator removed every passive
+        // unit from the source repo. The two CoreOps-marked files
+        // must surface as observed (stale workloads) so the planner
+        // emits removal actions; user-thing.timer must not.
+        let desired = desired_with(Vec::new());
+        let observed = read_native_passive_units(dir.path(), &desired).expect("scan");
+
+        let names: Vec<&str> = observed
+            .iter()
+            .map(|w| w.systemd_unit_name.as_str())
+            .collect();
+        assert!(names.contains(&"backup.timer"), "stale marked timer must surface");
+        assert!(
+            names.contains(&"readiness.target"),
+            "stale marked target must surface"
+        );
+        assert!(
+            !names.contains(&"user-thing.timer"),
+            "unmarked user unit must NOT surface as stale: {names:?}"
+        );
     }
 
     #[test]

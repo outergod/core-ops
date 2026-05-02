@@ -773,8 +773,18 @@ fn workloads_from_evaluation(output: &EvaluationOutput) -> Vec<Workload> {
 }
 
 fn workload_from_artifact(artifact: &EvaluatedArtifact) -> Workload {
-    let contents = if artifact.quadlet_type == QuadletType::Socket {
-        crate::io::quadlet::normalize_socket_contents(&artifact.contents)
+    // Native systemd units (socket / timer / target / path) get the
+    // `# managed-by: core-ops` marker injected so observed-state
+    // reads can identify CoreOps leftovers when the unit has been
+    // removed from desired and emit `RemoveQuadlet` for cleanup.
+    // Container/Volume/Network/Pod use the Quadlet generator and
+    // have their own observed-state path via read_quadlet_dir;
+    // mount/automount carry the marker via render_*_unit().
+    let contents = if matches!(
+        artifact.quadlet_type,
+        QuadletType::Socket | QuadletType::Timer | QuadletType::Target | QuadletType::Path
+    ) {
+        crate::io::quadlet::normalize_native_unit_contents(&artifact.contents)
     } else {
         artifact.contents.clone()
     };
