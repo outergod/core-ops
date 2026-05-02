@@ -435,6 +435,69 @@ fn host_id_with_invalid_chars_rejected() {
     );
 }
 
+// ---- Codex P2 #6: unrecognized top-level directories rejected ----
+//
+// contracts/layout.md says repo-root directories are exactly
+// `services/` and `hosts/`, plus anything in the reserved `_*` /
+// `.*` namespace. Without this, a typo like `<repo>/servcies/`
+// silently drops the operator's intended services tree.
+#[test]
+fn typoed_top_level_directory_rejected() {
+    let (tmp, services, hosts) = materialize_skeleton();
+    // Real intended layout (would parse cleanly on its own).
+    let svc = services.join("alpha");
+    std::fs::create_dir_all(svc.join("quadlet")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/alpha.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    write_host_yaml(&hosts, "example-host", &["alpha"]);
+    // Operator typo at the repo root.
+    let typo = tmp.path().join("servcies");
+    std::fs::create_dir_all(typo.join("beta/quadlet")).unwrap();
+    std::fs::write(
+        typo.join("beta/quadlet/beta.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    let rev = git_init_commit(tmp.path());
+
+    let err = load_with_host(tmp.path(), &rev, "example-host")
+        .expect_err("expected typo rejection");
+    assert!(
+        matches!(err, RepoError::LegacyArtifact(ref p) if p.ends_with("servcies")),
+        "expected LegacyArtifact(servcies), got {err:?}"
+    );
+}
+
+#[test]
+fn top_level_files_and_reserved_dirs_are_tolerated() {
+    // Symmetry guard: README.md / LICENSE / CHANGELOG (regular
+    // files) plus `_local/` and `.git/` (reserved-prefix dirs) must
+    // still load cleanly. Tests that the strictness in
+    // typoed_top_level_directory_rejected isn't over-applied.
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc = services.join("alpha");
+    std::fs::create_dir_all(svc.join("quadlet")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/alpha.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    write_host_yaml(&hosts, "example-host", &["alpha"]);
+    // Tolerated regular files at root.
+    std::fs::write(tmp.path().join("README.md"), "# example\n").unwrap();
+    std::fs::write(tmp.path().join("LICENSE"), "AGPL-3.0\n").unwrap();
+    // Tolerated reserved-prefix dirs.
+    std::fs::create_dir_all(tmp.path().join("_local")).unwrap();
+    std::fs::create_dir_all(tmp.path().join(".cache")).unwrap();
+    let rev = git_init_commit(tmp.path());
+
+    load_with_host(tmp.path(), &rev, "example-host")
+        .expect("regular files and reserved-prefix dirs at repo root must be tolerated");
+}
+
 // ---- FR-009: reserved-name rejection ----
 
 #[test]

@@ -1275,6 +1275,36 @@ fn validate_no_legacy_root_artifacts(repo_path: &Path) -> Result<(), RepoError> 
     if quadlets.exists() {
         return Err(RepoError::LegacyArtifact(quadlets));
     }
+    // contracts/layout.md: "Top-level directories under the repository
+    // root are exactly `services` and `hosts`. Other names are tolerated
+    // only if they begin with `_` or `.` (the reserved namespace) —
+    // this admits `.git/`, `_local/`, etc."
+    //
+    // The contract scopes strictness to DIRECTORIES — files at root
+    // (README.md, LICENSE, CHANGELOG.md, etc.) are tolerated. Without
+    // this directory scan, a typo like `<repo>/servcies/` (transposed)
+    // silently drops the operator's intended services tree because
+    // the loader walks services/ and finds it empty (Codex P2 on
+    // PR #28).
+    for entry in fs::read_dir(repo_path).map_err(|err| RepoError::Io(err.to_string()))? {
+        let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
+        let path = entry.path();
+        // Files at the repo root are out of scope for this check.
+        if !path.is_dir() {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n,
+            None => continue,
+        };
+        if name == "services" || name == "hosts" {
+            continue;
+        }
+        if name.starts_with('_') || name.starts_with('.') {
+            continue;
+        }
+        return Err(RepoError::LegacyArtifact(path));
+    }
     Ok(())
 }
 
