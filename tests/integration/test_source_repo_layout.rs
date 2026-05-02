@@ -388,6 +388,53 @@ fn host_overlay_dropin_target_kind_mismatch_rejected() {
     );
 }
 
+// ---- Codex P2 #5: host identifiers must satisfy the same id rules ----
+//
+// Host identifiers are subject to FR-009 + the identifier pattern just
+// like service ids and config-roots. Without this, hosts/_metadata/ or
+// hosts/foo bar/ would silently load.
+#[test]
+fn host_id_with_reserved_prefix_rejected() {
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc = services.join("alpha");
+    std::fs::create_dir_all(svc.join("quadlet")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/alpha.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    write_host_yaml(&hosts, "_metadata", &["alpha"]);
+    let rev = git_init_commit(tmp.path());
+
+    let err =
+        load_with_host(tmp.path(), &rev, "_metadata").expect_err("expected rejection");
+    assert!(
+        matches!(err, RepoError::ReservedName(ref name) if name == "_metadata"),
+        "expected ReservedName(_metadata), got {err:?}"
+    );
+}
+
+#[test]
+fn host_id_with_invalid_chars_rejected() {
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc = services.join("alpha");
+    std::fs::create_dir_all(svc.join("quadlet")).unwrap();
+    std::fs::write(
+        svc.join("quadlet/alpha.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    write_host_yaml(&hosts, "host with space", &["alpha"]);
+    let rev = git_init_commit(tmp.path());
+
+    let err = load_with_host(tmp.path(), &rev, "host with space")
+        .expect_err("expected rejection");
+    assert!(
+        matches!(err, RepoError::InvalidIdentifier(ref name) if name == "host with space"),
+        "expected InvalidIdentifier(\"host with space\"), got {err:?}"
+    );
+}
+
 // ---- FR-009: reserved-name rejection ----
 
 #[test]

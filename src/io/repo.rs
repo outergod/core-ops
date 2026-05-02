@@ -377,6 +377,12 @@ fn load_host_declaration_inner(host_dir: &Path) -> Result<HostDeclaration, RepoE
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| RepoError::InvalidHostDeclaration("invalid host directory".to_string()))?;
+    // Host identifiers are subject to the same FR-009 + identifier-
+    // pattern rules as service identifiers and config-roots — without
+    // this check, a `hosts/_metadata/` (reserved prefix) or
+    // `hosts/foo bar/` (invalid chars) tree would be silently
+    // accepted (Codex P2 on PR #28).
+    validate_id(host_name)?;
     if parsed.host != host_name {
         return Err(RepoError::InvalidHostDeclaration(format!(
             "host field '{}' does not match directory '{}'",
