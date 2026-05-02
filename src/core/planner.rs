@@ -963,26 +963,37 @@ fn order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
         Some(QuadletType::Automount) => 2,
         Some(QuadletType::Volume) => 3,
         Some(QuadletType::Network) => 4,
-        Some(QuadletType::Container) => 5,
-        Some(QuadletType::SocketDropIn) => 6,
-        Some(QuadletType::Socket) => 7,
-        Some(QuadletType::Pod) => 8,
-        None => 9,
+        // Targets (synchronization points) and Paths (watchers)
+        // settle ahead of the active workloads that depend on them.
+        Some(QuadletType::Target) => 5,
+        Some(QuadletType::Path) => 6,
+        Some(QuadletType::Container) => 7,
+        Some(QuadletType::SocketDropIn) => 8,
+        Some(QuadletType::Socket) => 9,
+        // Timer activations come after their backing service exists.
+        Some(QuadletType::Timer) => 10,
+        Some(QuadletType::Pod) => 11,
+        None => 12,
     }
 }
 
 fn reverse_order_for_type(quadlet_type: Option<QuadletType>) -> u8 {
     match quadlet_type {
-        Some(QuadletType::SocketDropIn) => 0,
-        Some(QuadletType::Socket) => 1,
-        Some(QuadletType::Container) => 2,
-        Some(QuadletType::Network) => 3,
-        Some(QuadletType::Volume) => 4,
-        Some(QuadletType::Automount) => 5,
-        Some(QuadletType::Mount) => 6,
-        Some(QuadletType::ConfigFile) => 7,
-        Some(QuadletType::Pod) => 8,
-        None => 9,
+        // Removal is the inverse: tear down activators first, then
+        // workloads, then synchronization points, then storage.
+        Some(QuadletType::Timer) => 0,
+        Some(QuadletType::SocketDropIn) => 1,
+        Some(QuadletType::Socket) => 2,
+        Some(QuadletType::Path) => 3,
+        Some(QuadletType::Container) => 4,
+        Some(QuadletType::Target) => 5,
+        Some(QuadletType::Network) => 6,
+        Some(QuadletType::Volume) => 7,
+        Some(QuadletType::Automount) => 8,
+        Some(QuadletType::Mount) => 9,
+        Some(QuadletType::ConfigFile) => 10,
+        Some(QuadletType::Pod) => 11,
+        None => 12,
     }
 }
 

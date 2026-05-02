@@ -1,0 +1,17 @@
+[Unit]
+Description=whoami — minimal example service for spec 016 layout v1
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/traefik/whoami:latest
+PublishPort=8000:80
+Volume=/etc/whoami/whoami.toml:/etc/whoami/whoami.toml:ro,Z
+Exec=--port 80
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target

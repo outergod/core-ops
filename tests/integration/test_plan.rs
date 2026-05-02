@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::integration::env_lock::path_lock;
+use crate::integration::source_repo_support::HostGuard;
 use core_ops::cli::plan as plan_cmd;
 use core_ops::cli::report::{build_plan_output, inspect_plan_dependencies};
 use core_ops::core::errors::CoreError;
@@ -17,7 +18,7 @@ use core_ops::core::types::{
 };
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::{build_observed_snapshot, read_observed_state};
-use core_ops::io::repo::load_desired_state;
+use core_ops::io::repo::{load_desired_state, HOST_OVERRIDE_ENV};
 use core_ops::io::state::{
     persist_never_run_state, persist_success_state, write_deterministic_state,
     write_persisted_state, STATE_FILE_ENV,
@@ -51,56 +52,35 @@ fn strip_ansi(value: &str) -> String {
     output
 }
 
-fn init_git_repo(repo: &PathBuf) -> String {
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(repo)
-        .output()
-        .expect("git init");
-
-    let quadlets = repo.join("quadlets");
-    std::fs::create_dir_all(&quadlets).expect("create quadlets");
-    std::fs::write(
-        quadlets.join("alpha.container"),
-        "[Container]\nImage=alpine",
+/// Builds services/alpha/quadlet/alpha.container plus
+/// hosts/<host>/host.yaml under the formalized layout, commits the
+/// tree, and returns the resulting commit SHA.
+fn init_git_repo(repo: &std::path::Path, host: &str) -> String {
+    fs::create_dir_all(repo).expect("create repo dir");
+    let services = repo.join("services/alpha/quadlet");
+    let hosts = repo.join(format!("hosts/{host}"));
+    fs::create_dir_all(&services).expect("services");
+    fs::create_dir_all(&hosts).expect("hosts");
+    fs::write(
+        services.join("alpha.container"),
+        "[Container]\nImage=alpine\n",
     )
     .expect("write quadlet");
-
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add");
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("commit")
-        .arg("-m")
-        .arg("fixture")
-        .env("GIT_AUTHOR_NAME", "fixture")
-        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
-        .env("GIT_COMMITTER_NAME", "fixture")
-        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
-        .output()
-        .expect("git commit");
-
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse");
-
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    fs::write(
+        hosts.join("host.yaml"),
+        format!("host: {host}\nservices:\n  - alpha\n"),
+    )
+    .expect("write host.yaml");
+    crate::integration::source_repo_support::git_init_commit(repo)
 }
 
 #[test]
 fn plan_does_not_apply_changes() {
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_plan");
-    let rev = init_git_repo(&repo);
+    let rev = init_git_repo(&repo, "example-host");
 
     let host_quadlets = temp_dir("core_ops_host_plan");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
@@ -127,9 +107,11 @@ fn plan_does_not_apply_changes() {
 
 #[test]
 fn cli_plan_summary_uses_deterministic_reconciliation_view() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_plan_summary");
-    let rev = init_git_repo(&repo);
+    let rev = init_git_repo(&repo, "example-host");
 
     let host_quadlets = temp_dir("core_ops_host_plan_summary");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
@@ -159,7 +141,9 @@ fn cli_plan_summary_uses_deterministic_reconciliation_view() {
 
 #[test]
 fn cli_plan_distinguishes_first_run_and_recovery_headers() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let state_dir = temp_dir("core_ops_state_plan_first_run");
     fs::create_dir_all(&state_dir).expect("create state dir");
     let state_file = state_dir.join("status.json");
@@ -169,7 +153,7 @@ fn cli_plan_distinguishes_first_run_and_recovery_headers() {
     };
     std::env::set_var(STATE_FILE_ENV, &state_file);
     let repo = temp_dir("core_ops_repo_plan_first_run");
-    let rev = init_git_repo(&repo);
+    let rev = init_git_repo(&repo, "example-host");
 
     let first_run_quadlets = temp_dir("core_ops_host_plan_first_run");
     fs::create_dir_all(&first_run_quadlets).expect("create host quadlets");
@@ -215,8 +199,11 @@ fn cli_plan_distinguishes_first_run_and_recovery_headers() {
 
 #[test]
 fn cli_plan_exposes_machine_readable_plan_output() {
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_plan_machine");
-    let rev = init_git_repo(&repo);
+    let rev = init_git_repo(&repo, "example-host");
 
     let host_quadlets = temp_dir("core_ops_host_plan_machine");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
@@ -248,8 +235,9 @@ fn cli_plan_exposes_machine_readable_plan_output() {
 
 #[test]
 fn cli_plan_json_stdout_remains_machine_parseable_with_audit_dir() {
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let repo = temp_dir("core_ops_repo_plan_json_audit");
-    let rev = init_git_repo(&repo);
+    let rev = init_git_repo(&repo, "example-host");
 
     let host_quadlets = temp_dir("core_ops_host_plan_json_audit");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
@@ -269,6 +257,7 @@ fn cli_plan_json_stdout_remains_machine_parseable_with_audit_dir() {
         .arg(audit_dir.to_str().expect("audit dir"))
         .arg("--json")
         .env(STATE_FILE_ENV, &state_file)
+        .env(HOST_OVERRIDE_ENV, "example-host")
         .output()
         .expect("run core-ops plan");
 
@@ -282,7 +271,7 @@ fn cli_plan_json_stdout_remains_machine_parseable_with_audit_dir() {
 
 #[test]
 fn cli_plan_uses_host_override_for_scope_when_observed_host_info_is_absent() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let previous = std::env::var_os("CORE_OPS_HOST");
     std::env::set_var("CORE_OPS_HOST", "kadath");
     let _guard = EnvGuard {
@@ -291,7 +280,7 @@ fn cli_plan_uses_host_override_for_scope_when_observed_host_info_is_absent() {
     };
 
     let repo = temp_dir("core_ops_repo_plan_host_scope");
-    let rev = init_git_repo(&repo);
+    let rev = init_git_repo(&repo, "kadath");
 
     let host_quadlets = temp_dir("core_ops_host_plan_host_scope");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
@@ -317,9 +306,11 @@ fn cli_plan_uses_host_override_for_scope_when_observed_host_info_is_absent() {
 
 #[test]
 fn cli_plan_header_uses_persisted_last_applied_revision_when_available() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_plan_previous_revision");
-    let rev = init_git_repo(&repo);
+    let rev = init_git_repo(&repo, "example-host");
 
     let host_quadlets = temp_dir("core_ops_host_plan_previous_revision");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
@@ -357,9 +348,11 @@ fn cli_plan_header_uses_persisted_last_applied_revision_when_available() {
 
 #[test]
 fn cli_plan_fails_when_persisted_state_is_unreadable() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_plan_unreadable_state");
-    let rev = init_git_repo(&repo);
+    let rev = init_git_repo(&repo, "example-host");
 
     let host_quadlets = temp_dir("core_ops_host_plan_unreadable_state");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
@@ -470,8 +463,11 @@ fn desired_snapshot_extracts_config_and_runtime_dependency_refs() {
 
 #[test]
 fn observed_snapshot_matches_desired_snapshot_when_contents_match() {
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_snapshot_match");
-    let rev = init_git_repo(&repo);
+    let rev = init_git_repo(&repo, "example-host");
     let desired = load_desired_state(repo.to_str().unwrap(), &rev).expect("desired state");
 
     let host_quadlets = temp_dir("core_ops_host_snapshot_match");
@@ -699,7 +695,7 @@ fn machine_plan_output_retains_dependencies_when_default_human_plan_collapses_un
 
 #[test]
 fn cli_plan_uses_retained_snapshot_baseline_for_expected_deletions() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let state_dir = temp_dir("core_ops_plan_retained_snapshot");
     fs::create_dir_all(&state_dir).expect("create state dir");
     let state_file = state_dir.join("status.json");
@@ -1414,9 +1410,11 @@ fn plan_in_detached_state_prepends_detached_header() {
         TreeState, PERSISTED_PROVENANCE_SCHEMA_VERSION,
     };
 
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_plan_detached");
-    let rev = init_git_repo(&repo);
+    let rev = init_git_repo(&repo, "example-host");
 
     let host_quadlets = temp_dir("core_ops_host_plan_detached");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
@@ -1445,6 +1443,7 @@ fn plan_in_detached_state_prepends_detached_header() {
             requested_ref: "main".to_string(),
             last_observed_revision: None,
             last_observed_at: None,
+            layout_version: None,
         },
         reconciliation,
         detached: true,

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::integration::env_lock::path_lock;
@@ -14,29 +14,35 @@ fn temp_repo() -> PathBuf {
     path
 }
 
-fn init_repo(repo: &PathBuf) -> String {
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(repo)
-        .output()
-        .expect("git init");
-
-    std::fs::create_dir_all(repo.join("services/immich")).expect("service dir");
+fn init_repo(repo: &Path) -> String {
+    // Container goes under quadlet/, mount/automount under systemd/ per
+    // the formalized payload-kind split. Host overlays target the
+    // per-service tree at hosts/<host>/<svc>/systemd/<unit>.<ext>.d/.
+    let svc_quadlet = repo.join("services/immich/quadlet");
+    let svc_systemd = repo.join("services/immich/systemd");
+    std::fs::create_dir_all(&svc_quadlet).expect("service quadlet dir");
+    std::fs::create_dir_all(&svc_systemd).expect("service systemd dir");
     std::fs::create_dir_all(repo.join("hosts/alpha")).expect("host alpha");
-    std::fs::create_dir_all(repo.join("hosts/beta/overrides/var-lib-immich-media.mount.d"))
-        .expect("beta mount overrides");
-    std::fs::create_dir_all(repo.join("hosts/beta/overrides/var-lib-immich-media.automount.d"))
-        .expect("beta automount overrides");
-    std::fs::create_dir_all(repo.join("hosts/invalid/overrides/var-lib-immich-media.mount.d"))
-        .expect("host invalid");
+    std::fs::create_dir_all(
+        repo.join("hosts/beta/immich/systemd/var-lib-immich-media.mount.d"),
+    )
+    .expect("beta mount overrides");
+    std::fs::create_dir_all(
+        repo.join("hosts/beta/immich/systemd/var-lib-immich-media.automount.d"),
+    )
+    .expect("beta automount overrides");
+    std::fs::create_dir_all(
+        repo.join("hosts/invalid/immich/systemd/var-lib-immich-media.mount.d"),
+    )
+    .expect("host invalid");
 
     std::fs::write(
-        repo.join("services/immich/immich.container"),
+        svc_quadlet.join("immich.container"),
         "[Container]\nImage=immich\n[Service]\nRequiresMountsFor=/var/lib/immich/media\n[Unit]\nAfter=var-lib-immich-media.automount var-lib-immich-media.mount\nRequires=var-lib-immich-media.automount var-lib-immich-media.mount\n",
     )
     .expect("write artifact");
     std::fs::write(
-        repo.join("services/immich/var-lib-immich-media.mount"),
+        svc_systemd.join("var-lib-immich-media.mount"),
         r#"[Unit]
 After=network-online.target
 Wants=network-online.target
@@ -53,12 +59,12 @@ CreateMountpoint=true
     )
     .expect("write media mount");
     std::fs::write(
-        repo.join("services/immich/var-lib-immich-media.automount"),
+        svc_systemd.join("var-lib-immich-media.automount"),
         "[Automount]\nWhere=/var/lib/immich/media\n",
     )
     .expect("write media automount");
     std::fs::write(
-        repo.join("services/immich/var-lib-immich-cache.mount"),
+        svc_systemd.join("var-lib-immich-cache.mount"),
         r#"[Mount]
 What=/var/cache/immich
 Where=/var/lib/immich/cache
@@ -80,7 +86,7 @@ Options=bind
     }
 
     std::fs::write(
-        repo.join("hosts/beta/overrides/var-lib-immich-media.mount.d/20-host.conf"),
+        repo.join("hosts/beta/immich/systemd/var-lib-immich-media.mount.d/20-host.conf"),
         r#"[Mount]
 What=nas:/volume2/media
 Options=rw,hard,noatime
@@ -88,52 +94,25 @@ Options=rw,hard,noatime
     )
     .expect("write beta mount drop-in");
     std::fs::write(
-        repo.join("hosts/beta/overrides/var-lib-immich-media.automount.d/20-host.conf"),
+        repo.join("hosts/beta/immich/systemd/var-lib-immich-media.automount.d/20-host.conf"),
         "[Automount]\nWhere=/var/lib/immich/media\n",
     )
     .expect("write beta automount drop-in");
 
     std::fs::write(
-        repo.join("hosts/invalid/overrides/var-lib-immich-media.mount.d/20-host.conf"),
+        repo.join("hosts/invalid/immich/systemd/var-lib-immich-media.mount.d/20-host.conf"),
         r#"[Mount]
 Where=/srv/immich/media
 "#,
     )
     .expect("write invalid overrides");
 
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add");
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("commit")
-        .arg("-m")
-        .arg("fixture")
-        .env("GIT_AUTHOR_NAME", "fixture")
-        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
-        .env("GIT_COMMITTER_NAME", "fixture")
-        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
-        .output()
-        .expect("git commit");
-
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse");
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    crate::integration::source_repo_support::git_init_commit(repo)
 }
 
 #[test]
 fn reusable_mount_declarations_support_layered_native_overrides_and_service_dependencies() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let repo = temp_repo();
     let rev = init_repo(&repo);
 
@@ -193,23 +172,21 @@ fn reusable_mount_declarations_support_layered_native_overrides_and_service_depe
 
 #[test]
 fn managed_mount_artifacts_reject_removed_x_coreops_fields() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let repo = temp_repo();
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(&repo)
-        .output()
-        .expect("git init");
 
-    std::fs::create_dir_all(repo.join("services/immich")).expect("service dir");
+    let svc_quadlet = repo.join("services/immich/quadlet");
+    let svc_systemd = repo.join("services/immich/systemd");
+    std::fs::create_dir_all(&svc_quadlet).expect("service quadlet dir");
+    std::fs::create_dir_all(&svc_systemd).expect("service systemd dir");
     std::fs::create_dir_all(repo.join("hosts/alpha")).expect("host dir");
     std::fs::write(
-        repo.join("services/immich/immich.container"),
+        svc_quadlet.join("immich.container"),
         "[Container]\nImage=immich\n[Service]\nRequiresMountsFor=/var/lib/immich/media\n",
     )
     .expect("write artifact");
     std::fs::write(
-        repo.join("services/immich/var-lib-immich-media.mount"),
+        svc_systemd.join("var-lib-immich-media.mount"),
         r#"[Mount]
 What=nas:/volume1/media
 Where=/var/lib/immich/media
@@ -226,34 +203,7 @@ Id=immich-media
     )
     .expect("write host");
 
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(&repo)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add");
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(&repo)
-        .arg("commit")
-        .arg("-m")
-        .arg("fixture")
-        .env("GIT_AUTHOR_NAME", "fixture")
-        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
-        .env("GIT_COMMITTER_NAME", "fixture")
-        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
-        .output()
-        .expect("git commit");
-
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse");
-    let rev = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let rev = crate::integration::source_repo_support::git_init_commit(&repo);
 
     let previous = std::env::var_os("CORE_OPS_HOST");
     let _guard = HostGuard(previous);

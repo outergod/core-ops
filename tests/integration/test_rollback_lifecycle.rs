@@ -2,8 +2,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::integration::env_lock::path_lock;
+use crate::integration::source_repo_support::HostGuard;
 use core_ops::cli::apply::{apply_with_report, execute_rollback_with_report};
 use core_ops::core::types::ReconciliationStatus;
+use core_ops::io::repo::HOST_OVERRIDE_ENV;
 use core_ops::io::state::{
     read_persisted_state, DETERMINISTIC_STATE_FILE_NAME, STATE_FILE_ENV,
 };
@@ -19,10 +21,10 @@ fn temp_dir(prefix: &str) -> PathBuf {
 }
 
 fn commit_quadlet(repo: &Path, image: &str) -> String {
-    let quadlets = repo.join("quadlets");
-    fs::create_dir_all(&quadlets).expect("create quadlets");
+    let services = repo.join("services/alpha/quadlet");
+    fs::create_dir_all(&services).expect("services");
     fs::write(
-        quadlets.join("alpha.container"),
+        services.join("alpha.container"),
         format!("[Container]\nImage={image}\n"),
     )
     .expect("write quadlet");
@@ -48,11 +50,22 @@ fn commit_quadlet(repo: &Path, image: &str) -> String {
 }
 
 fn init_git_repo_with_two_commits(repo: &Path) -> (String, String) {
+    fs::create_dir_all(repo).expect("create repo");
     std::process::Command::new("git")
         .arg("init")
         .arg(repo)
         .output()
         .expect("git init");
+
+    // host.yaml is committed once; the two revs differ only in the
+    // alpha.container payload.
+    let hosts = repo.join("hosts/example-host");
+    fs::create_dir_all(&hosts).expect("hosts");
+    fs::write(
+        hosts.join("host.yaml"),
+        "host: example-host\nservices:\n  - alpha\n",
+    )
+    .expect("write host.yaml");
 
     let rev1 = commit_quadlet(repo, "alpine:3.18");
     let rev2 = commit_quadlet(repo, "alpine:3.19");
@@ -127,6 +140,8 @@ impl Drop for PathGuard {
 #[test]
 fn rollback_from_converged_sets_detached_flag() {
     let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
 
     let repo = temp_dir("core_ops_repo_rollback_detach");
     let (rev1, rev2) = init_git_repo_with_two_commits(&repo);
@@ -218,6 +233,8 @@ fn rollback_sets_detached_flag_even_when_already_detached() {
     use core_ops::io::state::write_persisted_state;
 
     let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
 
     let repo = temp_dir("core_ops_repo_rollback_further");
     let (rev1, rev2) = init_git_repo_with_two_commits(&repo);

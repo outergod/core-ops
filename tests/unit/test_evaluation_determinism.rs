@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 fn evaluation_is_deterministic_for_same_input() {
     let service = ServiceDefinition {
         name: "alpha".to_string(),
+        config_root: "alpha".to_string(),
         artifacts: vec![
             ArtifactSource {
                 name: "beta.container".to_string(),

@@ -1,0 +1,12 @@
+[Unit]
+Description=variant config-root verification placeholder
+
+[Container]
+Image=docker.io/traefik/whoami:v1.10
+ContainerName=traefik-dnschallenge
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

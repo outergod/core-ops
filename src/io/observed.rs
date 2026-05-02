@@ -67,10 +67,15 @@ pub fn read_observed_state(
         .map(|desired| read_native_mount_units(&socket_dir, desired))
         .transpose()?
         .unwrap_or_default();
+    let native_passive_units = desired
+        .map(|desired| read_native_passive_units(&socket_dir, desired))
+        .transpose()?
+        .unwrap_or_default();
     let allowed_socket_dropins = desired.map(desired_socket_dropins).unwrap_or_default();
     let socket_dropins = read_socket_dropins(&socket_dir, &socket_units, &allowed_socket_dropins)?;
     workloads.extend(socket_units);
     workloads.extend(native_mount_units);
+    workloads.extend(native_passive_units);
     workloads.extend(socket_dropins);
     if let Some(desired) = desired {
         workloads.extend(read_config_files(&desired.managed_config_roots)?);
@@ -199,6 +204,89 @@ fn read_native_mount_units(
         });
     }
     Ok(workloads)
+}
+
+/// Read native systemd timer / target / path units from the systemd
+/// unit dir. Includes a file under either of these conditions:
+///
+///  - it appears in the desired set (so reconcile pairs it with the
+///    desired entry — without this, every reconcile would plan the
+///    desired unit as a fresh create, churning write/reload/start
+///    indefinitely — Codex P1 on PR #28); or
+///  - it carries the managed-by marker injected by
+///    `normalize_native_unit_contents` on write but is NO LONGER in
+///    desired — a stale CoreOps leftover that the planner needs to
+///    surface so it can emit `RemoveQuadlet` / `StopUnit` (Codex P1
+///    follow-up: without stale-discovery, removing a *.timer/.target/
+///    .path from the source repo leaves the file and runtime unit
+///    behind indefinitely).
+///
+/// User-authored unrelated units in `/etc/systemd/system/` are
+/// ignored: they neither match the desired set nor carry the marker.
+fn read_native_passive_units(
+    dir: &Path,
+    desired: &DesiredState,
+) -> Result<Vec<Workload>, ObservedError> {
+    let desired_units = desired_native_passive_unit_names(desired);
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut workloads = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            continue;
+        }
+        let Some(unit_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if unit_name.starts_with('.') {
+            continue;
+        }
+        let quadlet_type = if unit_name.ends_with(".timer") {
+            QuadletType::Timer
+        } else if unit_name.ends_with(".target") {
+            QuadletType::Target
+        } else if unit_name.ends_with(".path") {
+            QuadletType::Path
+        } else {
+            continue;
+        };
+        let contents = std::fs::read_to_string(&path)?;
+        let is_desired = desired_units.contains(unit_name);
+        let is_managed_stale = contents.contains(crate::io::quadlet::SOCKET_MANAGED_MARKER);
+        if !is_desired && !is_managed_stale {
+            continue;
+        }
+        workloads.push(Workload {
+            name: Path::new(&unit_name)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or(unit_name)
+                .to_string(),
+            quadlet_type,
+            quadlet_contents: contents,
+            systemd_unit_name: unit_name.to_string(),
+            enabled_state: EnabledState::Enabled,
+            restart_policy: RestartPolicy::Always,
+        });
+    }
+    Ok(workloads)
+}
+
+fn desired_native_passive_unit_names(desired: &DesiredState) -> std::collections::BTreeSet<String> {
+    desired
+        .workloads
+        .iter()
+        .filter(|w| {
+            matches!(
+                w.quadlet_type,
+                QuadletType::Timer | QuadletType::Target | QuadletType::Path
+            )
+        })
+        .map(|w| w.systemd_unit_name.clone())
+        .collect()
 }
 
 fn desired_native_mount_unit_names(desired: &DesiredState) -> std::collections::BTreeSet<String> {
@@ -467,5 +555,150 @@ fn map_enabled_state(value: &str) -> EnabledState {
     match value {
         "enabled" => EnabledState::Enabled,
         _ => EnabledState::Disabled,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{read_native_passive_units, Workload};
+    use crate::core::types::{
+        Boundaries, BoundaryScope, DesiredState, EnabledState, Invariant, QuadletType,
+        RestartPolicy,
+    };
+
+    fn workload(unit_name: &str, kind: QuadletType) -> Workload {
+        Workload {
+            name: unit_name.split('.').next().unwrap_or("").to_string(),
+            quadlet_type: kind,
+            quadlet_contents: String::new(),
+            systemd_unit_name: unit_name.to_string(),
+            enabled_state: EnabledState::Enabled,
+            restart_policy: RestartPolicy::Always,
+        }
+    }
+
+    fn desired_with(workloads: Vec<Workload>) -> DesiredState {
+        DesiredState {
+            repository_ref: "repo".to_string(),
+            revision_id: "rev".to_string(),
+            requested_repository: None,
+            requested_ref: None,
+            workloads,
+            mount_declarations: Vec::new(),
+            mount_dependencies: Vec::new(),
+            managed_config_paths: Vec::new(),
+            managed_config_roots: Vec::new(),
+            invariants: vec![Invariant::BoundariesDeclared, Invariant::DeterministicPlan],
+            boundaries: Boundaries {
+                scopes: vec![BoundaryScope::QuadletSystemd],
+            },
+        }
+    }
+
+    #[test]
+    fn passive_units_with_managed_marker_surface_when_dropped_from_desired() {
+        // Codex P1 follow-up on PR #28: stale CoreOps-managed
+        // *.timer/*.target/*.path units must surface in observed
+        // state even after they've been dropped from desired, so the
+        // planner can emit RemoveQuadlet / StopUnit. Detected via the
+        // managed-by marker that workload_from_artifact injects on
+        // write.
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("backup.timer"),
+            "# managed-by: core-ops\n[Timer]\nOnCalendar=hourly\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("readiness.target"),
+            "# managed-by: core-ops\n[Unit]\nDescription=ready\n",
+        )
+        .unwrap();
+        // A user-authored timer without the marker, NOT in desired.
+        // Must be ignored (we can't tell it's CoreOps-managed; safer
+        // to leave alone than risk removing operator content).
+        std::fs::write(
+            dir.path().join("user-thing.timer"),
+            "[Timer]\nOnCalendar=daily\n",
+        )
+        .unwrap();
+
+        // Desired set is EMPTY — the operator removed every passive
+        // unit from the source repo. The two CoreOps-marked files
+        // must surface as observed (stale workloads) so the planner
+        // emits removal actions; user-thing.timer must not.
+        let desired = desired_with(Vec::new());
+        let observed = read_native_passive_units(dir.path(), &desired).expect("scan");
+
+        let names: Vec<&str> = observed
+            .iter()
+            .map(|w| w.systemd_unit_name.as_str())
+            .collect();
+        assert!(names.contains(&"backup.timer"), "stale marked timer must surface");
+        assert!(
+            names.contains(&"readiness.target"),
+            "stale marked target must surface"
+        );
+        assert!(
+            !names.contains(&"user-thing.timer"),
+            "unmarked user unit must NOT surface as stale: {names:?}"
+        );
+    }
+
+    #[test]
+    fn passive_units_match_observed_disk_files_to_desired() {
+        // Codex P1 on PR #28: without this scan, every reconcile plans
+        // desired timer/target/path entries as fresh creates because the
+        // observed-state reader didn't know to look for them.
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("backup.timer"),
+            "[Timer]\nOnCalendar=hourly\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("readiness.target"),
+            "[Unit]\nDescription=ready\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("inbox.path"),
+            "[Path]\nPathChanged=/var/lib/inbox\n",
+        )
+        .unwrap();
+        // A user-authored timer NOT in desired must be ignored to avoid
+        // polluting observed-state with unrelated units.
+        std::fs::write(
+            dir.path().join("user-thing.timer"),
+            "[Timer]\nOnCalendar=daily\n",
+        )
+        .unwrap();
+
+        let desired = desired_with(vec![
+            workload("backup.timer", QuadletType::Timer),
+            workload("readiness.target", QuadletType::Target),
+            workload("inbox.path", QuadletType::Path),
+        ]);
+        let observed = read_native_passive_units(dir.path(), &desired).expect("scan");
+
+        let names: Vec<&str> = observed
+            .iter()
+            .map(|w| w.systemd_unit_name.as_str())
+            .collect();
+        assert!(names.contains(&"backup.timer"));
+        assert!(names.contains(&"readiness.target"));
+        assert!(names.contains(&"inbox.path"));
+        assert!(
+            !names.contains(&"user-thing.timer"),
+            "non-desired user-authored unit must NOT enter observed: {names:?}"
+        );
+
+        // The observed entries must carry the right QuadletType so the
+        // diff layer pairs them with desired correctly.
+        let timer = observed
+            .iter()
+            .find(|w| w.systemd_unit_name == "backup.timer")
+            .unwrap();
+        assert_eq!(timer.quadlet_type, QuadletType::Timer);
     }
 }

@@ -36,6 +36,7 @@ steps:
     target: guest
     action:
       action: apply
+      host: test-vm
       mode: humane
 assertions:
   - assertion_id: init-succeeded

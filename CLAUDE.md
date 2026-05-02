@@ -1,10 +1,12 @@
 # core-ops Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-15
+Auto-generated from all feature plans. Last updated: 2026-05-01
 
 ## Active Technologies
 - Rust 2021 + clap 4, serde / serde_json, miette, thiserror, tempfile (015-controller-state-lifecycle)
 - JSON state file at `/var/lib/core-ops/status.json` (atomic write via tempfile) (015-controller-state-lifecycle)
+- Rust 2021 (stable toolchain), as established by the existing `core-ops` crate at v1.0.0; this feature is the trigger for the v2.0.0 major bump. + `clap` 4.5 (derive), `serde` 1.0 (derive), `serde_yaml` 0.9, `serde_json` 1.0, `miette` 7.2 (fancy diagnostics), `thiserror` 1.0, `tempfile` 3.10. No new runtime dependencies are required by this feature. (016-source-repository-layout)
+- Source repository on filesystem (input); existing canonical status snapshot at `/var/lib/core-ops/status.json` (output). The status snapshot gains a `layout-version: "1"` field to record which layout produced it. (016-source-repository-layout)
 
 - Rust 2021 — clap 4, serde, miette, serde_json, serde_yaml
 - GitHub Actions — ubuntu-latest runners, `gh` CLI, `rustup`
@@ -70,10 +72,10 @@ removed or renamed.
 Follow standard Rust conventions. No new abstractions without justification.
 
 ## Recent Changes
+- 016-source-repository-layout: Added Rust 2021 (stable toolchain), as established by the existing `core-ops` crate at v1.0.0; this feature is the trigger for the v2.0.0 major bump. + `clap` 4.5 (derive), `serde` 1.0 (derive), `serde_yaml` 0.9, `serde_json` 1.0, `miette` 7.2 (fancy diagnostics), `thiserror` 1.0, `tempfile` 3.10. No new runtime dependencies are required by this feature.
 - 015-controller-state-lifecycle: Added Rust 2021 + clap 4, serde / serde_json, miette, thiserror, tempfile
 
 - 014-config-restart-fidelity: Fix planner to emit RestartUnit for config-file-dependent containers
-- 012-unify-ci-release: Unified CI workflow — build matrix, artifact upload, release job
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

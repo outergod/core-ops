@@ -112,6 +112,9 @@ pub(crate) fn parse_quadlet_name(file_name: &str) -> Result<(String, QuadletType
         "network" => QuadletType::Network,
         "mount" => QuadletType::Mount,
         "automount" => QuadletType::Automount,
+        "timer" => QuadletType::Timer,
+        "target" => QuadletType::Target,
+        "path" => QuadletType::Path,
         _ => return Err(QuadletError::UnsupportedExtension(ext.to_string())),
     };
 
@@ -119,6 +122,16 @@ pub(crate) fn parse_quadlet_name(file_name: &str) -> Result<(String, QuadletType
 }
 
 pub(crate) fn normalize_socket_contents(contents: &str) -> String {
+    normalize_native_unit_contents(contents)
+}
+
+/// Inject the managed-by marker as the first line of a native systemd
+/// unit's contents. Used by sockets and (per Codex P1 follow-up) by
+/// timer/target/path — the marker enables observed-state stale
+/// detection: a unit file present on disk but absent from desired
+/// state is identified as a CoreOps leftover and gets `RemoveQuadlet`
+/// in the next plan, rather than persisting indefinitely.
+pub(crate) fn normalize_native_unit_contents(contents: &str) -> String {
     if contents.contains(SOCKET_MANAGED_MARKER) {
         return contents.to_string();
     }

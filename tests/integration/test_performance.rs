@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::integration::env_lock::path_lock;
+use crate::integration::source_repo_support::{git_init_commit, HostGuard};
+use core_ops::io::repo::HOST_OVERRIDE_ENV;
 use core_ops::cli::report::{
     build_result_output, format_deterministic_plan_report, format_result_output_report,
 };
@@ -25,49 +27,28 @@ fn temp_dir(prefix: &str) -> PathBuf {
     path
 }
 
-fn init_git_repo(repo: &PathBuf, count: usize) -> String {
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(repo)
-        .output()
-        .expect("git init");
-
-    let quadlets = repo.join("quadlets");
-    fs::create_dir_all(&quadlets).expect("create quadlets");
+/// Builds a single `bench` service holding `count` container artifacts
+/// under services/bench/quadlet/, plus hosts/example-host/host.yaml
+/// selecting that service. Returns the resulting commit SHA.
+fn init_git_repo(repo: &Path, count: usize) -> String {
+    fs::create_dir_all(repo).expect("create repo");
+    let svc = repo.join("services/bench/quadlet");
+    let hosts = repo.join("hosts/example-host");
+    fs::create_dir_all(&svc).expect("services");
+    fs::create_dir_all(&hosts).expect("hosts");
     for idx in 0..count {
-        let name = format!("workload{idx}.container");
-        fs::write(quadlets.join(name), "[Container]\nImage=alpine").expect("write quadlet");
+        fs::write(
+            svc.join(format!("workload{idx}.container")),
+            "[Container]\nImage=alpine\n",
+        )
+        .expect("write quadlet");
     }
-
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add");
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("commit")
-        .arg("-m")
-        .arg("fixture")
-        .env("GIT_AUTHOR_NAME", "fixture")
-        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
-        .env("GIT_COMMITTER_NAME", "fixture")
-        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
-        .output()
-        .expect("git commit");
-
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse");
-
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    fs::write(
+        hosts.join("host.yaml"),
+        "host: example-host\nservices:\n  - bench\n",
+    )
+    .expect("write host.yaml");
+    git_init_commit(repo)
 }
 
 fn write_systemctl_stub(dir: &Path) {
@@ -100,7 +81,9 @@ esac
 
 #[test]
 fn reconcile_apply_completes_under_budget() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_perf");
     let rev = init_git_repo(&repo, 50);
 
@@ -139,7 +122,9 @@ fn reconcile_apply_completes_under_budget() {
 
 #[test]
 fn plan_and_result_rendering_complete_within_interactive_budget() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_render_perf");
     let rev = init_git_repo(&repo, 50);
 

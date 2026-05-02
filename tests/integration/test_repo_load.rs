@@ -1,246 +1,149 @@
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
+use std::process::Command;
 
-use core_ops::io::repo::load_desired_state;
+use crate::integration::source_repo_support::{
+    git_init_commit, load_source_with_host, load_with_host, materialize_skeleton, write_host_yaml,
+};
 
-use crate::integration::env_lock::path_lock;
-
-struct HostGuard(Option<std::ffi::OsString>);
-
-impl Drop for HostGuard {
-    fn drop(&mut self) {
-        if let Some(value) = &self.0 {
-            std::env::set_var("CORE_OPS_HOST", value);
-        } else {
-            std::env::remove_var("CORE_OPS_HOST");
-        }
-    }
-}
-
-fn temp_repo() -> PathBuf {
-    let mut path = std::env::temp_dir();
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time")
-        .as_nanos();
-    path.push(format!("core_ops_repo_{}", nanos));
-    path
-}
-
-fn init_git_repo(repo: &PathBuf) -> String {
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(repo)
-        .output()
-        .expect("git init");
-
-    let quadlets = repo.join("quadlets");
-    std::fs::create_dir_all(&quadlets).expect("create quadlets");
+/// Build a minimal services/<svc>/quadlet/<svc>.container fixture and
+/// commit it. Used by the basic loader tests below.
+fn init_alpha_repo(repo: &Path) -> String {
+    let services = repo.join("services/alpha/quadlet");
+    let hosts = repo.join("hosts/example-host");
+    std::fs::create_dir_all(&services).expect("services");
+    std::fs::create_dir_all(&hosts).expect("hosts");
     std::fs::write(
-        quadlets.join("alpha.container"),
-        "[Container]\nImage=alpine",
+        services.join("alpha.container"),
+        "[Container]\nImage=alpine\n",
     )
     .expect("write quadlet");
-
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add");
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("commit")
-        .arg("-m")
-        .arg("fixture")
-        .env("GIT_AUTHOR_NAME", "fixture")
-        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
-        .env("GIT_COMMITTER_NAME", "fixture")
-        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
-        .output()
-        .expect("git commit");
-
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse");
-
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
-fn init_mount_git_repo(repo: &PathBuf) -> String {
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(repo)
-        .output()
-        .expect("git init");
-
-    let quadlets = repo.join("quadlets");
-    std::fs::create_dir_all(&quadlets).expect("create quadlets");
     std::fs::write(
-        quadlets.join("immich.container"),
-        "[Unit]\nDescription=Verification mount-backed service\nAfter=var-lib-immich-media.mount\nRequires=var-lib-immich-media.mount\n\n[Container]\nImage=docker.io/library/caddy:2.10.2-alpine\nContainerName=immich\n\n[Service]\nRestart=on-failure\nRequiresMountsFor=/var/lib/immich/media\n\n[Install]\nWantedBy=default.target\n",
+        hosts.join("host.yaml"),
+        "host: example-host\nservices:\n  - alpha\n",
     )
-    .expect("write container");
-    std::fs::write(
-        quadlets.join("var-lib-immich-media.mount"),
-        "[Unit]\nDescription=Verification bind mount for reboot resilience\n\n[Mount]\nWhat=/usr/share/zoneinfo\nWhere=/var/lib/immich/media\nType=none\nOptions=bind,ro\n\n[X-CoreOps]\nCreateMountpoint=true\n",
-    )
-    .expect("write mount");
-
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add");
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("commit")
-        .arg("-m")
-        .arg("mount fixture")
-        .env("GIT_AUTHOR_NAME", "fixture")
-        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
-        .env("GIT_COMMITTER_NAME", "fixture")
-        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
-        .output()
-        .expect("git commit");
-
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse");
-
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    .expect("write host.yaml");
+    git_init_commit(repo)
 }
 
 #[test]
 fn loads_desired_state_from_quadlet_dir() {
-    let repo = temp_repo();
-    let rev = init_git_repo(&repo);
+    let (tmp, _services, _hosts) = materialize_skeleton();
+    // materialize_skeleton seeded services/ and hosts/ as empty dirs; rewrite
+    // them with the alpha fixture under the canonical layout.
+    let rev = init_alpha_repo(tmp.path());
 
-    let desired = load_desired_state(repo.to_str().unwrap(), &rev).expect("load desired");
+    let desired = load_with_host(tmp.path(), &rev, "example-host").expect("load desired");
 
     assert_eq!(desired.revision_id, rev);
-    assert_eq!(desired.workloads.len(), 1);
-    assert_eq!(desired.workloads[0].name, "alpha");
-    assert_eq!(desired.workloads[0].systemd_unit_name, "alpha.container");
+    let alpha = desired
+        .workloads
+        .iter()
+        .find(|w| w.name == "alpha")
+        .expect("alpha workload");
+    assert_eq!(alpha.systemd_unit_name, "alpha.container");
 }
 
 #[test]
 fn loads_desired_state_from_git_url_fixture() {
-    let repo = temp_repo();
-    let rev = init_git_repo(&repo);
+    let (tmp, _services, _hosts) = materialize_skeleton();
+    let rev = init_alpha_repo(tmp.path());
+    let repo_url = format!("file://{}", tmp.path().display());
 
-    let repo_url = format!("file://{}", repo.display());
-    let desired = load_desired_state(&repo_url, &rev).expect("load desired");
+    let desired =
+        load_source_with_host(&repo_url, &rev, "example-host").expect("load desired");
 
     assert!(!desired.workloads.is_empty());
 }
 
 #[test]
-fn ignores_dotfiles_and_warns_on_unknown_extensions() {
-    let repo = temp_repo();
-    let rev = init_git_repo(&repo);
-    let quadlets = repo.join("quadlets");
-
+fn tolerates_dotfiles_in_service_directory() {
+    // FR-009 reserves `_` and `.` as identifier prefixes; the parser is
+    // explicitly tolerant of dotfile metadata under services/<svc>/ and
+    // services/<svc>/quadlet/ (.gitkeep, .DS_Store, etc.). Confirm a
+    // dotfile next to a real container does not change the workload set.
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc_dir = services.join("alpha");
+    let quadlet_dir = svc_dir.join("quadlet");
+    std::fs::create_dir_all(&quadlet_dir).expect("create quadlet");
     std::fs::write(
-        quadlets.join(".ignored.container"),
-        "[Container]\nImage=alpine",
+        quadlet_dir.join("alpha.container"),
+        "[Container]\nImage=alpine\n",
     )
-    .expect("write dotfile");
-    std::fs::write(quadlets.join("readme.txt"), "ignore me").expect("write unknown");
+    .expect("write container");
+    std::fs::write(svc_dir.join(".gitkeep"), "").expect("write dotfile at svc root");
+    std::fs::write(quadlet_dir.join(".DS_Store"), "").expect("write dotfile in payload");
+    write_host_yaml(&hosts, "example-host", &["alpha"]);
+    let rev = git_init_commit(tmp.path());
 
-    let desired = load_desired_state(repo.to_str().unwrap(), &rev).expect("load desired");
+    let desired = load_with_host(tmp.path(), &rev, "example-host").expect("load desired");
 
-    assert_eq!(desired.workloads.len(), 1);
-    assert_eq!(desired.workloads[0].name, "alpha");
+    let alpha_units: Vec<&str> = desired
+        .workloads
+        .iter()
+        .filter(|w| w.name == "alpha")
+        .map(|w| w.systemd_unit_name.as_str())
+        .collect();
+    assert_eq!(alpha_units, vec!["alpha.container"]);
 }
 
 #[test]
 fn layered_repo_preserves_requested_repository_and_ref() {
-    let _lock = path_lock().lock().expect("path lock");
-    let previous_host = std::env::var_os("CORE_OPS_HOST");
-    let _host_guard = HostGuard(previous_host);
-    let repo = temp_repo();
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(&repo)
-        .output()
-        .expect("git init");
-    let services = repo.join("services").join("demo").join("quadlet");
-    let hosts = repo.join("hosts").join("uat");
-    std::fs::create_dir_all(&services).expect("create services");
-    std::fs::create_dir_all(&hosts).expect("create hosts");
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc_quadlet = services.join("demo/quadlet");
+    std::fs::create_dir_all(&svc_quadlet).expect("create services");
     std::fs::write(
-        services.join("whoami.container"),
-        "[Container]\nImage=quay.io/podman/hello",
+        svc_quadlet.join("whoami.container"),
+        "[Container]\nImage=quay.io/podman/hello\n",
     )
     .expect("write service quadlet");
-    std::fs::write(hosts.join("host.yaml"), "host: uat\nservices:\n  - demo\n")
-        .expect("write host yaml");
-
-    std::process::Command::new("git")
+    write_host_yaml(&hosts, "uat", &["demo"]);
+    let rev = git_init_commit(tmp.path());
+    Command::new("git")
         .arg("-C")
-        .arg(&repo)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add");
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(&repo)
-        .arg("commit")
-        .arg("-m")
-        .arg("layered fixture")
-        .env("GIT_AUTHOR_NAME", "fixture")
-        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
-        .env("GIT_COMMITTER_NAME", "fixture")
-        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
-        .output()
-        .expect("git commit");
-
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse");
-    let rev = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(&repo)
+        .arg(tmp.path())
         .arg("branch")
         .arg("demo-uat-v2")
         .output()
         .expect("git branch");
 
-    std::env::set_var("CORE_OPS_HOST", "uat");
-    let desired = load_desired_state(repo.to_str().unwrap(), "demo-uat-v2").expect("load desired");
-    // CORE_OPS_HOST is restored by _host_guard on drop
+    let desired =
+        load_with_host(tmp.path(), "demo-uat-v2", "uat").expect("load desired");
 
     assert_eq!(desired.revision_id, rev);
-    assert_eq!(desired.requested_repository.as_deref(), repo.to_str());
+    assert_eq!(desired.requested_repository.as_deref(), tmp.path().to_str());
     assert_eq!(desired.requested_ref.as_deref(), Some("demo-uat-v2"));
 }
 
 #[test]
 fn loads_mount_declarations_and_dependencies_from_quadlet_only_repo() {
-    let repo = temp_repo();
-    let rev = init_mount_git_repo(&repo);
+    let (tmp, services, hosts) = materialize_skeleton();
+    // Container and mount belong to the same service id (`immich`) so the
+    // mount dependency resolves through the catalog. Container goes under
+    // quadlet/, mount goes under systemd/ per the payload-kind split.
+    let svc_quadlet = services.join("immich/quadlet");
+    let svc_systemd = services.join("immich/systemd");
+    std::fs::create_dir_all(&svc_quadlet).expect("create quadlet");
+    std::fs::create_dir_all(&svc_systemd).expect("create systemd");
+    std::fs::write(
+        svc_quadlet.join("immich.container"),
+        "[Unit]\nDescription=Verification mount-backed service\n\
+         After=var-lib-immich-media.mount\nRequires=var-lib-immich-media.mount\n\n\
+         [Container]\nImage=docker.io/library/caddy:2.10.2-alpine\nContainerName=immich\n\n\
+         [Service]\nRestart=on-failure\nRequiresMountsFor=/var/lib/immich/media\n\n\
+         [Install]\nWantedBy=default.target\n",
+    )
+    .expect("write container");
+    std::fs::write(
+        svc_systemd.join("var-lib-immich-media.mount"),
+        "[Unit]\nDescription=Verification bind mount for reboot resilience\n\n\
+         [Mount]\nWhat=/usr/share/zoneinfo\nWhere=/var/lib/immich/media\nType=none\n\
+         Options=bind,ro\n\n[X-CoreOps]\nCreateMountpoint=true\n",
+    )
+    .expect("write mount");
+    write_host_yaml(&hosts, "example-host", &["immich"]);
+    let rev = git_init_commit(tmp.path());
 
-    let desired = load_desired_state(repo.to_str().unwrap(), &rev).expect("load desired");
+    let desired = load_with_host(tmp.path(), &rev, "example-host").expect("load desired");
 
     assert_eq!(desired.mount_declarations.len(), 1);
     let mount = &desired.mount_declarations[0];
@@ -248,12 +151,18 @@ fn loads_mount_declarations_and_dependencies_from_quadlet_only_repo() {
     assert_eq!(mount.target_path, "/var/lib/immich/media");
     assert_eq!(mount.source, "/usr/share/zoneinfo");
     assert_eq!(mount.fstype, "none");
-    assert_eq!(mount.mount_options, vec!["bind".to_string(), "ro".to_string()]);
+    assert_eq!(
+        mount.mount_options,
+        vec!["bind".to_string(), "ro".to_string()]
+    );
     assert!(!mount.automount);
 
     assert_eq!(desired.mount_dependencies.len(), 1);
     let dependency = &desired.mount_dependencies[0];
     assert_eq!(dependency.service_name, "immich");
     assert_eq!(dependency.mount_ids, vec!["var-lib-immich-media".to_string()]);
-    assert_eq!(dependency.consumed_paths, vec!["/var/lib/immich/media".to_string()]);
+    assert_eq!(
+        dependency.consumed_paths,
+        vec!["/var/lib/immich/media".to_string()]
+    );
 }

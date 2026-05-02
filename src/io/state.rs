@@ -151,6 +151,7 @@ pub fn persist_never_run_state(
             requested_ref: requested_ref.to_string(),
             last_observed_revision: None,
             last_observed_at: None,
+            layout_version: Some("1".to_string()),
         },
         reconciliation: never_run_provenance(),
         detached: false,
@@ -253,6 +254,9 @@ fn build_state(
                         .map(ToString::to_string)
                 })
             }),
+            layout_version: previous
+                .and_then(|s| s.desired_state.layout_version.clone())
+                .or_else(|| Some("1".to_string())),
         },
         reconciliation,
         detached: false,

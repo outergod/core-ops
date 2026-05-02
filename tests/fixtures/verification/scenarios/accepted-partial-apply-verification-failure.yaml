@@ -38,6 +38,7 @@ steps:
     target: guest
     action:
       action: apply
+      host: test-vm
       mode: humane
   - step_id: check-status-last-applied
     step_type: guest_command

@@ -40,7 +40,7 @@ fn execution_plan_preserves_step_order_and_default_timeouts() {
     );
     assert_eq!(
         plan.step_sequence[2].command_or_action.as_deref(),
-        Some("sudo core-ops apply --quadlet-dir /etc/containers/systemd --systemd-unit-dir /etc/systemd/system")
+        Some("sudo core-ops apply --host test-vm --quadlet-dir /etc/containers/systemd --systemd-unit-dir /etc/systemd/system")
     );
 }
 

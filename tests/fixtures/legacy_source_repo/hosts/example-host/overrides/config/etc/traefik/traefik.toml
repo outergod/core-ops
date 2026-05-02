@@ -1,0 +1,6 @@
+# /etc/traefik/traefik.toml — host overlay
+[entryPoints.web]
+address = ":80"
+
+[entryPoints.dashboard]
+address = "127.0.0.1:8080"

@@ -1,0 +1,9 @@
+[Unit]
+Description=traefik (DNS challenge variant)
+
+[Container]
+Image=docker.io/library/traefik:v3.0
+ContainerName=traefik-dnschallenge
+
+[Install]
+WantedBy=default.target

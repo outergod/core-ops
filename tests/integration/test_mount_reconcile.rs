@@ -33,7 +33,7 @@ fn reconcile_fixture_covers_invalid_and_busy_removal_paths() {
 
 #[test]
 fn observed_state_keeps_managed_native_mounts_visible_for_removal_planning() {
-    let _env_lock = path_lock().lock().expect("lock env");
+    let _env_lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = std::env::temp_dir().join(format!(
         "core_ops_mount_observed_{}",
         std::time::SystemTime::now()
@@ -95,7 +95,7 @@ fn observed_state_keeps_managed_native_mounts_visible_for_removal_planning() {
 
 #[test]
 fn observed_state_keeps_layered_generated_native_mounts_visible_for_removal_planning() {
-    let _env_lock = path_lock().lock().expect("lock env");
+    let _env_lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = std::env::temp_dir().join(format!(
         "core_ops_mount_observed_layered_{}",
         std::time::SystemTime::now()
@@ -157,7 +157,7 @@ fn observed_state_keeps_layered_generated_native_mounts_visible_for_removal_plan
 
 #[test]
 fn apply_prepares_target_path_and_starts_mount_before_service() {
-    let _env_lock = path_lock().lock().expect("lock env");
+    let _env_lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = std::env::temp_dir().join(format!(
         "core_ops_mount_apply_{}",
         std::time::SystemTime::now()
@@ -267,7 +267,7 @@ fn apply_prepares_target_path_and_starts_mount_before_service() {
 
 #[test]
 fn apply_starts_automount_before_service_without_starting_mount_unit() {
-    let _env_lock = path_lock().lock().expect("lock env");
+    let _env_lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = std::env::temp_dir().join(format!(
         "core_ops_automount_apply_{}",
         std::time::SystemTime::now()
@@ -375,7 +375,7 @@ fn apply_starts_automount_before_service_without_starting_mount_unit() {
 fn apply_accepts_existing_symlink_mountpoint() {
     use std::os::unix::fs::symlink;
 
-    let _env_lock = path_lock().lock().expect("lock env");
+    let _env_lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = std::env::temp_dir().join(format!(
         "core_ops_mount_symlink_{}",
         std::time::SystemTime::now()
@@ -455,7 +455,7 @@ fn apply_accepts_existing_symlink_mountpoint() {
 
 #[test]
 fn apply_accepts_existing_directory_mountpoint_without_mutating_it() {
-    let _env_lock = path_lock().lock().expect("lock env");
+    let _env_lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = std::env::temp_dir().join(format!(
         "core_ops_mount_existing_dir_{}",
         std::time::SystemTime::now()
@@ -532,7 +532,7 @@ fn apply_accepts_existing_directory_mountpoint_without_mutating_it() {
 
 #[test]
 fn apply_skips_prepare_for_existing_managed_mount_units() {
-    let _env_lock = path_lock().lock().expect("lock env");
+    let _env_lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let temp = std::env::temp_dir().join(format!(
         "core_ops_mount_skip_prepare_{}",
         std::time::SystemTime::now()

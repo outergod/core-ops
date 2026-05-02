@@ -279,6 +279,7 @@ fn fixture_state() -> PersistedProvenanceState {
             requested_ref: "main".to_string(),
             last_observed_revision: Some("deadbeef".to_string()),
             last_observed_at: Some("2026-03-23T10:05:00Z".to_string()),
+            layout_version: None,
         },
         reconciliation: ReconciliationProvenance {
             generation: 1,

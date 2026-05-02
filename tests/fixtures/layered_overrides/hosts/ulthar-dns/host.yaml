@@ -1,3 +1,0 @@
-host: ulthar-dns
-services:
-  - traefik-dnschallenge

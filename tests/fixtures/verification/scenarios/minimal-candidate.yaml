@@ -30,6 +30,7 @@ steps:
     target: guest
     action:
       action: apply
+      host: test-vm
       repository_source: fixture
       revision: demo-uat-v3
       mode: humane

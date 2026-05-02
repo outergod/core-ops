@@ -7,5 +7,6 @@ pub mod explain;
 pub mod init;
 pub mod plan;
 pub mod report;
+pub mod skill;
 pub mod status;
 pub mod verification;

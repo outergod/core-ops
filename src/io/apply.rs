@@ -404,7 +404,10 @@ fn target_dir_for_workload(quadlet_dir: &Path, workload: &Workload) -> PathBuf {
         QuadletType::Socket
         | QuadletType::SocketDropIn
         | QuadletType::Mount
-        | QuadletType::Automount => systemd_unit_dir(),
+        | QuadletType::Automount
+        | QuadletType::Timer
+        | QuadletType::Target
+        | QuadletType::Path => systemd_unit_dir(),
         QuadletType::ConfigFile => PathBuf::from("/"),
         _ => quadlet_dir.to_path_buf(),
     }
@@ -415,7 +418,18 @@ fn target_dir_for_name(quadlet_dir: &Path, target: &str) -> PathBuf {
         || Path::new(target)
             .extension()
             .and_then(|ext| ext.to_str())
-            .map(|ext| matches!(ext, "socket" | "mount" | "automount"))
+            .map(|ext| {
+                // Mirror target_dir_for_workload's allow-list so removal
+                // resolves the same path as creation. Codex P1 on PR #28:
+                // the previous list was missing timer/target/path, so
+                // removing a desired-removed *.timer (etc.) failed with
+                // MissingWorkload because the removal path couldn't
+                // locate the on-disk file under systemd_unit_dir.
+                matches!(
+                    ext,
+                    "socket" | "mount" | "automount" | "timer" | "target" | "path"
+                )
+            })
             == Some(true)
     {
         systemd_unit_dir()
@@ -604,7 +618,18 @@ fn unit_name_for_start_stop(
     if Path::new(target)
         .extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| matches!(ext, "service" | "socket" | "mount" | "automount"))
+        .map(|ext| {
+            // Same allow-list as target_dir_for_name: extensions whose
+            // runtime unit name equals the file name verbatim. Codex P1
+            // on PR #28: timer/target/path were missing here, so a
+            // remove StopUnit for `backup.timer` couldn't resolve the
+            // runtime unit and erroneously fell through to the
+            // quadlet-dir scan that doesn't find native units.
+            matches!(
+                ext,
+                "service" | "socket" | "mount" | "automount" | "timer" | "target" | "path"
+            )
+        })
         == Some(true)
     {
         return Ok(target.to_string());
@@ -621,4 +646,85 @@ fn unit_name_for_start_stop(
     }
 
     Err(ApplyError::MissingWorkload(target.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{target_dir_for_name, unit_name_for_start_stop, Workload};
+    use crate::core::types::{EnabledState, QuadletType, RestartPolicy};
+    use crate::io::systemd::SYSTEMD_UNIT_DIR_ENV;
+    use std::path::Path;
+
+    #[test]
+    fn timer_target_path_route_to_systemd_unit_dir_on_remove() {
+        // Codex P1 on PR #28: target_dir_for_name's allow-list was
+        // missing timer/target/path. Removing a desired-removed
+        // *.timer (where the workload has already been dropped from
+        // desired so the named-workload lookup falls through) must
+        // still resolve to systemd_unit_dir, otherwise RemoveQuadlet
+        // tries to delete from quadlet_dir and silently no-ops.
+        let _scope = ScopedEnv::set(SYSTEMD_UNIT_DIR_ENV, "/etc/systemd/system");
+        let quadlet_dir = Path::new("/etc/containers/systemd");
+        for unit in ["backup.timer", "readiness.target", "inbox.path"] {
+            assert_eq!(
+                target_dir_for_name(quadlet_dir, unit),
+                Path::new("/etc/systemd/system").to_path_buf(),
+                "{unit} must route to systemd_unit_dir, not quadlet_dir"
+            );
+        }
+    }
+
+    #[test]
+    fn timer_target_path_resolve_runtime_unit_name_on_remove() {
+        // Codex P1: unit_name_for_start_stop's extension allow-list
+        // mirrored target_dir_for_name's gap. For a removal target
+        // like `backup.timer` (not in workloads), it must return
+        // `backup.timer` verbatim (the runtime unit name) instead of
+        // falling through to a quadlet_dir scan that would
+        // MissingWorkload on a unit that lives in systemd_unit_dir.
+        let workloads: Vec<Workload> = Vec::new();
+        let qd = tempfile::tempdir().expect("tempdir");
+        for unit in ["backup.timer", "readiness.target", "inbox.path"] {
+            let resolved = unit_name_for_start_stop(&workloads, qd.path(), unit)
+                .unwrap_or_else(|err| panic!("{unit}: {err:?}"));
+            assert_eq!(resolved, unit);
+        }
+    }
+
+    /// RAII scope guard for an env var. The apply.rs module already
+    /// touches process-global env via systemd_unit_dir() lookups; this
+    /// keeps the two new tests deterministic.
+    struct ScopedEnv {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl ScopedEnv {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for ScopedEnv {
+        fn drop(&mut self) {
+            if let Some(prev) = self.previous.take() {
+                std::env::set_var(self.key, prev);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    // Suppress unused-warning on the workload variants when this test
+    // module compiles without consuming Workload constructors.
+    #[allow(dead_code)]
+    fn _silence(workload: Workload) -> QuadletType {
+        let _ = (
+            EnabledState::Enabled,
+            RestartPolicy::Always,
+        );
+        workload.quadlet_type
+    }
 }

@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 fn applies_dropins_in_lexicographic_order_with_host_overrides_last() {
     let service = ServiceDefinition {
         name: "alpha".to_string(),
+        config_root: "alpha".to_string(),
         artifacts: vec![ArtifactSource {
             name: "alpha.container".to_string(),
             quadlet_type: QuadletType::Container,

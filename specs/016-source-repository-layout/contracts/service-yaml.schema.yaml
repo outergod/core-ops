@@ -1,0 +1,23 @@
+# JSON Schema (YAML-encoded) for services/<svc-id>/service.yaml
+# Layout version: 1 (spec 016)
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://core-ops.outergod.dev/schemas/016/service.yaml"
+title: "CoreOps service manifest"
+description: |
+  Optional manifest at services/<svc-id>/service.yaml. Absent file is equivalent
+  to the default: config-root equals the service identifier. When present, the
+  file MUST declare config-root and MUST NOT contain any other key.
+type: object
+required:
+  - config-root
+additionalProperties: false
+properties:
+  config-root:
+    type: string
+    description: |
+      The /etc/<config-root>/ directory this service owns. Used to resolve the
+      destination of every file under services/<svc-id>/config/.
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    minLength: 1
+examples:
+  - config-root: traefik

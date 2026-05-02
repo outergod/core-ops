@@ -1,3 +1,0 @@
-[Container]
-Image=example/traefik:latest
-ContainerName=traefik

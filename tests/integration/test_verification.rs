@@ -2,6 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::integration::env_lock::path_lock;
+use crate::integration::source_repo_support::{init_alpha_repo, HostGuard};
+use core_ops::io::repo::HOST_OVERRIDE_ENV;
 use core_ops::core::errors::CoreError;
 use core_ops::core::reconcile::{reconcile_apply, ReconcileDependencies};
 use core_ops::io::apply::apply_plan;
@@ -18,50 +20,8 @@ fn temp_dir(prefix: &str) -> PathBuf {
     path
 }
 
-fn init_git_repo(repo: &PathBuf) -> String {
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(repo)
-        .output()
-        .expect("git init");
-
-    let quadlets = repo.join("quadlets");
-    fs::create_dir_all(&quadlets).expect("create quadlets");
-    fs::write(
-        quadlets.join("alpha.container"),
-        "[Container]\nImage=alpine",
-    )
-    .expect("write container");
-
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add");
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("commit")
-        .arg("-m")
-        .arg("fixture")
-        .env("GIT_AUTHOR_NAME", "fixture")
-        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
-        .env("GIT_COMMITTER_NAME", "fixture")
-        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
-        .output()
-        .expect("git commit");
-
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse");
-
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+fn init_git_repo(repo: &Path) -> String {
+    init_alpha_repo(repo, "example-host")
 }
 
 fn write_systemctl_stub(dir: &Path) {
@@ -94,7 +54,9 @@ esac
 
 #[test]
 fn reconcile_apply_reports_verification_failure() {
-    let _lock = path_lock().lock().expect("path lock");
+    let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_verify");
     let rev = init_git_repo(&repo);
 

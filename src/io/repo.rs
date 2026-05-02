@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
-use crate::core::evaluate::{derive_mount_model_from_workloads, evaluate_desired_state, EvaluationOutput};
+use crate::core::evaluate::{evaluate_desired_state, EvaluationOutput};
 use crate::core::types::{
     ArtifactSource, Boundaries, BoundaryScope, ConfigFileSource, DesiredState, DropInSource,
     EnabledState, EvaluatedArtifact, EvaluatedConfigFile, EvaluatedDropIn, EvaluationInput,
@@ -14,7 +14,7 @@ use crate::core::validation::{
     validate_config_paths, validate_dropin_targets as validate_dropin_targets_fn,
     validate_mount_model, validate_service_selection,
 };
-use crate::io::quadlet::{parse_quadlet_name, read_quadlet_dir, QuadletError};
+use crate::io::quadlet::{parse_quadlet_name, QuadletError};
 use serde::Deserialize;
 
 pub const HOST_OVERRIDE_ENV: &str = "CORE_OPS_HOST";
@@ -36,17 +36,47 @@ pub enum RepoError {
     GitFetchFailed(String),
     GitCheckoutFailed(String),
     InvalidRepoSource(String),
-    MissingQuadletDir(PathBuf),
     MissingServicesDir(PathBuf),
     MissingHostsDir(PathBuf),
     MissingHostDeclaration(PathBuf),
     InvalidHostDeclaration(String),
+    InvalidServiceManifest(String),
     MissingHostIdentity,
     Quadlet(QuadletError),
     Io(String),
     EvaluationFailed(String),
     ValidationFailed(String),
     InvalidDropIn(String),
+    /// Source repository contains a legacy-layout artifact that the
+    /// formalized loader (spec 016) refuses to process. The migration
+    /// script `scripts/migrate-legacy-source-repo.sh` produces a
+    /// formalized-layout copy in one mechanical pass.
+    LegacyArtifact(PathBuf),
+    /// Service id, host id, or payload-kind name begins with `_` or `.`,
+    /// which is reserved for future metadata.
+    ReservedName(String),
+    /// Identifier (service id, host id, or `config-root`) does not match
+    /// the documented pattern `[A-Za-z0-9][A-Za-z0-9._-]*`. Without this
+    /// check, values containing `/` could escape `/etc/<config-root>/`
+    /// at observed-state scan time and drive unintended removals.
+    InvalidIdentifier(String),
+    /// Host overlay attempted to introduce a base unit; only drop-ins
+    /// (`<unit>.<ext>.d/<file>.conf`) and `config/` whole-file
+    /// replacements are permitted.
+    HostOverlayBaseUnit(PathBuf),
+    /// Payload-kind directory contains a file whose extension is not
+    /// recognized for that kind (e.g. `quadlet/foo.socket` or
+    /// `systemd/foo.container`).
+    InvalidPayloadKindFile { path: PathBuf, kind: &'static str },
+    /// `config/` file destination escapes `/etc/<config-root>/` (e.g.
+    /// via `..` segments) — see FR-010.
+    ConfigEscape { source_path: PathBuf, config_root: String },
+    /// A drop-in references a parent unit that does not exist in the
+    /// merged service+host overlay set — see FR-013.
+    OrphanDropIn { path: PathBuf, unit: String },
+    /// Two distinct source files compute to the same host destination
+    /// path — see FR-011.
+    DestinationConflict { target: PathBuf, a: PathBuf, b: PathBuf },
 }
 
 impl From<QuadletError> for RepoError {
@@ -62,9 +92,6 @@ impl std::fmt::Display for RepoError {
             RepoError::GitFetchFailed(msg) => write!(f, "git fetch failed: {}", msg),
             RepoError::GitCheckoutFailed(msg) => write!(f, "git checkout failed: {}", msg),
             RepoError::InvalidRepoSource(src) => write!(f, "invalid repo source: {}", src),
-            RepoError::MissingQuadletDir(path) => {
-                write!(f, "missing quadlet dir: {}", path.display())
-            }
             RepoError::MissingServicesDir(path) => {
                 write!(f, "missing services dir: {}", path.display())
             }
@@ -77,12 +104,60 @@ impl std::fmt::Display for RepoError {
             RepoError::InvalidHostDeclaration(msg) => {
                 write!(f, "invalid host declaration: {}", msg)
             }
+            RepoError::InvalidServiceManifest(msg) => {
+                write!(f, "invalid service manifest: {}", msg)
+            }
             RepoError::MissingHostIdentity => write!(f, "missing host identity"),
             RepoError::Quadlet(err) => write!(f, "quadlet error: {}", err),
             RepoError::Io(err) => write!(f, "repo io error: {}", err),
             RepoError::EvaluationFailed(err) => write!(f, "evaluation failed: {}", err),
             RepoError::ValidationFailed(err) => write!(f, "validation failed: {}", err),
             RepoError::InvalidDropIn(err) => write!(f, "invalid drop-in: {}", err),
+            RepoError::LegacyArtifact(path) => write!(
+                f,
+                "legacy layout artifact: {} (run scripts/migrate-legacy-source-repo.sh)",
+                path.display()
+            ),
+            RepoError::ReservedName(name) => write!(
+                f,
+                "reserved name '{}' (must not begin with '_' or '.')",
+                name
+            ),
+            RepoError::InvalidIdentifier(name) => write!(
+                f,
+                "invalid identifier '{}' (must match [A-Za-z0-9][A-Za-z0-9._-]*)",
+                name
+            ),
+            RepoError::HostOverlayBaseUnit(path) => write!(
+                f,
+                "host overlay introduces base unit at {} (only drop-ins and config replacements allowed)",
+                path.display()
+            ),
+            RepoError::InvalidPayloadKindFile { path, kind } => write!(
+                f,
+                "{} payload kind cannot accept file: {}",
+                kind,
+                path.display()
+            ),
+            RepoError::ConfigEscape { source_path, config_root } => write!(
+                f,
+                "config file destination escapes /etc/{}/: {}",
+                config_root,
+                source_path.display()
+            ),
+            RepoError::OrphanDropIn { path, unit } => write!(
+                f,
+                "orphan drop-in at {} (no matching unit '{}' in merged set)",
+                path.display(),
+                unit
+            ),
+            RepoError::DestinationConflict { target, a, b } => write!(
+                f,
+                "destination conflict at {}: {} and {}",
+                target.display(),
+                a.display(),
+                b.display()
+            ),
         }
     }
 }
@@ -105,31 +180,12 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
     git_checkout_revision(temp.path(), revision_id)?;
 
     let repo_path = temp.path().to_path_buf();
+    validate_no_legacy_root_artifacts(&repo_path)?;
     let services_dir = repo_path.join("services");
-    if services_dir.exists() {
-        return load_layered_desired_state(&repo_path, repo_source, revision_id);
+    if !services_dir.exists() {
+        return Err(RepoError::MissingServicesDir(services_dir));
     }
-    let quadlet_dir = repo_path.join("quadlets");
-    if !quadlet_dir.exists() {
-        return Err(RepoError::MissingQuadletDir(quadlet_dir));
-    }
-    let workloads = read_quadlet_dir(&quadlet_dir)?;
-    let (mount_declarations, mount_dependencies) = derive_mount_model_from_workloads(&workloads)
-        .map_err(|err| RepoError::EvaluationFailed(err.to_string()))?;
-    let resolved_revision = resolved_head_revision(&repo_path)?;
-    Ok(desired_state_from_workloads(
-        &repo_path,
-        DesiredStateInputs {
-            revision_id: &resolved_revision,
-            requested_repository: Some(repo_source.to_string()),
-            requested_ref: Some(revision_id.to_string()),
-            workloads,
-            mount_declarations,
-            mount_dependencies,
-            managed_config_paths: Vec::new(),
-            managed_config_roots: Vec::new(),
-        },
-    ))
+    load_layered_desired_state(&repo_path, repo_source, revision_id)
 }
 
 pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<LayeredRepo, RepoError> {
@@ -148,6 +204,7 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     git_checkout_revision(temp.path(), revision_id)?;
 
     let repo_path = temp.path().to_path_buf();
+    validate_no_legacy_root_artifacts(&repo_path)?;
     let services_dir = repo_path.join("services");
     if !services_dir.exists() {
         return Err(RepoError::MissingServicesDir(services_dir));
@@ -163,13 +220,14 @@ pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<Layered
     let catalog = load_service_catalog(&services_dir)?;
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
-    let mut overlays = load_host_overrides(&host_dir)?;
+    let mut overlays = load_host_overrides(&host_dir, &catalog, &host_decl.services)?;
     let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
     }
     overlays.config_overrides =
         filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
+    validate_config_destination_conflicts(&host_decl.services, &catalog, &overlays)?;
     let all_artifacts = selected_service_artifacts(&host_decl.services, &catalog);
     validate_dropin_targets(&host_decl.services, &catalog, &overlays, &all_artifacts)?;
 
@@ -197,19 +255,21 @@ fn load_layered_desired_state(
     if !hosts_dir.exists() {
         return Err(RepoError::MissingHostsDir(hosts_dir));
     }
+    validate_no_legacy_root_artifacts(repo_path)?;
     let host_id = resolve_host_identity()?;
     let host_dir = hosts_dir.join(&host_id);
     let host_decl = load_host_declaration_inner(&host_dir)?;
     let catalog = load_service_catalog(&services_dir)?;
     validate_service_selection(&host_decl, &catalog)
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
-    let mut overlays = load_host_overrides(&host_dir)?;
+    let mut overlays = load_host_overrides(&host_dir, &catalog, &host_decl.services)?;
     let allowed_prefixes = config_prefixes_for_services(&host_decl.services, &catalog);
     if let Some(err) = validate_config_overrides(&overlays.config_overrides, &allowed_prefixes) {
         return Err(RepoError::ValidationFailed(err));
     }
     overlays.config_overrides =
         filter_config_overrides(&overlays.config_overrides, &allowed_prefixes);
+    validate_config_destination_conflicts(&host_decl.services, &catalog, &overlays)?;
     let all_artifacts = selected_service_artifacts(&host_decl.services, &catalog);
     validate_dropin_targets(&host_decl.services, &catalog, &overlays, &all_artifacts)?;
     let mut config_paths = collect_config_paths(&host_decl.services, &catalog, &overlays);
@@ -317,6 +377,12 @@ fn load_host_declaration_inner(host_dir: &Path) -> Result<HostDeclaration, RepoE
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| RepoError::InvalidHostDeclaration("invalid host directory".to_string()))?;
+    // Host identifiers are subject to the same FR-009 + identifier-
+    // pattern rules as service identifiers and config-roots — without
+    // this check, a `hosts/_metadata/` (reserved prefix) or
+    // `hosts/foo bar/` (invalid chars) tree would be silently
+    // accepted (Codex P2 on PR #28).
+    validate_id(host_name)?;
     if parsed.host != host_name {
         return Err(RepoError::InvalidHostDeclaration(format!(
             "host field '{}' does not match directory '{}'",
@@ -334,15 +400,24 @@ fn load_service_catalog(services_dir: &Path) -> Result<ServiceCatalog, RepoError
     for entry in fs::read_dir(services_dir).map_err(|err| RepoError::Io(err.to_string()))? {
         let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
         let path = entry.path();
-        if !path.is_dir() {
+        let file_name = match path.file_name().and_then(|name| name.to_str()) {
+            Some(name) => name.to_string(),
+            None => continue,
+        };
+        // Hidden entries (starting with `.`) are tolerated — they're not
+        // service identifiers, just opaque metadata (e.g., `.gitkeep`).
+        // Reserved-prefix entries (`_*`) are rejected per FR-009.
+        if file_name.starts_with('.') {
             continue;
         }
-        let service_name = match path.file_name().and_then(|name| name.to_str()) {
-            Some(name) if !name.starts_with('.') => name.to_string(),
-            _ => continue,
-        };
-        let service = load_service_definition(&service_name, &path)?;
-        services.insert(service_name, service);
+        if !path.is_dir() {
+            // A file directly under `services/` is unexpected and likely a
+            // misplaced artifact. Reject loudly.
+            return Err(RepoError::LegacyArtifact(path));
+        }
+        validate_id(&file_name)?;
+        let service = load_service_definition(&file_name, &path)?;
+        services.insert(file_name, service);
     }
 
     Ok(ServiceCatalog { services })
@@ -352,93 +427,183 @@ fn load_service_definition(
     service_name: &str,
     service_dir: &Path,
 ) -> Result<ServiceDefinition, RepoError> {
+    // Resolve config-root from optional service.yaml (FR-006, FR-007).
+    let manifest = load_service_manifest(service_dir)?;
+    let config_root = manifest
+        .as_ref()
+        .map(|m| m.config_root.clone())
+        .unwrap_or_else(|| service_name.to_string());
+    validate_id(&config_root)?;
+
     let mut artifacts = Vec::new();
     let mut base_dropins = Vec::new();
     let mut config_files = Vec::new();
+
+    // services/<svc>/ may contain ONLY: service.yaml (file), and the
+    // payload-kind directories quadlet/, systemd/, config/. Any other
+    // entry is either a legacy artifact or unrecognized noise — both
+    // produce a load-time error so the operator gets a clear pointer.
     for entry in fs::read_dir(service_dir).map_err(|err| RepoError::Io(err.to_string()))? {
         let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
         let path = entry.path();
         let file_name = match path.file_name().and_then(|name| name.to_str()) {
-            Some(name) if !name.starts_with('.') => name.to_string(),
-            _ => continue,
+            Some(name) => name.to_string(),
+            None => continue,
         };
-        if path.is_dir() {
-            if file_name == "quadlet" {
-                artifacts.extend(read_quadlet_files(&path)?);
-                continue;
-            }
-            if file_name == "quadlet-overrides" {
-                base_dropins.extend(read_dropins_from_root(&path)?);
-                continue;
-            }
-            if let Some(target) = dropin_target_from_dir(&file_name) {
-                base_dropins.extend(read_dropins(&path, &target)?);
-                continue;
-            }
-            if file_name == "config" {
-                config_files.extend(read_config_files(&path)?);
-                continue;
-            }
+
+        // Tolerate hidden metadata (.gitkeep, .DS_Store, etc.). Reserved
+        // names beginning with `_` are forbidden as content directories
+        // (FR-009) but tolerated as opaque files (e.g., `_local`).
+        if file_name.starts_with('.') {
             continue;
         }
-        if let Ok((_, quadlet_type)) = parse_quadlet_name(&file_name) {
-            let contents =
-                fs::read_to_string(&path).map_err(|err| RepoError::Io(err.to_string()))?;
-            artifacts.push(ArtifactSource {
-                name: file_name,
-                quadlet_type,
-                contents,
-                source_path: path.display().to_string(),
-            });
+
+        if path.is_file() {
+            if file_name == "service.yaml" {
+                continue; // already parsed
+            }
+            // Files at service root are legacy (a *.container, *.socket,
+            // etc., directly under services/<svc>/). Reject loudly.
+            return Err(RepoError::LegacyArtifact(path));
+        }
+
+        // Directory entries.
+        match file_name.as_str() {
+            "quadlet" => {
+                artifacts.extend(read_payload_units(&path, PayloadKind::Quadlet)?);
+                base_dropins.extend(read_payload_dropins(&path, PayloadKind::Quadlet)?);
+            }
+            "systemd" => {
+                artifacts.extend(read_payload_units(&path, PayloadKind::Systemd)?);
+                base_dropins.extend(read_payload_dropins(&path, PayloadKind::Systemd)?);
+            }
+            "config" => {
+                config_files.extend(read_config_files(&path, &config_root)?);
+            }
+            "quadlet-overrides" => {
+                // Legacy split-drop-ins directory.
+                return Err(RepoError::LegacyArtifact(path));
+            }
+            other if other.ends_with(".d") => {
+                // Legacy: drop-in directory at service root (instead of
+                // nested inside quadlet/ or systemd/).
+                return Err(RepoError::LegacyArtifact(path));
+            }
+            _ => {
+                if file_name.starts_with('_') {
+                    return Err(RepoError::ReservedName(file_name));
+                }
+                return Err(RepoError::LegacyArtifact(path));
+            }
         }
     }
 
     Ok(ServiceDefinition {
         name: service_name.to_string(),
+        config_root,
         artifacts,
         base_dropins,
         config_files,
     })
 }
 
-fn load_host_overrides(host_dir: &Path) -> Result<HostOverlaySet, RepoError> {
-    let overrides_dir = host_dir.join("overrides");
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct ServiceManifest {
+    config_root: String,
+}
+
+fn load_service_manifest(service_dir: &Path) -> Result<Option<ServiceManifest>, RepoError> {
+    let manifest_path = service_dir.join("service.yaml");
+    if !manifest_path.exists() {
+        return Ok(None);
+    }
+    let contents =
+        fs::read_to_string(&manifest_path).map_err(|err| RepoError::Io(err.to_string()))?;
+    let parsed: ServiceManifest = serde_yaml::from_str(&contents).map_err(|err| {
+        RepoError::InvalidServiceManifest(format!(
+            "{}: {}",
+            manifest_path.display(),
+            err
+        ))
+    })?;
+    if parsed.config_root.is_empty() {
+        return Err(RepoError::InvalidServiceManifest(format!(
+            "{}: config-root is empty",
+            manifest_path.display()
+        )));
+    }
+    Ok(Some(parsed))
+}
+
+fn load_host_overrides(
+    host_dir: &Path,
+    catalog: &ServiceCatalog,
+    selected_services: &[String],
+) -> Result<HostOverlaySet, RepoError> {
     let host_name = host_dir
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| RepoError::InvalidHostDeclaration("invalid host directory".to_string()))?;
-    if !overrides_dir.exists() {
-        return Ok(HostOverlaySet {
-            host: host_name.to_string(),
-            overrides: Vec::new(),
-            config_overrides: Vec::new(),
-        });
+
+    // Reject legacy `overrides/` subdirectory (FR-012).
+    let legacy = host_dir.join("overrides");
+    if legacy.exists() {
+        return Err(RepoError::LegacyArtifact(legacy));
     }
 
-    let mut overrides = Vec::new();
-    let mut config_overrides = Vec::new();
-    for entry in fs::read_dir(&overrides_dir).map_err(|err| RepoError::Io(err.to_string()))? {
+    let mut overrides: Vec<DropInSource> = Vec::new();
+    let mut config_overrides: Vec<ConfigFileSource> = Vec::new();
+
+    for entry in fs::read_dir(host_dir).map_err(|err| RepoError::Io(err.to_string()))? {
         let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
         let path = entry.path();
         let file_name = match path.file_name().and_then(|name| name.to_str()) {
-            Some(name) if !name.starts_with('.') => name.to_string(),
-            _ => continue,
+            Some(name) => name.to_string(),
+            None => continue,
         };
+        if file_name.starts_with('.') {
+            continue;
+        }
         if path.is_file() {
-            continue;
+            if file_name == "host.yaml" {
+                continue;
+            }
+            return Err(RepoError::LegacyArtifact(path));
         }
-        if file_name == "quadlet" {
-            overrides.extend(read_dropins_from_root(&path)?);
-            continue;
+        // Directory: per-service overlay.
+        if file_name.starts_with('_') {
+            return Err(RepoError::ReservedName(file_name));
         }
-        if let Some(target) = dropin_target_from_dir(&file_name) {
-            overrides.extend(read_dropins(&path, &target)?);
-            continue;
+        let svc_id = &file_name;
+        // The overlay directory's name MUST be a service this host
+        // selects. A typo like `hosts/<h>/traefic-dnschallenge/` (note
+        // the missing 'k') would otherwise inject drop-ins keyed by raw
+        // unit name, with the parser falling back to using the
+        // typo-name as the config-root and validate_dropin_targets only
+        // checking unit-name existence — silent cross-service drift.
+        // validate_service_selection already guarantees every entry in
+        // `selected_services` exists in the catalog, so checking
+        // membership here covers both "unknown service" and "known but
+        // unselected" in a single shot.
+        if !selected_services.iter().any(|s| s == svc_id) {
+            return Err(RepoError::ValidationFailed(format!(
+                "host '{host_name}' has overlay directory '{svc_id}' but \
+                 host.yaml does not select that service; did you typo the \
+                 directory name? (expected one of {selected_services:?})"
+            )));
         }
-        if file_name == "config" {
-            config_overrides.extend(read_config_files(&path)?);
-            continue;
-        }
+        // Service is guaranteed in the catalog because
+        // validate_service_selection covers the host.yaml selection.
+        let config_root = catalog
+            .services
+            .get(svc_id)
+            .map(|s| s.config_root.clone())
+            .unwrap_or_else(|| svc_id.clone());
+
+        let (svc_dropins, svc_configs) = walk_host_service_overlay(&path, &config_root)?;
+        overrides.extend(svc_dropins);
+        config_overrides.extend(svc_configs);
     }
 
     Ok(HostOverlaySet {
@@ -446,6 +611,85 @@ fn load_host_overrides(host_dir: &Path) -> Result<HostOverlaySet, RepoError> {
         overrides,
         config_overrides,
     })
+}
+
+fn walk_host_service_overlay(
+    overlay_dir: &Path,
+    config_root: &str,
+) -> Result<(Vec<DropInSource>, Vec<ConfigFileSource>), RepoError> {
+    let mut dropins = Vec::new();
+    let mut configs = Vec::new();
+    for entry in fs::read_dir(overlay_dir).map_err(|err| RepoError::Io(err.to_string()))? {
+        let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
+        let path = entry.path();
+        let file_name = match path.file_name().and_then(|name| name.to_str()) {
+            Some(name) => name.to_string(),
+            None => continue,
+        };
+        if file_name.starts_with('.') {
+            continue;
+        }
+        if path.is_file() {
+            // A regular file under the overlay root would be a base
+            // unit redefinition — disallowed.
+            return Err(RepoError::HostOverlayBaseUnit(path));
+        }
+        match file_name.as_str() {
+            kind_name @ ("quadlet" | "systemd") => {
+                let kind = if kind_name == "quadlet" {
+                    PayloadKind::Quadlet
+                } else {
+                    PayloadKind::Systemd
+                };
+                for child in fs::read_dir(&path).map_err(|err| RepoError::Io(err.to_string()))? {
+                    let child = child.map_err(|err| RepoError::Io(err.to_string()))?;
+                    let cpath = child.path();
+                    let cname = match cpath.file_name().and_then(|name| name.to_str()) {
+                        Some(name) => name.to_string(),
+                        None => continue,
+                    };
+                    if cname.starts_with('.') {
+                        continue;
+                    }
+                    if cpath.is_file() {
+                        // Base unit in host overlay → reject (FR-018).
+                        return Err(RepoError::HostOverlayBaseUnit(cpath));
+                    }
+                    if let Some(target) = dropin_target_from_dir(&cname) {
+                        // Cross-kind drop-in check: a `*.container.d/`
+                        // under a `systemd/` overlay (or `*.socket.d/`
+                        // under `quadlet/`) is a typo, not legitimate
+                        // configuration. Reject. Codex P2 on PR #28.
+                        let (_, target_quadlet_type) = parse_quadlet_name(&target).map_err(
+                            |_| RepoError::InvalidPayloadKindFile {
+                                path: cpath.clone(),
+                                kind: kind.name(),
+                            },
+                        )?;
+                        if !kind.accepts(&target_quadlet_type) {
+                            return Err(RepoError::InvalidPayloadKindFile {
+                                path: cpath,
+                                kind: kind.name(),
+                            });
+                        }
+                        dropins.extend(read_dropins(&cpath, &target)?);
+                    } else {
+                        return Err(RepoError::LegacyArtifact(cpath));
+                    }
+                }
+            }
+            "config" => {
+                configs.extend(read_config_files(&path, config_root)?);
+            }
+            _ => {
+                if file_name.starts_with('_') {
+                    return Err(RepoError::ReservedName(file_name));
+                }
+                return Err(RepoError::LegacyArtifact(path));
+            }
+        }
+    }
+    Ok((dropins, configs))
 }
 
 fn dropin_target_from_dir(dir_name: &str) -> Option<String> {
@@ -476,28 +720,6 @@ fn read_dropins(dir: &Path, target: &str) -> Result<Vec<DropInSource>, RepoError
             contents,
             source_path: path.display().to_string(),
         });
-    }
-    Ok(dropins)
-}
-
-fn read_dropins_from_root(root: &Path) -> Result<Vec<DropInSource>, RepoError> {
-    let mut dropins = Vec::new();
-    if !root.exists() {
-        return Ok(dropins);
-    }
-    for entry in fs::read_dir(root).map_err(|err| RepoError::Io(err.to_string()))? {
-        let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let file_name = match path.file_name().and_then(|name| name.to_str()) {
-            Some(name) if !name.starts_with('.') => name.to_string(),
-            _ => continue,
-        };
-        if let Some(target) = dropin_target_from_dir(&file_name) {
-            dropins.extend(read_dropins(&path, &target)?);
-        }
     }
     Ok(dropins)
 }
@@ -557,8 +779,18 @@ fn workloads_from_evaluation(output: &EvaluationOutput) -> Vec<Workload> {
 }
 
 fn workload_from_artifact(artifact: &EvaluatedArtifact) -> Workload {
-    let contents = if artifact.quadlet_type == QuadletType::Socket {
-        crate::io::quadlet::normalize_socket_contents(&artifact.contents)
+    // Native systemd units (socket / timer / target / path) get the
+    // `# managed-by: core-ops` marker injected so observed-state
+    // reads can identify CoreOps leftovers when the unit has been
+    // removed from desired and emit `RemoveQuadlet` for cleanup.
+    // Container/Volume/Network/Pod use the Quadlet generator and
+    // have their own observed-state path via read_quadlet_dir;
+    // mount/automount carry the marker via render_*_unit().
+    let contents = if matches!(
+        artifact.quadlet_type,
+        QuadletType::Socket | QuadletType::Timer | QuadletType::Target | QuadletType::Path
+    ) {
+        crate::io::quadlet::normalize_native_unit_contents(&artifact.contents)
     } else {
         artifact.contents.clone()
     };
@@ -676,23 +908,46 @@ fn validate_dropin_targets(
         .map_err(|err| RepoError::ValidationFailed(err.to_string()))
 }
 
-fn read_config_files(config_root: &Path) -> Result<Vec<ConfigFileSource>, RepoError> {
+fn read_config_files(
+    config_dir: &Path,
+    config_root: &str,
+) -> Result<Vec<ConfigFileSource>, RepoError> {
     let mut files = Vec::new();
-    for entry in walk_config_dir(config_root)? {
+    if !config_dir.exists() {
+        return Ok(files);
+    }
+    // FR-002: `config/<rel>` is generic — a literal subdir named `etc`
+    // (e.g. `config/etc/foo` deploying to `/etc/<config-root>/etc/foo`)
+    // is legitimate. The legacy `config/etc/<config-root>/<rel>` mirror
+    // is detected at migration time by `scripts/migrate-legacy-source-
+    // repo.sh` (which flattens it) and at load time by other unambiguous
+    // markers (top-level `quadlets/`, `services/<svc>/quadlet-overrides/`,
+    // `hosts/<h>/overrides/`); the parser does NOT special-case `etc/`
+    // here.
+    for entry in walk_config_dir(config_dir)? {
         let rel = entry
-            .strip_prefix(config_root)
+            .strip_prefix(config_dir)
             .map_err(|err| RepoError::Io(err.to_string()))?;
-        let rel_str = rel.to_string_lossy();
-        if rel_str.starts_with("etc/") {
-            let contents =
-                fs::read_to_string(&entry).map_err(|err| RepoError::Io(err.to_string()))?;
-            let target_path = format!("/{}", rel_str);
-            files.push(ConfigFileSource {
-                target_path,
-                contents,
-                source_path: entry.display().to_string(),
+        // Reject path-traversal segments (FR-010). Filesystem walks should
+        // never produce `..` components, but defend in depth.
+        if rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(RepoError::ConfigEscape {
+                source_path: entry.clone(),
+                config_root: config_root.to_string(),
             });
         }
+        let rel_str = rel.to_string_lossy();
+        let contents =
+            fs::read_to_string(&entry).map_err(|err| RepoError::Io(err.to_string()))?;
+        let target_path = format!("/etc/{}/{}", config_root, rel_str);
+        files.push(ConfigFileSource {
+            target_path,
+            contents,
+            source_path: entry.display().to_string(),
+        });
     }
     Ok(files)
 }
@@ -790,6 +1045,51 @@ fn validate_config_overrides(
     ))
 }
 
+/// FR-011: reject any source repository in which two distinct files
+/// compute to the same final destination path. Scans `config/` files
+/// across all selected services for collisions, then scans the host
+/// overlay set for collisions among override entries. Host overrides
+/// intentionally win over base files at the same target — that's
+/// override semantics, not a conflict — so we do NOT cross-check base
+/// vs. overlay. Quadlet / native unit name collisions across services
+/// are caught downstream by `validate_workloads`'s `DuplicateUnitName`.
+fn validate_config_destination_conflicts(
+    selected_services: &[String],
+    catalog: &ServiceCatalog,
+    overlays: &HostOverlaySet,
+) -> Result<(), RepoError> {
+    let mut by_target: std::collections::BTreeMap<String, PathBuf> =
+        std::collections::BTreeMap::new();
+    for svc_id in selected_services {
+        let Some(svc) = catalog.services.get(svc_id) else {
+            continue;
+        };
+        for cf in &svc.config_files {
+            let source = PathBuf::from(&cf.source_path);
+            if let Some(existing) = by_target.insert(cf.target_path.clone(), source.clone()) {
+                return Err(RepoError::DestinationConflict {
+                    target: PathBuf::from(&cf.target_path),
+                    a: existing,
+                    b: source,
+                });
+            }
+        }
+    }
+    let mut overlay_by_target: std::collections::BTreeMap<String, PathBuf> =
+        std::collections::BTreeMap::new();
+    for cf in &overlays.config_overrides {
+        let source = PathBuf::from(&cf.source_path);
+        if let Some(existing) = overlay_by_target.insert(cf.target_path.clone(), source.clone()) {
+            return Err(RepoError::DestinationConflict {
+                target: PathBuf::from(&cf.target_path),
+                a: existing,
+                b: source,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn filter_config_overrides(
     overrides: &[ConfigFileSource],
     allowed_prefixes: &[String],
@@ -805,30 +1105,207 @@ fn filter_config_overrides(
         .collect()
 }
 
-fn read_quadlet_files(dir: &Path) -> Result<Vec<ArtifactSource>, RepoError> {
+/// Payload-kind classifier used by `read_payload_units` and friends.
+/// `quadlet/` accepts Quadlet-generator inputs; `systemd/` accepts native
+/// systemd unit files. The split is structural — see research.md D6.
+#[derive(Clone, Copy, Debug)]
+enum PayloadKind {
+    Quadlet,
+    Systemd,
+}
+
+impl PayloadKind {
+    fn name(self) -> &'static str {
+        match self {
+            PayloadKind::Quadlet => "quadlet",
+            PayloadKind::Systemd => "systemd",
+        }
+    }
+
+    fn accepts(self, qt: &QuadletType) -> bool {
+        matches!(
+            (self, qt),
+            (PayloadKind::Quadlet, QuadletType::Container)
+                | (PayloadKind::Quadlet, QuadletType::Volume)
+                | (PayloadKind::Quadlet, QuadletType::Network)
+                | (PayloadKind::Quadlet, QuadletType::Pod)
+                | (PayloadKind::Systemd, QuadletType::Socket)
+                | (PayloadKind::Systemd, QuadletType::Mount)
+                | (PayloadKind::Systemd, QuadletType::Automount)
+                | (PayloadKind::Systemd, QuadletType::Timer)
+                | (PayloadKind::Systemd, QuadletType::Target)
+                | (PayloadKind::Systemd, QuadletType::Path)
+        )
+    }
+}
+
+fn read_payload_units(
+    payload_dir: &Path,
+    kind: PayloadKind,
+) -> Result<Vec<ArtifactSource>, RepoError> {
     let mut artifacts = Vec::new();
-    for entry in fs::read_dir(dir).map_err(|err| RepoError::Io(err.to_string()))? {
+    if !payload_dir.exists() {
+        return Ok(artifacts);
+    }
+    for entry in fs::read_dir(payload_dir).map_err(|err| RepoError::Io(err.to_string()))? {
         let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
         let path = entry.path();
+        let file_name = match path.file_name().and_then(|name| name.to_str()) {
+            Some(name) => name.to_string(),
+            None => continue,
+        };
+        if file_name.starts_with('.') {
+            continue;
+        }
         if path.is_dir() {
+            // Drop-in directories are handled by `read_payload_dropins`.
+            continue;
+        }
+        let (_, quadlet_type) =
+            parse_quadlet_name(&file_name).map_err(|_| RepoError::InvalidPayloadKindFile {
+                path: path.clone(),
+                kind: kind.name(),
+            })?;
+        if !kind.accepts(&quadlet_type) {
+            return Err(RepoError::InvalidPayloadKindFile {
+                path,
+                kind: kind.name(),
+            });
+        }
+        let contents =
+            fs::read_to_string(&path).map_err(|err| RepoError::Io(err.to_string()))?;
+        artifacts.push(ArtifactSource {
+            name: file_name,
+            quadlet_type,
+            contents,
+            source_path: path.display().to_string(),
+        });
+    }
+    Ok(artifacts)
+}
+
+fn read_payload_dropins(
+    payload_dir: &Path,
+    kind: PayloadKind,
+) -> Result<Vec<DropInSource>, RepoError> {
+    let mut dropins = Vec::new();
+    if !payload_dir.exists() {
+        return Ok(dropins);
+    }
+    for entry in fs::read_dir(payload_dir).map_err(|err| RepoError::Io(err.to_string()))? {
+        let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
+        let path = entry.path();
+        if !path.is_dir() {
             continue;
         }
         let file_name = match path.file_name().and_then(|name| name.to_str()) {
-            Some(name) if !name.starts_with('.') => name.to_string(),
-            _ => continue,
+            Some(name) => name.to_string(),
+            None => continue,
         };
-        if let Ok((_, quadlet_type)) = parse_quadlet_name(&file_name) {
-            let contents =
-                fs::read_to_string(&path).map_err(|err| RepoError::Io(err.to_string()))?;
-            artifacts.push(ArtifactSource {
-                name: file_name,
-                quadlet_type,
-                contents,
-                source_path: path.display().to_string(),
-            });
+        if file_name.starts_with('.') {
+            continue;
+        }
+        if let Some(target) = dropin_target_from_dir(&file_name) {
+            // Validate that the target unit's extension matches THIS
+            // payload kind. Without this check, a typo like
+            // `services/<svc>/systemd/api.container.d/` would silently
+            // attach to a `quadlet/api.container` base unit (validation
+            // is by unit name, not subtree). Codex P2 on PR #28.
+            let (_, target_quadlet_type) = parse_quadlet_name(&target).map_err(|_| {
+                RepoError::InvalidPayloadKindFile {
+                    path: path.clone(),
+                    kind: kind.name(),
+                }
+            })?;
+            if !kind.accepts(&target_quadlet_type) {
+                return Err(RepoError::InvalidPayloadKindFile {
+                    path,
+                    kind: kind.name(),
+                });
+            }
+            dropins.extend(read_dropins(&path, &target)?);
+        } else {
+            // A non-`.d` directory in a payload-kind subtree is rejected
+            // rather than silently ignored: a typo like
+            // `quadlet/foo.container.dropin/` would otherwise drop the
+            // operator's drop-ins on the floor. Strict-layout contract
+            // demands fail-fast (Codex P2 on PR #28).
+            return Err(RepoError::LegacyArtifact(path));
         }
     }
-    Ok(artifacts)
+    Ok(dropins)
+}
+
+/// Validates that an identifier (service id, host id, or
+/// `config-root`) matches the documented pattern
+/// `[A-Za-z0-9][A-Za-z0-9._-]*` AND does not begin with `_` or `.`
+/// (FR-009 reserves those prefixes for future metadata).
+///
+/// The full-pattern check matters because `config-root` flows
+/// directly into target paths (`/etc/<config-root>/...`). Without it,
+/// a value like `foo/bar` would create destinations under `/etc/foo`
+/// while observed-state scans collapsed to the first path segment,
+/// causing unrelated `/etc/foo` files to be flagged for removal.
+fn validate_id(name: &str) -> Result<(), RepoError> {
+    if name.starts_with('_') || name.starts_with('.') {
+        return Err(RepoError::ReservedName(name.to_string()));
+    }
+    let mut chars = name.chars();
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return Err(RepoError::InvalidIdentifier(name.to_string())),
+    };
+    if !first.is_ascii_alphanumeric() {
+        return Err(RepoError::InvalidIdentifier(name.to_string()));
+    }
+    for c in chars {
+        if !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+            return Err(RepoError::InvalidIdentifier(name.to_string()));
+        }
+    }
+    Ok(())
+}
+
+/// Pre-walk check rejecting top-level legacy artifacts (FR-012). Called
+/// at the entry point of every layered loader so the operator gets a
+/// clear pointer at `scripts/migrate-legacy-source-repo.sh` before any
+/// other validation produces noise.
+fn validate_no_legacy_root_artifacts(repo_path: &Path) -> Result<(), RepoError> {
+    let quadlets = repo_path.join("quadlets");
+    if quadlets.exists() {
+        return Err(RepoError::LegacyArtifact(quadlets));
+    }
+    // contracts/layout.md: "Top-level directories under the repository
+    // root are exactly `services` and `hosts`. Other names are tolerated
+    // only if they begin with `_` or `.` (the reserved namespace) —
+    // this admits `.git/`, `_local/`, etc."
+    //
+    // The contract scopes strictness to DIRECTORIES — files at root
+    // (README.md, LICENSE, CHANGELOG.md, etc.) are tolerated. Without
+    // this directory scan, a typo like `<repo>/servcies/` (transposed)
+    // silently drops the operator's intended services tree because
+    // the loader walks services/ and finds it empty (Codex P2 on
+    // PR #28).
+    for entry in fs::read_dir(repo_path).map_err(|err| RepoError::Io(err.to_string()))? {
+        let entry = entry.map_err(|err| RepoError::Io(err.to_string()))?;
+        let path = entry.path();
+        // Files at the repo root are out of scope for this check.
+        if !path.is_dir() {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n,
+            None => continue,
+        };
+        if name == "services" || name == "hosts" {
+            continue;
+        }
+        if name.starts_with('_') || name.starts_with('.') {
+            continue;
+        }
+        return Err(RepoError::LegacyArtifact(path));
+    }
+    Ok(())
 }
 
 fn git_clone(repo: &str, dest: &Path) -> Result<(), RepoError> {
@@ -850,6 +1327,7 @@ fn git_clone(repo: &str, dest: &Path) -> Result<(), RepoError> {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct HostYaml {
     host: String,
     services: Vec<String>,

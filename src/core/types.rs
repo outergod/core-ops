@@ -25,6 +25,11 @@ pub struct ServiceCatalog {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServiceDefinition {
     pub name: String,
+    /// The `/etc/<config_root>/` directory this service owns. Defaults to
+    /// `name` when `service.yaml` is absent; otherwise read from the
+    /// manifest's `config-root` key. Used to resolve `config/` file
+    /// destinations and to bound host-overlay config replacements.
+    pub config_root: String,
     pub artifacts: Vec<ArtifactSource>,
     pub base_dropins: Vec<DropInSource>,
     pub config_files: Vec<ConfigFileSource>,
@@ -321,6 +326,16 @@ pub enum QuadletType {
     Pod,
     Volume,
     Network,
+    /// Native systemd timer unit (`*.timer`). Loaded from
+    /// `services/<svc>/systemd/`. Treated as a passive native unit
+    /// like `Socket` (no Quadlet generator semantics).
+    Timer,
+    /// Native systemd target unit (`*.target`). Synchronization point;
+    /// other units typically declare `WantedBy=<target>.target`.
+    Target,
+    /// Native systemd path unit (`*.path`). Activates a paired service
+    /// when a watched filesystem location changes.
+    Path,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -540,6 +555,11 @@ pub struct DesiredStateProvenance {
     pub requested_ref: String,
     pub last_observed_revision: Option<String>,
     pub last_observed_at: Option<String>,
+    /// Source-repository layout version that produced this snapshot.
+    /// `Some("1")` for the formalized layout introduced by spec 016.
+    /// Absent on snapshots produced by pre-formalization controllers.
+    #[serde(rename = "layout-version", default, skip_serializing_if = "Option::is_none")]
+    pub layout_version: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

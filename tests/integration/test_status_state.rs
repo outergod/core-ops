@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::integration::env_lock::path_lock;
+use crate::integration::source_repo_support::HostGuard;
 use core_ops::cli::apply::apply_with_report;
 use core_ops::cli::plan as plan_cmd;
 use core_ops::cli::status::{
@@ -16,7 +17,7 @@ use core_ops::core::types::{
 };
 use core_ops::io::apply::apply_plan;
 use core_ops::io::observed::read_observed_state;
-use core_ops::io::repo::load_desired_state;
+use core_ops::io::repo::{load_desired_state, HOST_OVERRIDE_ENV};
 use core_ops::io::state::{
     persist_success_state, read_persisted_state, resolve_state_file, DETERMINISTIC_STATE_FILE_NAME,
     STATE_FILE_ENV,
@@ -38,50 +39,26 @@ fn temp_dir(prefix: &str) -> PathBuf {
     path
 }
 
-fn init_git_repo(repo: &PathBuf) -> String {
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(repo)
-        .output()
-        .expect("git init");
-
-    let quadlets = repo.join("quadlets");
-    fs::create_dir_all(&quadlets).expect("create quadlets");
+/// Build a minimal services/alpha/quadlet/alpha.container fixture
+/// (formalized layout) under `repo`, plus a hosts/example-host/host.yaml
+/// declaration selecting alpha. Returns the resulting commit SHA.
+fn init_git_repo(repo: &Path) -> String {
+    fs::create_dir_all(repo).expect("create repo dir");
+    let services = repo.join("services/alpha/quadlet");
+    let hosts = repo.join("hosts/example-host");
+    fs::create_dir_all(&services).expect("services");
+    fs::create_dir_all(&hosts).expect("hosts");
     fs::write(
-        quadlets.join("alpha.container"),
-        "[Container]\nImage=alpine",
+        services.join("alpha.container"),
+        "[Container]\nImage=alpine\n",
     )
     .expect("write quadlet");
-
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("add")
-        .arg(".")
-        .output()
-        .expect("git add");
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("commit")
-        .arg("-m")
-        .arg("fixture")
-        .env("GIT_AUTHOR_NAME", "fixture")
-        .env("GIT_AUTHOR_EMAIL", "fixture@example.com")
-        .env("GIT_COMMITTER_NAME", "fixture")
-        .env("GIT_COMMITTER_EMAIL", "fixture@example.com")
-        .output()
-        .expect("git commit");
-
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse");
-
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    fs::write(
+        hosts.join("host.yaml"),
+        "host: example-host\nservices:\n  - alpha\n",
+    )
+    .expect("write host.yaml");
+    crate::integration::source_repo_support::git_init_commit(repo)
 }
 
 fn write_systemctl_stub(dir: &Path) {
@@ -259,6 +236,8 @@ fn status_output_rebuilds_after_invalid_snapshot_is_replaced() {
 #[test]
 fn apply_creates_state_snapshot_on_first_run_from_implicit_path() {
     let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_status_default_apply");
     let rev = init_git_repo(&repo);
     let temp = temp_dir("core_ops_status_default_apply");
@@ -297,6 +276,8 @@ fn apply_creates_state_snapshot_on_first_run_from_implicit_path() {
 #[test]
 fn plan_does_not_create_state_snapshot_from_implicit_path() {
     let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_status_plan");
     let rev = init_git_repo(&repo);
     let temp = temp_dir("core_ops_status_plan");
@@ -328,6 +309,8 @@ fn plan_does_not_create_state_snapshot_from_implicit_path() {
 #[test]
 fn apply_can_explicitly_opt_out_of_state_persistence() {
     let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
+    let _host_guard = HostGuard::capture();
+    std::env::set_var(HOST_OVERRIDE_ENV, "example-host");
     let repo = temp_dir("core_ops_repo_status_no_state");
     let rev = init_git_repo(&repo);
     let temp = temp_dir("core_ops_status_no_state");

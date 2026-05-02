@@ -1,0 +1,37 @@
+# JSON Schema (YAML-encoded) for hosts/<host-id>/host.yaml
+# Layout version: 1 (spec 016)
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://core-ops.outergod.dev/schemas/016/host.yaml"
+title: "CoreOps host manifest"
+description: |
+  Required manifest at hosts/<host-id>/host.yaml declaring the host identity and
+  the ordered set of services this host applies. Schema version 1.
+type: object
+required:
+  - host
+  - services
+additionalProperties: false
+properties:
+  host:
+    type: string
+    description: |
+      Host identifier. MUST equal the parent directory name (<host-id>).
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    minLength: 1
+  services:
+    type: array
+    description: |
+      Ordered list of service identifiers the host applies. Order is preserved
+      into the resolved DesiredState for deterministic plan output. Each entry
+      MUST correspond to an existing services/<svc-id>/ directory.
+    items:
+      type: string
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    uniqueItems: true
+examples:
+  - host: ulthar
+    services:
+      - traefik-dnschallenge
+      - immich
+      - pihole
+      - github-actions-runner

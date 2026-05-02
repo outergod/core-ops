@@ -38,6 +38,7 @@ steps:
     target: guest
     action:
       action: apply
+      host: test-vm
       mode: humane
   - step_id: init-upgrade
     step_type: coreops_action
@@ -52,6 +53,7 @@ steps:
     target: guest
     action:
       action: apply
+      host: test-vm
       mode: humane
 assertions:
   - assertion_id: init-baseline-succeeded

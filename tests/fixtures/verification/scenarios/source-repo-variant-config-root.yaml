@@ -1,0 +1,91 @@
+scenario_id: source-repo-variant-config-root
+title: Variant config-root deploys to /etc/<config-root>/, not /etc/<svc-id>/
+description: "A service whose service.yaml declares config-root=traefik while the directory id is traefik-dnschallenge MUST deploy its config/ payload to /etc/traefik/, not /etc/traefik-dnschallenge/. This is the externally observable contract of FR-006/FR-007 and the canonical reason service.yaml exists."
+scenario_classes:
+  - regression_detection
+source: accepted
+behavioral_claim: "For a service with service.yaml declaring config-root different from the service id, core-ops apply writes the config/ payload to /etc/<config-root>/, leaves no trace at /etc/<svc-id>/, and the apply report converges."
+rationale: Release-gate scenario for spec 016 (T106/T406). Unit and integration tests assert the parser's resolution of `config-root` produces the right destination path; this scenario asserts the file actually lands on the live host filesystem under that path. Constitution principle 10 requires VM-backed coverage of any externally visible behavior; variant config-root is the most consequential externally-visible piece of spec 016.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: tests/fixtures/verification/repos/source-repo-variant-config-root
+  revision_under_test: source-repo-variant-config-root-v1
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/source-repo-variant-config-root
+    revisions:
+      - source-repo-variant-config-root-v1
+    states:
+      - valid
+    transition_expectations:
+      - variant config-root deploys to /etc/<config-root>/ on first apply
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: init
+    step_type: coreops_action
+    target: guest
+    action:
+      action: init
+      repository_source: fixture
+      revision: source-repo-variant-config-root-v1
+  - step_id: apply
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      host: example-host
+      mode: humane
+  - step_id: variant-config-file-exists
+    step_type: guest_command
+    target: guest
+    command: sudo test -f /etc/traefik/traefik.yaml
+  - step_id: variant-config-content-correct
+    step_type: guest_command
+    target: guest
+    command: 'sudo grep -q "level: INFO" /etc/traefik/traefik.yaml'
+  - step_id: svcid-config-dir-absent
+    step_type: guest_command
+    target: guest
+    command: sudo test ! -e /etc/traefik-dnschallenge
+  - step_id: container-quadlet-exists
+    step_type: guest_command
+    target: guest
+    command: sudo test -f /etc/containers/systemd/traefik-dnschallenge.container
+assertions:
+  - assertion_id: init-succeeded
+    assertion_type: step_exit_code_is
+    target: init
+    expected_state: "0"
+    failure_message: Init did not exit successfully.
+  - assertion_id: apply-succeeded
+    assertion_type: step_exit_code_is
+    target: apply
+    expected_state: "0"
+    failure_message: Apply did not exit successfully.
+  - assertion_id: apply-converged
+    assertion_type: step_stdout_contains
+    target: apply
+    expected_state: "Outcome: converged"
+    failure_message: Apply did not report a converged outcome.
+  - assertion_id: variant-config-file-deployed
+    assertion_type: step_exit_code_is
+    target: variant-config-file-exists
+    expected_state: "0"
+    failure_message: Expected /etc/traefik/traefik.yaml on the host (deployed via service.yaml's config-root, NOT the service id traefik-dnschallenge). Variant config-root regression — see FR-006/FR-007.
+  - assertion_id: variant-config-content-matches
+    assertion_type: step_exit_code_is
+    target: variant-config-content-correct
+    expected_state: "0"
+    failure_message: '/etc/traefik/traefik.yaml exists but does not contain the expected "level: INFO" payload. Either the file is corrupted or a different file was deployed.'
+  - assertion_id: svcid-config-dir-not-created
+    assertion_type: step_exit_code_is
+    target: svcid-config-dir-absent
+    expected_state: "0"
+    failure_message: /etc/traefik-dnschallenge/ exists on the host. The variant config-root contract requires the destination be /etc/<config-root>/, not /etc/<svc-id>/. If both exist, the parser is double-deploying.
+  - assertion_id: container-quadlet-deployed
+    assertion_type: step_exit_code_is
+    target: container-quadlet-exists
+    expected_state: "0"
+    failure_message: Expected /etc/containers/systemd/traefik-dnschallenge.container on the host. The Quadlet itself is keyed by service id (FR-005); its destination is independent of config-root.
