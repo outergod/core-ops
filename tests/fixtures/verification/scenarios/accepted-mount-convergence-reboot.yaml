@@ -37,6 +37,7 @@ steps:
     target: guest
     action:
       action: apply
+      host: test-vm
       mode: humane
   - step_id: inspect-service-unit
     step_type: guest_command
@@ -61,6 +62,7 @@ steps:
     target: guest
     action:
       action: apply
+      host: test-vm
       mode: humane
   - step_id: check-mount-active-after-reboot
     step_type: guest_command

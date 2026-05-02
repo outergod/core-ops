@@ -39,6 +39,7 @@ steps:
     target: guest
     action:
       action: apply
+      host: test-vm
       mode: humane
   - step_id: init-removal
     step_type: coreops_action
@@ -53,6 +54,7 @@ steps:
     target: guest
     action:
       action: apply
+      host: test-vm
       mode: humane
   - step_id: verify-managed-artifacts-removed
     step_type: guest_command

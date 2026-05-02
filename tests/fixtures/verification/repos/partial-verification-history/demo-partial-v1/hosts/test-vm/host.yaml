@@ -1,0 +1,4 @@
+host: test-vm
+services:
+  - frontend
+  - transient
