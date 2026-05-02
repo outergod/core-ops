@@ -13,6 +13,12 @@ versioning for public release policy decisions.
 - Formalize source repository layout (payload-kind subdirs, optional service.yaml, host overlays mirroring service shape); remove legacy parser (quadlets/, quadlet-overrides/, hosts/<h>/overrides/); add `core-ops skill install` subcommand emitting an agentskills.io-standard bundle; ship four in-tree example shapes (minimal, variant-config-root, multi-unit, host-overlay) plus `scripts/migrate-legacy-source-repo.sh` for one-pass conversion of legacy repositories
 <!-- core-ops-release:end -->
 
+## [2.0.0] - 2026-05-02
+
+### Changed
+
+- Formalize source repository layout (payload-kind subdirs, optional service.yaml, host overlays mirroring service shape); remove legacy parser (quadlets/, quadlet-overrides/, hosts/<h>/overrides/); add `core-ops skill install` subcommand emitting an agentskills.io-standard bundle; ship four in-tree example shapes (minimal, variant-config-root, multi-unit, host-overlay) plus `scripts/migrate-legacy-source-repo.sh` for one-pass conversion of legacy repositories
+
 ## [0.8.2] - 2026-04-12
 
 ### Fixed
