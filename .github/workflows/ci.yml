@@ -138,24 +138,42 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Skip if release already published
+      - name: Classify release state for ${{ steps.version.outputs.tag }}
         id: tagcheck
-        # Gate on release existence (gh release view), not tag
-        # presence (git ls-remote). A bare tag — manually pushed, or
-        # left behind by a partial 'gh release create' failure — does
-        # NOT mean the release is complete, so skipping on tag presence
-        # alone would silently swallow stuck states. gh release view
-        # exits 0 only when a published release for the tag exists.
+        # Three-way gate on release state, not tag presence:
+        #   - published (isDraft=false): skip promote/notes/publish
+        #     (release already shipped).
+        #   - draft (isDraft=true):     fail loudly. 'gh release view'
+        #     exits 0 for drafts too, so a stuck draft from a partial
+        #     prior 'gh release create' would otherwise be treated as
+        #     "shipped" and silently skipped forever.
+        #   - missing:                  proceed with the full pipeline.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ steps.version.outputs.tag }}"
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            echo "Release ${tag} already published — skipping promote/notes/publish."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          release_state="$(gh release view "${tag}" --json isDraft --jq .isDraft 2>/dev/null || echo missing)"
+          case "${release_state}" in
+            false)
+              echo "Release ${tag} already published — skipping promote/notes/publish."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              ;;
+            true)
+              echo "Error: a DRAFT release for ${tag} exists from a partial prior run."
+              echo "Finalize or delete it before re-running this workflow:"
+              echo "  gh release view ${tag}"
+              echo "  gh release delete ${tag}  # destructive"
+              exit 1
+              ;;
+            missing)
+              echo "No release for ${tag} yet — proceeding with full pipeline."
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Error: unexpected release state from gh release view: ${release_state}"
+              exit 1
+              ;;
+          esac
 
       - name: Promote [Unreleased] → [version] and clean up fragments
         if: steps.tagcheck.outputs.skip != 'true'
