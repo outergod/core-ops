@@ -69,6 +69,17 @@ cargo run --bin core-ops-release -- promote --version <X.Y.Z>
 release job short-circuits, and a stale fragment left behind from a
 prior partial run is swept on the next master push.
 
+**Repo-level prerequisites for the promote step**: master is governed
+by a Ruleset that requires PR-based merges, so the bot push needs a
+bypass. The `core-ops-release` GitHub App is installed on this repo
+and listed as a bypass actor on the master ruleset; the workflow
+mints a short-lived installation token via
+`actions/create-github-app-token@v1` using the repo-level `APP_ID`
+variable and `APP_PRIVATE_KEY` secret. If this workflow is ever
+forked or replanted in another repo, those four pieces (App
+installation + ruleset bypass + `APP_ID` + `APP_PRIVATE_KEY`) must
+be reproduced or the promote step will fail with a 403 on push.
+
 **CHANGELOG.md is machine-managed** between `<!-- core-ops-release:start -->`
 and `<!-- core-ops-release:end -->`. Never edit that section by hand.
 For PR work, render with `core-ops-release changelog --write`.

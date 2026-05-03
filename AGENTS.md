@@ -91,6 +91,21 @@ in `.github/workflows/ci.yml` removes every consumed fragment under `changes/`
 (except `README.md`) when it cuts the new `[<version>]` section. A fragment
 left behind from a partial prior run is swept on the next master push.
 
+### Promote step's bypass dependency
+
+Master is governed by a Ruleset that requires PR-based merges. The
+post-merge promote step pushes the `[Unreleased]` → `[<version>]`
+commit directly to master, so it cannot use the default `GITHUB_TOKEN`
+(Rulesets do not expose `github-actions[bot]` as a selectable bypass
+actor). Instead, the workflow mints a short-lived installation token
+from the `core-ops-release` GitHub App via
+`actions/create-github-app-token@v1`, using the repo-level `APP_ID`
+variable and `APP_PRIVATE_KEY` secret. The App is installed on the
+repo and listed as a bypass actor on the master ruleset. If this
+workflow is forked or replanted, all four pieces — App installation,
+ruleset bypass entry, `APP_ID`, `APP_PRIVATE_KEY` — must be reproduced
+or `git push origin HEAD:master` will return 403.
+
 ### Bump rules and breaking changes
 
 The governance model infers a minimum bump from file-change types:
