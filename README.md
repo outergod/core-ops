@@ -199,6 +199,13 @@ Maintainers and CI validate this contract through the dedicated helper binary:
 cargo run --bin core-ops-release -- validate
 ```
 
+Once a feature PR lands on `master`, the post-merge release job promotes the
+rendered `[Unreleased]` block to a new `[<version>] - <date>` section, removes
+the consumed fragments under `changes/`, and publishes the GitHub Release at
+the merge commit (which also creates the git tag). Maintainers do not edit
+`CHANGELOG.md` after the `[Unreleased]` block — `core-ops-release promote`
+owns that transition and is idempotent on re-run.
+
 ---
 
 ## Target Audience

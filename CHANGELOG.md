@@ -8,6 +8,9 @@ versioning for public release policy decisions.
 ## [Unreleased]
 
 <!-- core-ops-release:start -->
+### Changed
+
+- Add `core-ops-release promote` subcommand and wire it into CI so the post-merge release job auto-promotes [Unreleased] → [version], removes consumed fragments, and publishes the GitHub Release without manual coordination
 <!-- core-ops-release:end -->
 
 ## [2.0.0] - 2026-05-03

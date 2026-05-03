@@ -115,6 +115,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Need a writable token because the promote step pushes
+          # the [Unreleased] → [<version>] commit back to master.
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Derive release version
         id: version
@@ -123,35 +126,57 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Check for duplicate release tag
+      - name: Skip if release tag already published
+        id: tagcheck
         run: |
           tag="${{ steps.version.outputs.tag }}"
           if git ls-remote --tags origin "refs/tags/${tag}" | grep -q .; then
-            echo "Error: release tag ${tag} already exists — duplicate-version push."
-            echo "Either delete the orphaned tag and re-run, or bump the version in Cargo.toml."
-            exit 1
+            echo "Tag ${tag} already exists on origin — assuming the release already shipped."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Promote [Unreleased] → [version] and clean up fragments
+        if: steps.tagcheck.outputs.skip != 'true'
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          cargo run --bin core-ops-release -- promote --version "${version}"
+          if ! git diff --quiet -- CHANGELOG.md changes/; then
+            git config user.name "core-ops-release[bot]"
+            git config user.email "release-bot@core-ops"
+            git add CHANGELOG.md changes/
+            # [skip ci] — promote commits only touch CHANGELOG.md and
+            # remove fragments; running the full validate gate against
+            # them would falsely flag a missing fragment for the bump.
+            git commit -m "chore(release): promote [Unreleased] to [${version}] [skip ci]"
+            git push origin HEAD:master
+          else
+            echo "Promote was a no-op — CHANGELOG.md and changes/ already aligned."
           fi
 
       - name: Extract release notes from CHANGELOG
+        if: steps.tagcheck.outputs.skip != 'true'
         id: notes
         run: |
           version="${{ steps.version.outputs.version }}"
           notes_file="$(mktemp)"
           awk "/^## \[${version}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md > "${notes_file}"
           if [ ! -s "${notes_file}" ]; then
-            echo "Error: CHANGELOG.md has no '## [${version}]' section."
-            echo "Add a '## [${version}]' entry to CHANGELOG.md before merging to master."
+            echo "Error: CHANGELOG.md has no '## [${version}]' section after promote — promote logic regressed."
             exit 1
           fi
           echo "notes_file=${notes_file}" >> "$GITHUB_OUTPUT"
 
       - name: Download release artifacts
+        if: steps.tagcheck.outputs.skip != 'true'
         uses: actions/download-artifact@v4
         with:
           path: dist/
           merge-multiple: true
 
       - name: Publish GitHub Release
+        if: steps.tagcheck.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

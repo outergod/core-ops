@@ -331,6 +331,86 @@ pub fn parse_cargo_version(contents: &str) -> Result<String, CoreError> {
     Ok(value)
 }
 
+/// Promote the rendered `[Unreleased]` block to a new
+/// `## [<version>] - <date>` section. Idempotent: if the version
+/// section already exists, returns `existing_contents` verbatim.
+///
+/// Pairs with `render_generated_changelog`: the rendered
+/// `[Unreleased]` body (everything between the markers) becomes the
+/// versioned section's body, then `[Unreleased]` is reset to bare
+/// markers. Caller is responsible for deleting the consumed
+/// fragments under `changes/`.
+pub fn promote_changelog(
+    existing_contents: &str,
+    version: &str,
+    date: &str,
+) -> Result<String, CoreError> {
+    let versioned_heading = format!("## [{version}]");
+    if existing_contents
+        .lines()
+        .any(|line| line.starts_with(&versioned_heading))
+    {
+        // Already promoted — no-op so the pipeline can re-run safely.
+        return Ok(existing_contents.to_string());
+    }
+
+    let unreleased_start = existing_contents.find("## [Unreleased]").ok_or_else(|| {
+        CoreError::new(
+            FailureClass::Validation,
+            "CHANGELOG.md is missing the [Unreleased] section",
+        )
+    })?;
+    let after_unreleased = &existing_contents[unreleased_start + "## [Unreleased]".len()..];
+    let next_section_offset = after_unreleased
+        .find("\n## [")
+        .unwrap_or(after_unreleased.len());
+    let next_section_abs = unreleased_start + "## [Unreleased]".len() + next_section_offset;
+
+    let unreleased_block = &existing_contents[unreleased_start..next_section_abs];
+    let start_idx = unreleased_block.find(CHANGELOG_START_MARKER).ok_or_else(|| {
+        CoreError::new(
+            FailureClass::Validation,
+            "CHANGELOG.md [Unreleased] block is missing the start marker",
+        )
+    })?;
+    let end_idx = unreleased_block.find(CHANGELOG_END_MARKER).ok_or_else(|| {
+        CoreError::new(
+            FailureClass::Validation,
+            "CHANGELOG.md [Unreleased] block is missing the end marker",
+        )
+    })?;
+    let unreleased_body = unreleased_block
+        [start_idx + CHANGELOG_START_MARKER.len()..end_idx]
+        .trim_matches('\n')
+        .to_string();
+
+    let prefix = &existing_contents[..unreleased_start];
+    let suffix = &existing_contents[next_section_abs..];
+
+    let mut output = String::new();
+    output.push_str(prefix);
+    output.push_str("## [Unreleased]\n\n");
+    output.push_str(CHANGELOG_START_MARKER);
+    output.push('\n');
+    output.push_str(CHANGELOG_END_MARKER);
+    output.push_str("\n\n");
+    output.push_str(&format!("## [{version}] - {date}\n"));
+    if !unreleased_body.is_empty() {
+        output.push('\n');
+        output.push_str(unreleased_body.trim_end_matches('\n'));
+        output.push('\n');
+    }
+    // Suffix starts at the `\n## [...` of the next section (or EOF).
+    // Strip its leading newlines so we can normalise to exactly one
+    // blank line between sections — the Keep a Changelog convention.
+    let suffix = suffix.trim_start_matches('\n');
+    if !suffix.is_empty() {
+        output.push('\n');
+        output.push_str(suffix);
+    }
+    Ok(output)
+}
+
 pub fn render_generated_changelog(
     existing_contents: &str,
     fragments: &[ReleaseFragment],

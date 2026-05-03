@@ -32,7 +32,7 @@ cargo run --bin core-ops-release -- validate --base-ref HEAD^
 
 ## Release Governance
 
-The `core-ops-release` binary governs the release process. Its two subcommands are:
+The `core-ops-release` binary governs the release process. Subcommands:
 
 ```bash
 # Preview what CHANGELOG.md will look like from current changes/ fragments
@@ -40,25 +40,38 @@ cargo run --bin core-ops-release -- changelog
 
 # Validate that the current change set is releasable (run before every commit/PR)
 cargo run --bin core-ops-release -- validate --base-ref HEAD^
+
+# Promote [Unreleased] → [<version>] and delete the consumed fragments.
+# CI runs this automatically on master push; humans rarely need it.
+cargo run --bin core-ops-release -- promote --version <X.Y.Z>
 ```
 
-**Fragment lifecycle — the one rule that prevents stale entries:**
+**Fragment lifecycle (humans):**
 
 1. **Create** `changes/<feature-id>.md` when starting a releasable change.
-2. **Keep** it through the PR and until the release is tagged and published.
-3. **Delete** it immediately after the release is tagged — before any further development.
-   Fragments left behind will accumulate in the next `[Unreleased]` entry.
+2. **Keep** it through the PR and until merge. The fragment populates the
+   `[Unreleased]` block via `core-ops-release changelog --write`.
+3. **Do not delete** the fragment by hand — the post-merge promote step
+   in CI deletes it after the release is tagged.
 
-**CHANGELOG.md is machine-managed** between `<!-- core-ops-release:start -->` and
-`<!-- core-ops-release:end -->`. Never edit that section by hand. Instead:
+**Release flow on master push (CI):**
 
-```bash
-# Write the generated content into CHANGELOG.md
-cargo run --bin core-ops-release -- changelog > /tmp/new-changelog.md
-# Then copy the [Unreleased] block from /tmp/new-changelog.md into CHANGELOG.md
-```
+1. `validate` re-checks the merged tree.
+2. `promote --version <Cargo.toml>` moves the rendered `[Unreleased]`
+   body into a new `## [<version>] - <date>` section, empties the
+   `[Unreleased]` markers, and removes every consumed fragment under
+   `changes/`. The promote commit is pushed back to master with
+   `[skip ci]` so it doesn't loop.
+3. `gh release create v<version>` publishes the GitHub Release at the
+   merge SHA, which also creates the git tag.
 
-Or just let the release job do it — CI rewrites the section automatically on tag.
+`promote` is idempotent: if the tag already exists on origin the whole
+release job short-circuits, and a stale fragment left behind from a
+prior partial run is swept on the next master push.
+
+**CHANGELOG.md is machine-managed** between `<!-- core-ops-release:start -->`
+and `<!-- core-ops-release:end -->`. Never edit that section by hand.
+For PR work, render with `core-ops-release changelog --write`.
 
 **Declared vs required bump**: `release_intent` in the fragment must be ≥ the bump
 inferred from file changes (`patch` for modified source, `minor` for added source,
