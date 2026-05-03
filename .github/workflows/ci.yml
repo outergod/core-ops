@@ -112,12 +112,24 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Mint a short-lived installation token from the core-ops-release
+      # GitHub App. The default GITHUB_TOKEN cannot push to master
+      # because the master ruleset requires PR-based merges and only
+      # accepts bypasses from explicitly-listed Apps. The App is
+      # installed on this repo and added to the master ruleset's
+      # bypass list; APP_ID and APP_PRIVATE_KEY are repo-level
+      # variable/secret respectively.
+      - name: Mint App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # Need a writable token because the promote step pushes
-          # the [Unreleased] → [<version>] commit back to master.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Derive release version
         id: version
@@ -143,12 +155,17 @@ jobs:
           version="${{ steps.version.outputs.version }}"
           cargo run --bin core-ops-release -- promote --version "${version}"
           if ! git diff --quiet -- CHANGELOG.md changes/; then
-            git config user.name "core-ops-release[bot]"
-            git config user.email "release-bot@core-ops"
+            # Commit author matches the App identity that minted the
+            # push token, so the commit shows up under the App's
+            # bot account in the GitHub UI.
+            git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+            git config user.email "${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
             git add CHANGELOG.md changes/
-            # [skip ci] — promote commits only touch CHANGELOG.md and
-            # remove fragments; running the full validate gate against
-            # them would falsely flag a missing fragment for the bump.
+            # [skip ci] is load-bearing: App-token pushes DO trigger
+            # workflows by default (unlike GITHUB_TOKEN), so without
+            # the marker every release would re-trigger CI on the
+            # promote commit — which would then fail the validate
+            # gate (no fragment for the no-source bump).
             git commit -m "chore(release): promote [Unreleased] to [${version}] [skip ci]"
             git push origin HEAD:master
           else
