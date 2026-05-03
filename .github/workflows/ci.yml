@@ -138,12 +138,20 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Skip if release tag already published
+      - name: Skip if release already published
         id: tagcheck
+        # Gate on release existence (gh release view), not tag
+        # presence (git ls-remote). A bare tag — manually pushed, or
+        # left behind by a partial 'gh release create' failure — does
+        # NOT mean the release is complete, so skipping on tag presence
+        # alone would silently swallow stuck states. gh release view
+        # exits 0 only when a published release for the tag exists.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ steps.version.outputs.tag }}"
-          if git ls-remote --tags origin "refs/tags/${tag}" | grep -q .; then
-            echo "Tag ${tag} already exists on origin — assuming the release already shipped."
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "Release ${tag} already published — skipping promote/notes/publish."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
