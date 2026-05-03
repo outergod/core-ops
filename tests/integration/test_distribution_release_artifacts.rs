@@ -53,7 +53,11 @@ fn unified_release_job_is_gated_to_master_push() {
 
     for snippet in [
         "refs/heads/master",
-        "git ls-remote --tags origin",
+        // Release-existence gate (gh release view) — supersedes the
+        // earlier tag-presence gate (git ls-remote --tags). The
+        // distinction matters: a bare tag without a published release
+        // must NOT short-circuit the workflow.
+        "gh release view",
         "gh release create",
         "--target \"$GITHUB_SHA\"",
         "contents: write",

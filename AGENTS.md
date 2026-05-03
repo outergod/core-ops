@@ -52,7 +52,7 @@ tests/
 
 ### Release governance commands
 
-The `core-ops-release` binary has exactly two subcommands — do not guess others:
+The `core-ops-release` binary has three subcommands:
 
 ```bash
 # Preview what CHANGELOG.md [Unreleased] will look like from current fragments
@@ -60,16 +60,23 @@ cargo run --bin core-ops-release -- changelog
 
 # Validate the change set before committing or opening a PR
 cargo run --bin core-ops-release -- validate --base-ref HEAD^
+
+# Promote [Unreleased] → [<version>] and delete consumed fragments.
+# CI runs this automatically on master push; humans rarely need it locally.
+cargo run --bin core-ops-release -- promote --version <X.Y.Z>
 ```
 
 `validate` checks that a fragment exists, `release_intent` is ≥ the inferred bump,
-and `CHANGELOG.md` matches the generated output.
+and `CHANGELOG.md` matches the generated output. `promote` is idempotent and is the
+single source of truth for the `[Unreleased]` → `[<version>]` transition.
 
 ### CHANGELOG.md is machine-managed
 
 The block between `<!-- core-ops-release:start -->` and `<!-- core-ops-release:end -->`
-is owned by `core-ops-release`. **Never edit it by hand.** Copy the output of
-`cargo run --bin core-ops-release -- changelog` and replace the managed block with it.
+is owned by `core-ops-release`. **Never edit it by hand.** Render with
+`cargo run --bin core-ops-release -- changelog --write`. The post-merge promote
+step in CI is what moves rendered content into a `[<version>]` section — the
+maintainer never does that step manually.
 
 ### Fragment lifecycle
 
@@ -77,10 +84,27 @@ is owned by `core-ops-release`. **Never edit it by hand.** Copy the output of
 |---|---|
 | Start releasable work | Create `changes/<feature-id>.md` |
 | PR open / CI running | Keep the fragment |
-| Release tagged and published | **Delete the fragment** |
+| After master push | *Automatic — CI's promote step deletes the fragment* |
 
-Fragments that survive past their release will appear in the next `[Unreleased]` entry.
-Delete them as part of releasing, not as a follow-up.
+Do not delete fragments by hand. The post-merge `core-ops-release promote` step
+in `.github/workflows/ci.yml` removes every consumed fragment under `changes/`
+(except `README.md`) when it cuts the new `[<version>]` section. A fragment
+left behind from a partial prior run is swept on the next master push.
+
+### Promote step's bypass dependency
+
+Master is governed by a Ruleset that requires PR-based merges. The
+post-merge promote step pushes the `[Unreleased]` → `[<version>]`
+commit directly to master, so it cannot use the default `GITHUB_TOKEN`
+(Rulesets do not expose `github-actions[bot]` as a selectable bypass
+actor). Instead, the workflow mints a short-lived installation token
+from the `core-ops-release` GitHub App via
+`actions/create-github-app-token@v1`, using the repo-level `APP_ID`
+variable and `APP_PRIVATE_KEY` secret. The App is installed on the
+repo and listed as a bypass actor on the master ruleset. If this
+workflow is forked or replanted, all four pieces — App installation,
+ruleset bypass entry, `APP_ID`, `APP_PRIVATE_KEY` — must be reproduced
+or `git push origin HEAD:master` will return 403.
 
 ### Bump rules and breaking changes
 

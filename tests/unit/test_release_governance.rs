@@ -1,6 +1,6 @@
 use core_ops::core::release_governance::{
-    classify_version_bump, parse_cargo_version, render_generated_changelog, ReleaseFragment,
-    ReleaseFragmentFrontMatter, ReleaseIntent,
+    classify_version_bump, parse_cargo_version, promote_changelog, render_generated_changelog,
+    ReleaseFragment, ReleaseFragmentFrontMatter, ReleaseIntent,
 };
 
 #[test]
@@ -90,4 +90,83 @@ fn renders_managed_unreleased_section_from_fragments() {
     assert!(rendered.contains("### Changed"));
     assert!(rendered.contains("- Add helper binary"));
     assert!(rendered.contains("## [0.6.0] - 2026-04-07"));
+}
+
+#[test]
+fn promote_changelog_moves_unreleased_body_to_versioned_section() {
+    let existing = "# Changelog\n\
+                    \n\
+                    ## [Unreleased]\n\
+                    \n\
+                    <!-- core-ops-release:start -->\n\
+                    ### Changed\n\
+                    \n\
+                    - Some bullet\n\
+                    <!-- core-ops-release:end -->\n\
+                    \n\
+                    ## [0.1.0] - 2026-01-01\n\
+                    \n\
+                    ### Added\n\
+                    \n\
+                    - Initial\n";
+    let promoted = promote_changelog(existing, "0.2.0", "2026-05-03").expect("promote");
+    // Unreleased markers preserved but emptied.
+    assert!(promoted.contains(
+        "## [Unreleased]\n\n<!-- core-ops-release:start -->\n<!-- core-ops-release:end -->\n"
+    ));
+    // Versioned section inserted with the moved body.
+    assert!(promoted.contains("## [0.2.0] - 2026-05-03\n\n### Changed\n\n- Some bullet\n"));
+    // Tail (existing [0.1.0]) preserved with one blank line separator.
+    assert!(promoted.contains("- Some bullet\n\n## [0.1.0] - 2026-01-01\n"));
+}
+
+#[test]
+fn promote_changelog_is_idempotent_when_version_already_exists() {
+    let already_promoted =
+        "## [Unreleased]\n\n<!-- core-ops-release:start -->\n<!-- core-ops-release:end -->\n\n\
+         ## [2.0.0] - 2026-05-03\n\n### Changed\n\n- Bullet\n";
+    let result = promote_changelog(already_promoted, "2.0.0", "2026-05-04").expect("idempotent");
+    assert_eq!(result, already_promoted);
+}
+
+#[test]
+fn promote_changelog_handles_empty_unreleased_block() {
+    // A release-prep PR populates [Unreleased] only via a fragment
+    // with `release_preparation: true` (excluded from rendering), so
+    // the markers can be empty by the time promote runs. The new
+    // versioned section must still land cleanly.
+    let existing = "# Changelog\n\
+                    \n\
+                    ## [Unreleased]\n\
+                    \n\
+                    <!-- core-ops-release:start -->\n\
+                    <!-- core-ops-release:end -->\n\
+                    \n\
+                    ## [0.1.0] - 2026-01-01\n\
+                    \n\
+                    ### Added\n\
+                    \n\
+                    - Initial\n";
+    let promoted = promote_changelog(existing, "0.2.0", "2026-05-03").expect("promote");
+    assert!(promoted.contains("## [0.2.0] - 2026-05-03\n\n## [0.1.0]"));
+    // Markers still present, still empty.
+    assert!(promoted.contains(
+        "## [Unreleased]\n\n<!-- core-ops-release:start -->\n<!-- core-ops-release:end -->\n"
+    ));
+}
+
+#[test]
+fn promote_changelog_rejects_changelog_missing_unreleased_section() {
+    let bad = "# Changelog\n\n## [0.1.0] - 2026-01-01\n";
+    let err = promote_changelog(bad, "0.2.0", "2026-05-03")
+        .expect_err("missing [Unreleased] must error");
+    assert!(err.message.contains("[Unreleased]"));
+}
+
+#[test]
+fn promote_changelog_rejects_when_markers_missing() {
+    let bad = "## [Unreleased]\n\n### Changed\n\n- Bullet\n\n## [0.1.0] - 2026-01-01\n";
+    let err = promote_changelog(bad, "0.2.0", "2026-05-03")
+        .expect_err("missing markers must error");
+    assert!(err.message.contains("marker"));
 }

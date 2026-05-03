@@ -112,9 +112,24 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Mint a short-lived installation token from the core-ops-release
+      # GitHub App. The default GITHUB_TOKEN cannot push to master
+      # because the master ruleset requires PR-based merges and only
+      # accepts bypasses from explicitly-listed Apps. The App is
+      # installed on this repo and added to the master ruleset's
+      # bypass list; APP_ID and APP_PRIVATE_KEY are repo-level
+      # variable/secret respectively.
+      - name: Mint App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Derive release version
         id: version
@@ -123,35 +138,123 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Check for duplicate release tag
+      - name: Classify release state for ${{ steps.version.outputs.tag }}
+        id: tagcheck
+        # Three-way gate on release state, not tag presence:
+        #   - published (isDraft=false): skip promote/notes/publish
+        #     (release already shipped).
+        #   - draft (isDraft=true):     fail loudly. 'gh release view'
+        #     exits 0 for drafts too, so a stuck draft from a partial
+        #     prior 'gh release create' would otherwise be treated as
+        #     "shipped" and silently skipped forever.
+        #   - missing:                  proceed with the full pipeline.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ steps.version.outputs.tag }}"
-          if git ls-remote --tags origin "refs/tags/${tag}" | grep -q .; then
-            echo "Error: release tag ${tag} already exists — duplicate-version push."
-            echo "Either delete the orphaned tag and re-run, or bump the version in Cargo.toml."
-            exit 1
+          release_state="$(gh release view "${tag}" --json isDraft --jq .isDraft 2>/dev/null || echo missing)"
+          case "${release_state}" in
+            false)
+              echo "Release ${tag} already published — skipping promote/notes/publish."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              ;;
+            true)
+              echo "Error: a DRAFT release for ${tag} exists from a partial prior run."
+              echo "Finalize or delete it before re-running this workflow:"
+              echo "  gh release view ${tag}"
+              echo "  gh release delete ${tag}  # destructive"
+              exit 1
+              ;;
+            missing)
+              echo "No release for ${tag} yet — proceeding with full pipeline."
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Error: unexpected release state from gh release view: ${release_state}"
+              exit 1
+              ;;
+          esac
+
+      - name: Promote [Unreleased] → [version] and clean up fragments
+        if: steps.tagcheck.outputs.skip != 'true'
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          cargo run --bin core-ops-release -- promote --version "${version}"
+          if ! git diff --quiet -- CHANGELOG.md changes/; then
+            # Commit author matches the App identity that minted the
+            # push token, so the commit shows up under the App's
+            # bot account in the GitHub UI.
+            git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+            git config user.email "${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+            git add CHANGELOG.md changes/
+            # [skip ci] is load-bearing: App-token pushes DO trigger
+            # workflows by default (unlike GITHUB_TOKEN), so without
+            # the marker every release would re-trigger CI on the
+            # promote commit — which would then fail the validate
+            # gate (no fragment for the no-source bump).
+            git commit -m "chore(release): promote [Unreleased] to [${version}] [skip ci]"
+            # Retry with fetch + rebase if a concurrent merge to master
+            # races us between checkout and push. The promote commit
+            # only touches CHANGELOG.md and changes/, so a rebase onto
+            # an unrelated merge will almost always succeed cleanly.
+            attempt=1
+            until git push origin HEAD:master; do
+              if [ "$attempt" -ge 3 ]; then
+                echo "Failed to push promote commit after $attempt attempts."
+                exit 1
+              fi
+              echo "Push rejected on attempt ${attempt} — fetching and rebasing onto master..."
+              git fetch origin master
+              git rebase origin/master
+              attempt=$((attempt + 1))
+            done
+          else
+            echo "Promote was a no-op — CHANGELOG.md and changes/ already aligned."
           fi
 
       - name: Extract release notes from CHANGELOG
+        if: steps.tagcheck.outputs.skip != 'true'
         id: notes
         run: |
           version="${{ steps.version.outputs.version }}"
           notes_file="$(mktemp)"
           awk "/^## \[${version}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md > "${notes_file}"
           if [ ! -s "${notes_file}" ]; then
-            echo "Error: CHANGELOG.md has no '## [${version}]' section."
-            echo "Add a '## [${version}]' entry to CHANGELOG.md before merging to master."
+            echo "Error: CHANGELOG.md has no '## [${version}]' section after promote — promote logic regressed."
             exit 1
           fi
           echo "notes_file=${notes_file}" >> "$GITHUB_OUTPUT"
 
       - name: Download release artifacts
+        if: steps.tagcheck.outputs.skip != 'true'
         uses: actions/download-artifact@v4
         with:
           path: dist/
           merge-multiple: true
 
+      - name: Repack tarballs with promoted CHANGELOG
+        if: steps.tagcheck.outputs.skip != 'true'
+        # The build job packaged dist/core-ops-linux-*.tar.gz before
+        # promote ran, so the CHANGELOG.md inside the tarballs still
+        # shows [Unreleased] content that should be under [version].
+        # Repack each tarball with the post-promote CHANGELOG.md and
+        # recompute SHA256SUMS so checksums match the new artifacts.
+        run: |
+          for arch in amd64 arm64; do
+            workdir="$(mktemp -d)"
+            tar -xzf "dist/core-ops-linux-${arch}.tar.gz" -C "$workdir"
+            cp CHANGELOG.md "$workdir/CHANGELOG.md"
+            tar -czf "dist/core-ops-linux-${arch}.tar.gz" -C "$workdir" \
+              "core-ops-linux-${arch}" core-ops.service core-ops.timer LICENSE CHANGELOG.md README.md
+            rm -rf "$workdir"
+            sha256sum "dist/core-ops-linux-${arch}" \
+              "dist/core-ops.service" \
+              "dist/core-ops.timer" \
+              "dist/core-ops-linux-${arch}.tar.gz" > "dist/SHA256SUMS-${arch}"
+          done
+
       - name: Publish GitHub Release
+        if: steps.tagcheck.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
