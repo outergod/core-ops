@@ -759,6 +759,138 @@ fn alias_normalisation_does_not_misroute_failures_to_config_files() {
 }
 
 #[test]
+fn socket_target_resolution_honours_drop_in_overrides_with_last_assignment_winning() {
+    // Codex P2: `Service=` is single-valued; systemd applies last-write-wins
+    // when a socket has drop-ins on disk at /etc/systemd/system/<sock>.d/.
+    // A drop-in retargeting the socket from `frontend.service` to
+    // `frontend-api.service` must shift socket-activation acceptance to the
+    // new target — otherwise the verifier blesses the wrong Inactive service
+    // and fails the actual one.
+    let mut base_socket = Workload {
+        name: "frontend".to_string(),
+        quadlet_type: QuadletType::Socket,
+        quadlet_contents: "[Socket]\nListenStream=80\nService=frontend.service\n".to_string(),
+        systemd_unit_name: "frontend.socket".to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    };
+    // Make the .conf file lex-later so we know it overrides.
+    let dropin = Workload {
+        name: "frontend.socket.d/20-retarget.conf".to_string(),
+        quadlet_type: QuadletType::SocketDropIn,
+        quadlet_contents: "[Socket]\nService=frontend-api.service\n".to_string(),
+        systemd_unit_name: "frontend.socket.d/20-retarget.conf".to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    };
+    // sanity: no aliasing weirdness if the base ordering is what's at play
+    let _ = &mut base_socket;
+
+    let desired = desired_state(vec![
+        workload("frontend", QuadletType::Container, "frontend.container"),
+        workload(
+            "frontend-api",
+            QuadletType::Container,
+            "frontend-api.container",
+        ),
+        base_socket,
+        dropin,
+    ]);
+    let observed = observed_state(vec![
+        ObservedUnit {
+            unit_name: "frontend.service".to_string(),
+            active_state: UnitActiveState::Inactive,
+            enabled_state: EnabledState::Enabled,
+        },
+        ObservedUnit {
+            unit_name: "frontend-api.service".to_string(),
+            active_state: UnitActiveState::Inactive,
+            enabled_state: EnabledState::Enabled,
+        },
+        ObservedUnit {
+            unit_name: "frontend.socket".to_string(),
+            active_state: UnitActiveState::Active,
+            enabled_state: EnabledState::Enabled,
+        },
+    ]);
+
+    let results = verify_state(&desired, &observed);
+    let frontend = results
+        .iter()
+        .find(|r| r.target == "frontend.service")
+        .expect("frontend.service result");
+    let frontend_api = results
+        .iter()
+        .find(|r| r.target == "frontend-api.service")
+        .expect("frontend-api.service result");
+
+    assert_eq!(
+        frontend.status,
+        VerificationStatus::Failure,
+        "frontend.service is no longer the socket target after the drop-in override; \
+         Inactive without an Active trigger must fail"
+    );
+    assert_eq!(
+        frontend_api.status,
+        VerificationStatus::Success,
+        "frontend-api.service is the effective post-override target; \
+         Inactive paired with Active frontend.socket must verify"
+    );
+}
+
+#[test]
+fn socket_target_resolution_empty_assignment_resets_to_default_stem_service() {
+    // systemd: `Service=` (empty) resets to default. Default for `frontend.socket`
+    // is `frontend.service`. A drop-in containing only an empty assignment must
+    // forget any prior non-empty assignment and revert to the stem default.
+    let base_socket = Workload {
+        name: "frontend".to_string(),
+        quadlet_type: QuadletType::Socket,
+        quadlet_contents: "[Socket]\nService=other.service\n".to_string(),
+        systemd_unit_name: "frontend.socket".to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    };
+    let reset_dropin = Workload {
+        name: "frontend.socket.d/30-reset.conf".to_string(),
+        quadlet_type: QuadletType::SocketDropIn,
+        quadlet_contents: "[Socket]\nService=\n".to_string(),
+        systemd_unit_name: "frontend.socket.d/30-reset.conf".to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    };
+    let desired = desired_state(vec![
+        workload("frontend", QuadletType::Container, "frontend.container"),
+        base_socket,
+        reset_dropin,
+    ]);
+    let observed = observed_state(vec![
+        ObservedUnit {
+            unit_name: "frontend.service".to_string(),
+            active_state: UnitActiveState::Inactive,
+            enabled_state: EnabledState::Enabled,
+        },
+        ObservedUnit {
+            unit_name: "frontend.socket".to_string(),
+            active_state: UnitActiveState::Active,
+            enabled_state: EnabledState::Enabled,
+        },
+    ]);
+
+    let results = verify_state(&desired, &observed);
+    let frontend = results
+        .iter()
+        .find(|r| r.target == "frontend.service")
+        .expect("frontend.service result");
+    assert_eq!(
+        frontend.status,
+        VerificationStatus::Success,
+        "empty `Service=` resets to default stem `<frontend>.service`; the now-default-target \
+         service paired with an Active socket should verify as converged"
+    );
+}
+
+#[test]
 fn alias_normalisation_does_not_misroute_failures_to_socket_dropins() {
     // Same shape as the ConfigFile case but for SocketDropIn. A drop-in's
     // systemd_unit_name is `<unit>.socket.d/<file>.conf`; passing that through
