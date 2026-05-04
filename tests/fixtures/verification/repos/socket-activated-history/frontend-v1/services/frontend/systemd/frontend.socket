@@ -1,0 +1,10 @@
+[Unit]
+Description=Frontend regression scenario socket trigger
+
+[Socket]
+ListenStream=18080
+FileDescriptorName=frontend
+Service=frontend.service
+
+[Install]
+WantedBy=sockets.target

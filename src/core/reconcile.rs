@@ -544,6 +544,20 @@ fn desired_target_aliases(desired: &DesiredState) -> std::collections::BTreeMap<
     desired
         .workloads
         .iter()
+        .filter(|workload| {
+            // ConfigFile and SocketDropIn workloads do not have their own runtime
+            // unit. Letting them through here would map a synthesised
+            // `<stem>.service` alias (from the catch-all in
+            // systemd_unit_for_quadlet_file) onto the config file's path or the
+            // drop-in's directory entry, which then steals verification results
+            // from the real service that owns that runtime unit. See the
+            // regression scenario at
+            // tests/fixtures/verification/scenarios/accepted-socket-activated-trigger.yaml.
+            !matches!(
+                workload.quadlet_type,
+                QuadletType::ConfigFile | QuadletType::SocketDropIn
+            )
+        })
         .flat_map(|workload| {
             let managed_id = workload.systemd_unit_name.clone();
             let runtime_unit = systemd_unit_for_quadlet_file(&workload.systemd_unit_name);

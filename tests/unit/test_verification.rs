@@ -607,3 +607,185 @@ fn convergence_status_classifies_blocked_and_success_cases() {
     let success = evaluate_convergence(&desired, &success_observed, &success_history, 3);
     assert_eq!(success.status, ConvergenceStatus::Success);
 }
+
+fn socket_workload(unit_name: &str, target_service: &str) -> Workload {
+    let contents = format!(
+        "[Socket]\nListenStream=80\nFileDescriptorName=web\nService={target_service}\n\n[Install]\nWantedBy=sockets.target\n"
+    );
+    Workload {
+        name: unit_name.trim_end_matches(".socket").to_string(),
+        quadlet_type: QuadletType::Socket,
+        quadlet_contents: contents,
+        systemd_unit_name: unit_name.to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    }
+}
+
+fn config_workload(target_path: &str) -> Workload {
+    Workload {
+        name: target_path.to_string(),
+        quadlet_type: QuadletType::ConfigFile,
+        quadlet_contents: "# config".to_string(),
+        systemd_unit_name: target_path.to_string(),
+        enabled_state: EnabledState::Enabled,
+        restart_policy: RestartPolicy::Always,
+    }
+}
+
+#[test]
+fn verify_socket_activated_service_inactive_passes_when_socket_is_active() {
+    // Regression for fix-socket-activated-verification: a socket-activated
+    // service is correctly Inactive until first connection. Verification must
+    // accept that state when at least one of its triggering sockets is Active,
+    // because systemd will start the service on demand.
+    let desired = desired_state(vec![
+        workload("traefik", QuadletType::Container, "traefik.container"),
+        socket_workload("http.socket", "traefik.service"),
+        socket_workload("https.socket", "traefik.service"),
+    ]);
+    let observed = observed_state(vec![
+        ObservedUnit {
+            unit_name: "traefik.service".to_string(),
+            active_state: UnitActiveState::Inactive,
+            enabled_state: EnabledState::Enabled,
+        },
+        ObservedUnit {
+            unit_name: "http.socket".to_string(),
+            active_state: UnitActiveState::Active,
+            enabled_state: EnabledState::Enabled,
+        },
+        ObservedUnit {
+            unit_name: "https.socket".to_string(),
+            active_state: UnitActiveState::Active,
+            enabled_state: EnabledState::Enabled,
+        },
+    ]);
+
+    let results = verify_state(&desired, &observed);
+    assert_eq!(results.len(), 3, "results: {:?}", results);
+    assert!(
+        results
+            .iter()
+            .all(|r| r.status == VerificationStatus::Success),
+        "every workload should verify; got {:?}",
+        results
+    );
+}
+
+#[test]
+fn verify_socket_activated_service_failed_state_still_fails() {
+    // The Failed state means the service started and crashed. Active sockets
+    // do not absolve a Failed service, only an Inactive one.
+    let desired = desired_state(vec![
+        workload("traefik", QuadletType::Container, "traefik.container"),
+        socket_workload("http.socket", "traefik.service"),
+    ]);
+    let observed = observed_state(vec![
+        ObservedUnit {
+            unit_name: "traefik.service".to_string(),
+            active_state: UnitActiveState::Failed,
+            enabled_state: EnabledState::Enabled,
+        },
+        ObservedUnit {
+            unit_name: "http.socket".to_string(),
+            active_state: UnitActiveState::Active,
+            enabled_state: EnabledState::Enabled,
+        },
+    ]);
+
+    let results = verify_state(&desired, &observed);
+    let service_result = results
+        .iter()
+        .find(|r| r.target == "traefik.service")
+        .expect("traefik.service result");
+    assert_eq!(service_result.status, VerificationStatus::Failure);
+}
+
+#[test]
+fn verify_socket_activated_service_inactive_socket_inactive_fails() {
+    // No Active socket -> nothing will trigger the service -> genuine failure.
+    let desired = desired_state(vec![
+        workload("traefik", QuadletType::Container, "traefik.container"),
+        socket_workload("http.socket", "traefik.service"),
+    ]);
+    let observed = observed_state(vec![
+        ObservedUnit {
+            unit_name: "traefik.service".to_string(),
+            active_state: UnitActiveState::Inactive,
+            enabled_state: EnabledState::Enabled,
+        },
+        ObservedUnit {
+            unit_name: "http.socket".to_string(),
+            active_state: UnitActiveState::Inactive,
+            enabled_state: EnabledState::Enabled,
+        },
+    ]);
+
+    let results = verify_state(&desired, &observed);
+    let service_result = results
+        .iter()
+        .find(|r| r.target == "traefik.service")
+        .expect("traefik.service result");
+    assert_eq!(service_result.status, VerificationStatus::Failure);
+}
+
+#[test]
+fn alias_normalisation_does_not_misroute_failures_to_config_files() {
+    // Regression for fix-socket-activated-verification, alias half: a config
+    // file's target_path passed through systemd_unit_for_quadlet_file's
+    // catch-all yields `<stem>.service`, which used to collide with the real
+    // service's runtime unit name and steal failure attribution. The fix is
+    // to skip ConfigFile workloads when populating desired_target_aliases.
+    let desired = desired_state(vec![
+        workload("traefik", QuadletType::Container, "traefik.container"),
+        config_workload("/etc/traefik/traefik.toml"),
+    ]);
+
+    let normalized = normalize_verification_results_for_desired(
+        &desired,
+        vec![VerificationResult {
+            target: "traefik.service".to_string(),
+            status: VerificationStatus::Failure,
+            details: Some("unit not active: Inactive".to_string()),
+        }],
+    );
+
+    assert_eq!(normalized.len(), 1);
+    assert_eq!(
+        normalized[0].target, "traefik.container",
+        "traefik.service failure must route to traefik.container, not the config file"
+    );
+}
+
+#[test]
+fn alias_normalisation_does_not_misroute_failures_to_socket_dropins() {
+    // Same shape as the ConfigFile case but for SocketDropIn. A drop-in's
+    // systemd_unit_name is `<unit>.socket.d/<file>.conf`; passing that through
+    // systemd_unit_for_quadlet_file yields a synthesised `.service` that can
+    // collide with a real runtime unit. SocketDropIn workloads must not
+    // contribute aliases.
+    let mut dropin = workload(
+        "traefik.socket.d/10-extra.conf",
+        QuadletType::SocketDropIn,
+        "traefik.socket.d/10-extra.conf",
+    );
+    dropin.quadlet_contents = "[Socket]\nFileDescriptorName=extra\n".to_string();
+
+    let desired = desired_state(vec![
+        workload("traefik", QuadletType::Container, "traefik.container"),
+        dropin,
+    ]);
+
+    let normalized = normalize_verification_results_for_desired(
+        &desired,
+        vec![VerificationResult {
+            target: "traefik.service".to_string(),
+            status: VerificationStatus::Failure,
+            details: Some("unit not active: Inactive".to_string()),
+        }],
+    );
+
+    assert_eq!(normalized.len(), 1);
+    assert_eq!(normalized[0].target, "traefik.container");
+}

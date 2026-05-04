@@ -1,0 +1,6 @@
+# Regression scenario config file. Deployed to /etc/frontend/frontend.toml.
+# Its filename stem ("frontend") matches the runtime unit name of the service
+# ("frontend.service"), which is the alias-collision input that drove the
+# original misattribution bug.
+[regression]
+fix = "fix-socket-activated-verification"
