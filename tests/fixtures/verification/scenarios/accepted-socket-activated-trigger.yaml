@@ -1,0 +1,115 @@
+scenario_id: accepted-socket-activated-trigger
+title: Socket-activated service verifies as converged when listening socket is Active and service is Inactive
+description: After an external stop of a socket-activated service, the next apply must verify as converged because the listening socket will retrigger the service on demand. Additionally, the service's failure must not be misattributed to its config file via alias collision.
+scenario_classes:
+  - regression_detection
+source: accepted
+behavioral_claim: When a triggering `.socket` is Active and its target service is Inactive, post-apply verification accepts the state as converged. The verifier never re-attributes a service-level failure to a ConfigFile workload via stem-based alias collision.
+rationale: Regression guard for fix-socket-activated-verification, which addresses two coupled bugs surfaced together by the matrix homeserver bring-up. (a) `verify_workload` required the runtime `.service` unit to be Active, which incorrectly fails socket-activated services that are correctly Inactive until first connection. (b) `desired_target_aliases` populated `runtime_unit -> managed_id` entries for ConfigFile workloads using the catch-all in `systemd_unit_for_quadlet_file` that synthesises `<stem>.service` from any unrecognised extension; for `/etc/frontend/frontend.toml` this collided with `frontend.service` and last-write-wins remapped the verification failure away from `frontend.container` (recoverable) onto the config file path (not recoverable), suppressing the recovery StartUnit too.
+environment:
+  profile: single-blessed-vm
+fixtures:
+  repo_fixture: tests/fixtures/verification/repos/socket-activated-history
+  revision_under_test: frontend-v1
+  repository_evolution:
+    history_fixture: tests/fixtures/verification/repos/socket-activated-history
+    revisions:
+      - frontend-v1
+    states:
+      - valid
+    transition_expectations:
+      - initial apply converges with both socket and service Active
+      - external systemctl stop leaves the socket Active and the service Inactive
+      - second apply with no source-repo changes still verifies as converged because the socket will retrigger the service on demand
+      - second apply does not surface a config-file failure caused by alias collision
+steps:
+  - step_id: boot
+    step_type: boot
+    target: guest
+  - step_id: init
+    step_type: coreops_action
+    target: guest
+    action:
+      action: init
+      repository_source: fixture
+      revision: frontend-v1
+  - step_id: apply-initial
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      host: test-vm
+      mode: humane
+  - step_id: service-active-after-initial-apply
+    step_type: guest_command
+    target: guest
+    command: sudo systemctl is-active frontend.service
+  - step_id: socket-active-after-initial-apply
+    step_type: guest_command
+    target: guest
+    command: sudo systemctl is-active frontend.socket
+  - step_id: stop-service-leaving-socket-active
+    step_type: guest_command
+    target: guest
+    command: sudo systemctl stop frontend.service
+  - step_id: confirm-service-inactive-and-socket-active
+    step_type: guest_command
+    target: guest
+    command: "sudo sh -lc 'test \"$(systemctl is-active frontend.service)\" = inactive && test \"$(systemctl is-active frontend.socket)\" = active'"
+  - step_id: apply-after-external-stop
+    step_type: coreops_action
+    target: guest
+    action:
+      action: apply
+      host: test-vm
+      mode: humane
+  - step_id: detect-config-file-misattribution
+    step_type: guest_command
+    target: guest
+    command: "sudo sh -lc '! core-ops apply --host test-vm 2>&1 | grep -F \"[!] config/etc/frontend/frontend.toml\"'"
+assertions:
+  - assertion_id: init-succeeded
+    assertion_type: step_exit_code_is
+    target: init
+    expected_state: "0"
+    failure_message: Init did not exit successfully.
+  - assertion_id: apply-initial-succeeded
+    assertion_type: step_exit_code_is
+    target: apply-initial
+    expected_state: "0"
+    failure_message: Initial apply did not exit successfully.
+  - assertion_id: apply-initial-converged
+    assertion_type: step_stdout_contains
+    target: apply-initial
+    expected_state: "Outcome: converged"
+    failure_message: Initial apply did not report converged outcome.
+  - assertion_id: service-active-after-initial-apply
+    assertion_type: step_exit_code_is
+    target: service-active-after-initial-apply
+    expected_state: "0"
+    failure_message: frontend.service was not Active after initial apply (scenario precondition).
+  - assertion_id: socket-active-after-initial-apply
+    assertion_type: step_exit_code_is
+    target: socket-active-after-initial-apply
+    expected_state: "0"
+    failure_message: frontend.socket was not Active after initial apply (scenario precondition).
+  - assertion_id: confirm-precondition-state
+    assertion_type: step_exit_code_is
+    target: confirm-service-inactive-and-socket-active
+    expected_state: "0"
+    failure_message: Could not establish the Inactive-service / Active-socket precondition the regression depends on.
+  - assertion_id: apply-after-external-stop-succeeded
+    assertion_type: step_exit_code_is
+    target: apply-after-external-stop
+    expected_state: "0"
+    failure_message: Apply after external stop must exit successfully — a socket-activated service whose listening socket is Active should verify as converged (regression check for socket-activation acceptance in verify_workload).
+  - assertion_id: apply-after-external-stop-converged
+    assertion_type: step_stdout_contains
+    target: apply-after-external-stop
+    expected_state: "Outcome: converged"
+    failure_message: Apply after external stop did not report converged outcome — verifier did not accept Inactive service paired with Active socket as converged.
+  - assertion_id: no-config-file-misattribution
+    assertion_type: step_exit_code_is
+    target: detect-config-file-misattribution
+    expected_state: "0"
+    failure_message: Apply output contained a `[!] config/etc/frontend/frontend.toml` line — the ConfigFile workload was re-aliased onto the failed runtime unit name and inherited the failure marker (regression check for ConfigFile alias contamination in desired_target_aliases).

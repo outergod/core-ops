@@ -1,7 +1,7 @@
 use crate::core::retry::{build_retry_observation, evaluate_retry_history, RetryObservation};
 use crate::core::types::{
     ConvergenceStatus, DesiredState, DeterministicConvergenceRecord, MountDeclaration,
-    ObservedState, QuadletType, UnitActiveState, VerificationResult, VerificationStatus,
+    ObservedState, QuadletType, UnitActiveState, VerificationResult, VerificationStatus, Workload,
 };
 use crate::core::unit::systemd_unit_for_quadlet_file;
 use std::collections::BTreeMap;
@@ -22,6 +22,7 @@ pub fn verify_state(desired: &DesiredState, observed: &ObservedState) -> Vec<Ver
                 .map(|automount_unit| (automount_unit, mount.clone()))
         })
         .collect();
+    let socket_triggers = socket_trigger_map(&desired.workloads);
     desired
         .workloads
         .iter()
@@ -37,10 +38,95 @@ pub fn verify_state(desired: &DesiredState, observed: &ObservedState) -> Vec<Ver
                 &workload.systemd_unit_name,
                 mount_map.get(&workload.systemd_unit_name),
                 automount_map.get(&workload.systemd_unit_name),
+                &socket_triggers,
                 observed,
             )
         })
         .collect()
+}
+
+/// Build a map from service unit name -> socket unit names that activate it.
+///
+/// A `.socket` unit's `Service=` directive (or, when absent, the default
+/// `<stem>.service`) declares which service that socket activates on
+/// connection. Multiple sockets can activate the same service — e.g. a Traefik
+/// host with `http.socket`, `https.socket`, `traefik.socket` all targeting
+/// `traefik.service`.
+///
+/// `Service=` is a single-valued directive: when systemd loads a base unit
+/// plus its drop-ins, later assignments override earlier ones, and an empty
+/// assignment resets the field to its default. Resolution here mirrors that
+/// — base socket contents first, then `SocketDropIn` workloads sorted by
+/// file name, taking the last non-empty assignment seen.
+///
+/// Used by `verify_workload` to recognise socket-activated services that are
+/// correctly `Inactive` (no traffic yet) but whose listening sockets are
+/// `Active`. Treating the service as failed in that state is wrong: systemd
+/// will start it on first connection.
+pub(crate) fn socket_trigger_map(workloads: &[Workload]) -> BTreeMap<String, Vec<String>> {
+    let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for workload in workloads {
+        if workload.quadlet_type != QuadletType::Socket {
+            continue;
+        }
+        let service = effective_socket_target_service(workload, workloads);
+        map.entry(service)
+            .or_default()
+            .push(workload.systemd_unit_name.clone());
+    }
+    for entries in map.values_mut() {
+        entries.sort();
+        entries.dedup();
+    }
+    map
+}
+
+/// Resolve a socket's effective `Service=` target by walking the base socket
+/// contents and every `SocketDropIn` workload that lives under
+/// `<socket-unit-name>.d/`, sorted lex by file name. Last non-empty
+/// assignment wins; an empty assignment (`Service=`) resets to the default
+/// `<stem>.service`.
+fn effective_socket_target_service(socket: &Workload, all: &[Workload]) -> String {
+    let stem = Path::new(&socket.systemd_unit_name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&socket.systemd_unit_name);
+    let default_target = format!("{stem}.service");
+    let mut current = default_target.clone();
+
+    let dropin_prefix = format!("{}.d/", socket.systemd_unit_name);
+    let mut dropins: Vec<&Workload> = all
+        .iter()
+        .filter(|w| {
+            w.quadlet_type == QuadletType::SocketDropIn
+                && w.systemd_unit_name.starts_with(&dropin_prefix)
+        })
+        .collect();
+    dropins.sort_by(|a, b| a.systemd_unit_name.cmp(&b.systemd_unit_name));
+
+    let sources = std::iter::once(socket.quadlet_contents.as_str())
+        .chain(dropins.iter().map(|w| w.quadlet_contents.as_str()));
+
+    for src in sources {
+        for raw_line in src.lines() {
+            let line = raw_line.trim_start();
+            if line.starts_with('#') || line.starts_with(';') {
+                continue;
+            }
+            if let Some(value) = line
+                .strip_prefix("Service=")
+                .or_else(|| line.strip_prefix("service="))
+            {
+                let trimmed = value.trim();
+                current = if trimmed.is_empty() {
+                    default_target.clone()
+                } else {
+                    trimmed.to_string()
+                };
+            }
+        }
+    }
+    current
 }
 
 pub fn evaluate_convergence(
@@ -125,6 +211,7 @@ fn verify_workload(
     unit_file: &str,
     mount: Option<&MountDeclaration>,
     automount: Option<&MountDeclaration>,
+    socket_triggers: &BTreeMap<String, Vec<String>>,
     observed: &ObservedState,
 ) -> VerificationResult {
     let unit_name = systemd_unit_for_quadlet_file(unit_file);
@@ -221,13 +308,31 @@ fn verify_workload(
         }
         (_, Some(unit)) => {
             if unit.active_state == UnitActiveState::Active {
-                success(unit_name)
-            } else {
-                failure(
-                    unit_name,
-                    &format!("unit not active: {:?}", unit.active_state),
-                )
+                return success(unit_name);
             }
+            // Socket-activated services are correctly Inactive until first
+            // connection. Accept Inactive when a triggering socket is Active —
+            // systemd will start the service on demand. A Failed service is
+            // never accepted, even with Active sockets, because that means the
+            // service started and crashed.
+            if unit.active_state == UnitActiveState::Inactive {
+                if let Some(triggers) = socket_triggers.get(&unit_name) {
+                    let any_socket_active = triggers.iter().any(|socket_unit| {
+                        observed
+                            .units
+                            .iter()
+                            .any(|u| u.unit_name == *socket_unit
+                                && u.active_state == UnitActiveState::Active)
+                    });
+                    if any_socket_active {
+                        return success(unit_name);
+                    }
+                }
+            }
+            failure(
+                unit_name,
+                &format!("unit not active: {:?}", unit.active_state),
+            )
         }
         (_, None) => failure(unit_name, "unit not found"),
     }
