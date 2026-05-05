@@ -153,7 +153,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                     !no_reload,
                 )?;
                 let run = output.result.run.clone();
-                let synthetic = synthetic_provenance_for_stateless(
+                let synthetic = apply_cmd::synthetic_stateless_provenance(
                     output
                         .result
                         .desired
@@ -166,6 +166,8 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                         .requested_ref
                         .as_deref()
                         .unwrap_or(""),
+                    &output.result.desired.revision_id,
+                    run.status.clone(),
                 );
                 let event = core_ops::core::audit::build_audit_event(
                     &run,
@@ -559,48 +561,6 @@ fn map_stateless_layout_error<E: std::fmt::Display>(err: E) -> CoreError {
     CoreError::with_exit_code(FailureClass::Plan, err.to_string(), 65)
 }
 
-/// Build a synthetic `PersistedProvenanceState` for stateless apply so
-/// that audit events carry the path-based `desired_repository` and
-/// `desired_requested_ref` fields without consulting any persisted
-/// /var/lib/core-ops/status.json. Stateless apply never reads or
-/// writes that file — the audit chain is the persisted record.
-fn synthetic_provenance_for_stateless(
-    requested_repository: &str,
-    requested_ref: &str,
-) -> core_ops::core::types::PersistedProvenanceState {
-    use core_ops::core::types::{
-        ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState,
-        ReconciliationProvenance, ReconciliationStatus, TreeState,
-        PERSISTED_PROVENANCE_SCHEMA_VERSION,
-    };
-    PersistedProvenanceState {
-        schema_version: PERSISTED_PROVENANCE_SCHEMA_VERSION,
-        controller: ControllerProvenance {
-            version: None,
-            revision: None,
-            build_time: None,
-            tree_state: TreeState::Unknown,
-        },
-        desired_state: DesiredStateProvenance {
-            repository: requested_repository.to_string(),
-            requested_ref: requested_ref.to_string(),
-            last_observed_revision: None,
-            last_observed_at: None,
-            layout_version: Some("1".to_string()),
-        },
-        reconciliation: ReconciliationProvenance {
-            generation: 0,
-            status: ReconciliationStatus::NeverRun,
-            running: false,
-            last_attempted_revision: None,
-            last_applied_revision: None,
-            last_started_at: None,
-            last_finished_at: None,
-            attempted_observed_divergence: None,
-        },
-        detached: false,
-    }
-}
 
 /// Read `(repository, requested_ref)` from state, allowing Detached state.
 /// Used only for the rollback path where Detached is a valid entry point.

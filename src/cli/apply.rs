@@ -949,6 +949,69 @@ pub fn apply_with_report_stateless(
     })
 }
 
+/// Build a synthetic `PersistedProvenanceState` for stateless apply
+/// so that the audit event surfaces path-based provenance plus the
+/// actual run outcome (success / failure) without consulting any
+/// persisted `/var/lib/core-ops/status.json`.
+///
+/// `revision_id` is the resolved desired-state revision (a SHA, a
+/// `(stateless)` / `(stateless+dirty)` sentinel, or a synthetic id
+/// from `load_desired_state_from_path`); `run_status` is the apply
+/// outcome. Together they populate the audit event's
+/// `reconciliation_status`, `attempted_revision`, and
+/// `applied_revision` fields with values that reflect what actually
+/// happened — fixing the prior bug where every stateless apply
+/// emitted `reconciliation_status = "never_run"`.
+pub fn synthetic_stateless_provenance(
+    requested_repository: &str,
+    requested_ref: &str,
+    revision_id: &str,
+    run_status: RunStatus,
+) -> crate::core::types::PersistedProvenanceState {
+    use crate::core::types::{
+        ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState,
+        ReconciliationProvenance, ReconciliationStatus, TreeState,
+        PERSISTED_PROVENANCE_SCHEMA_VERSION,
+    };
+    let reconciliation_status = match run_status {
+        RunStatus::Success => ReconciliationStatus::Success,
+        RunStatus::Failure => ReconciliationStatus::Failed,
+    };
+    let last_applied_revision = match run_status {
+        RunStatus::Success => Some(revision_id.to_string()),
+        RunStatus::Failure => None,
+    };
+    PersistedProvenanceState {
+        schema_version: PERSISTED_PROVENANCE_SCHEMA_VERSION,
+        controller: ControllerProvenance {
+            version: None,
+            revision: None,
+            build_time: None,
+            tree_state: TreeState::Unknown,
+        },
+        desired_state: DesiredStateProvenance {
+            repository: requested_repository.to_string(),
+            requested_ref: requested_ref.to_string(),
+            last_observed_revision: Some(revision_id.to_string()),
+            last_observed_at: None,
+            layout_version: Some("1".to_string()),
+        },
+        reconciliation: ReconciliationProvenance {
+            // Stateless mode has no prior generation context — this
+            // is a single ad-hoc run, semantically generation 1.
+            generation: 1,
+            status: reconciliation_status,
+            running: false,
+            last_attempted_revision: Some(revision_id.to_string()),
+            last_applied_revision,
+            last_started_at: None,
+            last_finished_at: None,
+            attempted_observed_divergence: None,
+        },
+        detached: false,
+    }
+}
+
 fn classify_apply_run_display_state(
     last_applied_revision: Option<&str>,
     observed_snapshot: &crate::core::types::NormalizedSnapshot,

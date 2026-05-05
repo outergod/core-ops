@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use core_ops::cli::apply::apply_with_report_stateless;
+use core_ops::cli::apply::{apply_with_report_stateless, synthetic_stateless_provenance};
+use core_ops::core::types::{ReconciliationStatus, RunStatus};
 use core_ops::io::repo::HOST_OVERRIDE_ENV;
 use core_ops::io::source_ref::detect_provenance;
 use core_ops::io::state::{persist_success_state, read_persisted_state};
@@ -248,6 +249,54 @@ fn stateless_apply_provenance_shapes_match_working_tree_state() {
             Some("(stateless+dirty)")
         );
     }
+}
+
+#[test]
+fn synthetic_stateless_provenance_reflects_run_outcome() {
+    // The audit event built from the synthetic provenance must
+    // mirror the actual run outcome — emitting `reconciliation_status =
+    // "never_run"` (the original bug) misleads downstream audit
+    // consumers that key on reconciliation provenance.
+    let success = synthetic_stateless_provenance(
+        "/canonical/path",
+        "feedfacefeedfacefeedfacefeedfacefeedface",
+        "feedfacefeedfacefeedfacefeedfacefeedface",
+        RunStatus::Success,
+    );
+    assert_eq!(
+        success.reconciliation.status,
+        ReconciliationStatus::Success
+    );
+    assert_eq!(
+        success.reconciliation.last_attempted_revision.as_deref(),
+        Some("feedfacefeedfacefeedfacefeedfacefeedface")
+    );
+    assert_eq!(
+        success.reconciliation.last_applied_revision.as_deref(),
+        Some("feedfacefeedfacefeedfacefeedfacefeedface"),
+        "Success runs MUST report the applied revision"
+    );
+    assert_eq!(success.reconciliation.generation, 1);
+
+    let failure = synthetic_stateless_provenance(
+        "/canonical/path",
+        "(stateless+dirty)",
+        "(stateless+dirty)",
+        RunStatus::Failure,
+    );
+    assert_eq!(
+        failure.reconciliation.status,
+        ReconciliationStatus::Failed
+    );
+    assert_eq!(
+        failure.reconciliation.last_attempted_revision.as_deref(),
+        Some("(stateless+dirty)"),
+        "Failed runs MUST still report the attempted revision"
+    );
+    assert!(
+        failure.reconciliation.last_applied_revision.is_none(),
+        "Failed runs MUST NOT report an applied revision"
+    );
 }
 
 #[test]

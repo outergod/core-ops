@@ -46,14 +46,22 @@ pub struct StatelessSource {
 /// surface with their existing exit-code mapping.
 #[derive(Debug)]
 pub enum SourceRefError {
-    /// `--source-repo <PATH>` does not exist on the filesystem.
-    /// Mapped to exit code 64 (`EX_USAGE`) per `contracts/cli-flag.md`.
+    /// `--source-repo <PATH>` does not exist on the filesystem
+    /// (`std::io::ErrorKind::NotFound` from `fs::metadata`). Mapped
+    /// to exit code 64 (`EX_USAGE`) per `contracts/cli-flag.md`.
     PathMissing(PathBuf),
     /// `--source-repo <PATH>` exists but is not a directory.
     /// Mapped to exit code 64 (`EX_USAGE`).
     PathNotDirectory(PathBuf),
-    /// Path canonicalization failed (e.g., insufficient permissions
-    /// on a parent component). Mapped to exit code 66.
+    /// Path metadata inspection failed for a non-`NotFound` reason
+    /// (typically `PermissionDenied` or other I/O error). Distinct
+    /// from `PathMissing` so automation can tell "directory does
+    /// not exist" from "directory exists but the controller cannot
+    /// inspect it". Mapped to exit code 66.
+    PathInaccessible { path: PathBuf, source: std::io::Error },
+    /// Path canonicalization failed (e.g., symlink loop, insufficient
+    /// permissions on an intermediate component). Mapped to exit
+    /// code 66.
     Canonicalize { path: PathBuf, source: std::io::Error },
 }
 
@@ -63,7 +71,7 @@ impl SourceRefError {
     pub fn exit_code(&self) -> i32 {
         match self {
             SourceRefError::PathMissing(_) | SourceRefError::PathNotDirectory(_) => 64,
-            SourceRefError::Canonicalize { .. } => 66,
+            SourceRefError::PathInaccessible { .. } | SourceRefError::Canonicalize { .. } => 66,
         }
     }
 }
@@ -77,6 +85,12 @@ impl std::fmt::Display for SourceRefError {
             SourceRefError::PathNotDirectory(path) => {
                 write!(f, "--source-repo path is not a directory: {}", path.display())
             }
+            SourceRefError::PathInaccessible { path, source } => write!(
+                f,
+                "--source-repo path could not be accessed: {}: {}",
+                path.display(),
+                source
+            ),
             SourceRefError::Canonicalize { path, source } => write!(
                 f,
                 "--source-repo path could not be canonicalized: {}: {}",
@@ -95,12 +109,27 @@ impl std::error::Error for SourceRefError {}
 /// classifies its git state. Returns a [`StatelessSource`] carrying
 /// the canonical path and the resolved `requested_ref` value.
 ///
-/// See module-level docs for the classification table.
+/// Uses `fs::metadata` rather than `Path::exists()` / `Path::is_dir()`
+/// so I/O errors (most commonly `PermissionDenied`) surface as
+/// `PathInaccessible` instead of being collapsed to `PathMissing`.
+/// Automation that distinguishes "does not exist" from "exists but
+/// inaccessible" reads the documented exit code (64 vs 66).
+///
+/// See module-level docs for the git-state classification table.
 pub fn detect_provenance(path: &Path) -> Result<StatelessSource, SourceRefError> {
-    if !path.exists() {
-        return Err(SourceRefError::PathMissing(path.to_path_buf()));
-    }
-    if !path.is_dir() {
+    let metadata = match std::fs::metadata(path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(SourceRefError::PathMissing(path.to_path_buf()));
+        }
+        Err(err) => {
+            return Err(SourceRefError::PathInaccessible {
+                path: path.to_path_buf(),
+                source: err,
+            });
+        }
+    };
+    if !metadata.is_dir() {
         return Err(SourceRefError::PathNotDirectory(path.to_path_buf()));
     }
     let canonical = std::fs::canonicalize(path).map_err(|err| SourceRefError::Canonicalize {
