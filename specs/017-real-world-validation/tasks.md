@@ -99,14 +99,14 @@ Single Rust project per `plan.md`. Repo-root-relative paths for `src/`, `tests/`
 
 ### Tests for User Story 2 (REQUIRED) ⚠️
 
-- [ ] T030 [US2] Add to `tests/integration/test_stateless_plan.rs` (or a new `test_stateless_authoring.rs`): copy `examples/02-nextcloud/` via `copy_dir_recursive` helper to a tempdir, rename `hosts/example/` to `hosts/myhost/`, edit `host.yaml`, run `core-ops plan --source-repo <tempdir> --host myhost` → exit 0 (US2 AC1).
-- [ ] T031 [US2] Add a transition test: stateless-plan against a scratch dir, then `git init && git add . && git commit && core-ops init <scratch> main && core-ops plan` (no flag), assert the two plans produce equivalent action sets via `PlanOutput` JSON comparison (US2 AC3, idempotence under transition).
+- [X] T030 [US2] Add to `tests/integration/test_stateless_plan.rs` (or a new `test_stateless_authoring.rs`): copy `examples/02-nextcloud/` via `copy_dir_recursive` helper to a tempdir, rename `hosts/example/` to `hosts/myhost/`, edit `host.yaml`, run `core-ops plan --source-repo <tempdir> --host myhost` → exit 0 (US2 AC1).
+- [X] T031 [US2] Add a transition test: stateless-plan against a scratch dir, then `git init && git add . && git commit && core-ops init <scratch> main && core-ops plan` (no flag), assert the two plans produce equivalent action sets via `PlanOutput` JSON comparison (US2 AC3, idempotence under transition).
 
 ### Implementation for User Story 2
 
 > US2's implementation surface is fully covered by the foundational stateless-mode wiring (T009–T012) plus the FR-015 non-git support already exercised in T021. No new code paths needed; T030–T031 are integration-test deliverables only.
 
-- [ ] T032 [US2] Verify each `examples/<NN-slug>/README.md` includes a "Scaffold for your own setup" section with explicit `cp -r examples/<NN-slug> ~/my-setup` instructions per quickstart.md Step 6. If absent, add to each README via a single edit pass (touches all five README files → sequential).
+- [X] T032 [US2] Verify each `examples/<NN-slug>/README.md` includes a "Scaffold for your own setup" section with explicit `cp -r examples/<NN-slug> ~/my-setup` instructions per quickstart.md Step 6. If absent, add to each README via a single edit pass (touches all five README files → sequential). Verified via `grep -l "## Scaffold for your own setup" examples/*/README.md` returning all five paths.
 
 **Checkpoint**: US2 validated. Operators can use any example as a starting scaffold.
 
