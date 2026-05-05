@@ -33,6 +33,7 @@ mod test_examples_02_nextcloud;
 mod test_examples_03_immich;
 mod test_examples_04_traefik_authelia;
 mod test_examples_05_observability;
+mod test_stateless_apply;
 mod test_stateless_authoring;
 mod test_stateless_explain;
 mod test_stateless_plan;
