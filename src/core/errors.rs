@@ -9,6 +9,12 @@ use thiserror::Error;
 pub struct CoreError {
     pub class: FailureClass,
     pub message: String,
+    /// Optional process exit code override. `None` falls back to `1`
+    /// in `main`. Set explicitly by error sites that have a documented
+    /// exit-code contract — e.g., `--source-repo` path-shape errors
+    /// (`contracts/cli-flag.md` Error semantics: 64 / 65 / 66).
+    #[doc(hidden)]
+    pub exit_code: Option<i32>,
 }
 
 impl CoreError {
@@ -16,6 +22,15 @@ impl CoreError {
         Self {
             class,
             message: message.into(),
+            exit_code: None,
+        }
+    }
+
+    pub fn with_exit_code(class: FailureClass, message: impl Into<String>, exit_code: i32) -> Self {
+        Self {
+            class,
+            message: message.into(),
+            exit_code: Some(exit_code),
         }
     }
 

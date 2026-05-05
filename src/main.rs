@@ -30,9 +30,10 @@ fn main() {
     init_logging();
     let cli = Cli::parse();
     if let Err(err) = run(cli) {
+        let exit_code = err.exit_code.unwrap_or(1);
         let report = cli_common::report_error(err);
         eprintln!("{:?}", report);
-        std::process::exit(1);
+        std::process::exit(exit_code);
     }
 }
 
@@ -369,7 +370,9 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             set_host_override(&args.host);
 
             // Stateless mode (--source-repo): pure-read; writes nothing
-            // anywhere. Bypasses init'd state lookup entirely.
+            // anywhere AND reads no persisted controller state — uses
+            // the dedicated `explain_stateless` engine that bypasses
+            // last_applied / deterministic-state lookups (FR-011a).
             if let Some(source_repo) = args.source_repo {
                 let source = detect_provenance(&source_repo).map_err(map_source_ref_error)?;
                 let repo_path = source.repo_path.clone();
@@ -390,7 +393,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                     },
                     apply_plan: &|_, _| Ok(()),
                 };
-                let output = explain_cmd::explain(&deps, &args.object)?;
+                let output = explain_cmd::explain_stateless(&deps, &args.object)?;
                 if args.json {
                     println!("{}", output.machine);
                 } else {
@@ -531,18 +534,16 @@ fn map_apply_error<E: std::fmt::Display>(err: E) -> CoreError {
     CoreError::new(core_ops::core::types::FailureClass::Apply, err.to_string())
 }
 
-/// Map `--source-repo` validation errors to `CoreError`. Per
-/// `contracts/cli-flag.md` the path-existence/path-shape errors exit
-/// with codes 64/66; CoreError carries the message and the process
-/// exit happens via the standard error-printing path. We log the
-/// classified exit code into the error message so operators can see
-/// it in stderr alongside the diagnostic.
+/// Map `--source-repo` validation errors to `CoreError`, threading
+/// the documented process exit code (`contracts/cli-flag.md` Error
+/// semantics: 64 = `EX_USAGE` for missing/non-directory paths, 66 =
+/// path-shape for canonicalize failures). The exit code is set on
+/// `CoreError.exit_code` and consumed by `main()` so automation can
+/// distinguish usage errors from unrelated apply failures via exit
+/// status alone, without parsing stderr.
 fn map_source_ref_error(err: SourceRefError) -> CoreError {
     let exit_code = err.exit_code();
-    CoreError::new(
-        FailureClass::Plan,
-        format!("{err} (exit {exit_code})"),
-    )
+    CoreError::with_exit_code(FailureClass::Plan, err.to_string(), exit_code)
 }
 
 /// Build a synthetic `PersistedProvenanceState` for stateless apply so

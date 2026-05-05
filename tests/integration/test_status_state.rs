@@ -90,10 +90,7 @@ esac
 }
 
 fn map_io_error<E: std::fmt::Display>(err: E) -> CoreError {
-    CoreError {
-        class: core_ops::core::types::FailureClass::Plan,
-        message: err.to_string(),
-    }
+    CoreError::new(core_ops::core::types::FailureClass::Plan, err.to_string())
 }
 
 struct EnvGuard {

@@ -140,7 +140,10 @@ fn stateless_plan_without_host_errors_with_clap_diagnostic() {
 }
 
 #[test]
-fn stateless_plan_against_non_directory_path_errors() {
+fn stateless_plan_against_non_directory_path_errors_with_exit_code_64() {
+    // Per `contracts/cli-flag.md` Error semantics: <PATH> is not a
+    // directory → exit 64 (`EX_USAGE`). Asserts both the diagnostic
+    // and the documented exit status so automation can rely on it.
     let tmp = tempfile::TempDir::new().expect("tempdir");
     let file_path = tmp.path().join("a-file");
     std::fs::write(&file_path, "x").expect("write");
@@ -150,6 +153,11 @@ fn stateless_plan_against_non_directory_path_errors() {
         !output.status.success(),
         "non-directory --source-repo must error"
     );
+    assert_eq!(
+        output.status.code(),
+        Some(64),
+        "non-directory --source-repo must exit 64 (EX_USAGE) per contracts/cli-flag.md"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("not a directory") || stderr.contains("does not exist"),
@@ -158,12 +166,19 @@ fn stateless_plan_against_non_directory_path_errors() {
 }
 
 #[test]
-fn stateless_plan_against_missing_path_errors() {
+fn stateless_plan_against_missing_path_errors_with_exit_code_64() {
+    // Per `contracts/cli-flag.md` Error semantics: <PATH> does not
+    // exist → exit 64 (`EX_USAGE`).
     let tmp = tempfile::TempDir::new().expect("tempdir");
     let missing = tmp.path().join("nope");
     let qdir = quadlet_dir();
     let output = run_plan(&missing, "example", &qdir);
     assert!(!output.status.success(), "missing --source-repo must error");
+    assert_eq!(
+        output.status.code(),
+        Some(64),
+        "missing --source-repo must exit 64 (EX_USAGE) per contracts/cli-flag.md"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("does not exist") || stderr.contains("missing"),

@@ -1043,15 +1043,9 @@ fn default_host_scope_id() -> Option<String> {
 }
 
 fn map_plan_error<E: std::fmt::Display>(err: E) -> CoreError {
-    CoreError {
-        class: FailureClass::Plan,
-        message: err.to_string(),
-    }
+    CoreError::new(FailureClass::Plan, err.to_string())
 }
 
 fn map_apply_error<E: std::fmt::Display>(err: E) -> CoreError {
-    CoreError {
-        class: FailureClass::Apply,
-        message: err.to_string(),
-    }
+    CoreError::new(FailureClass::Apply, err.to_string())
 }

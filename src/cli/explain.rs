@@ -118,6 +118,53 @@ pub fn explain(
     })
 }
 
+/// Stateless `core-ops explain --source-repo` entry point (spec/017).
+///
+/// Mirrors [`explain`] but does NOT consult persisted controller
+/// state — no `last_applied_revision_from_state()` call, no
+/// `last_applied_snapshot_for_scope()` deterministic-state read.
+/// This honors the FR-011a / clarification Q5 contract: stateless
+/// explain is pure-read and writes nothing anywhere; equally, it
+/// reads nothing under `/var/lib/core-ops/`. Output is identical
+/// regardless of whether the host has any prior init'd state.
+pub fn explain_stateless(
+    deps: &ReconcileDependencies<'_>,
+    object_selector: &str,
+) -> Result<ExplainCommandOutput, CoreError> {
+    let result = reconcile_plan(deps)?;
+    let observed = (deps.read_observed)(&result.desired)?;
+    let scope_id = scope_id_for_observed(&observed);
+    let desired_snapshot = build_desired_snapshot_from_state(&result.desired, &scope_id);
+    let observed_snapshot = build_observed_snapshot(&observed, Some(&result.desired), &scope_id);
+    let verification_results = normalize_verification_results_for_desired(
+        &result.desired,
+        verify_state(&result.desired, &observed),
+    );
+    let mut deterministic = reconcile_deterministic_plan_with_runtime(
+        &desired_snapshot,
+        // Stateless mode has no last_applied baseline by design
+        // (init'd state is never read or mutated, FR-013 / SC-009).
+        None,
+        &observed_snapshot,
+        &verification_results,
+    )?
+    .plan;
+    deterministic.requested_repository = result.desired.requested_repository.clone();
+    deterministic.requested_ref = result.desired.requested_ref.clone();
+    let explain =
+        build_explain_output(&deterministic, &verification_results, None, object_selector)
+            .ok_or_else(|| {
+                CoreError::new(
+                    crate::core::types::FailureClass::Plan,
+                    format!("managed object not found: {object_selector}"),
+                )
+            })?;
+    Ok(ExplainCommandOutput {
+        human: format_explain_output_report(&explain),
+        machine: format_explain_output_json(&explain),
+    })
+}
+
 fn scope_id_for_observed(observed: &crate::core::types::ObservedState) -> String {
     observed
         .host_info
