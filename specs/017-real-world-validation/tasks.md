@@ -28,11 +28,11 @@ Single Rust project per `plan.md`. Repo-root-relative paths for `src/`, `tests/`
 
 **Purpose**: Clear the way for spec/017's deliverables. Removes the four superseded spec/016 example fixtures and their single in-tree consumer so the new top-level `examples/` doesn't fight the old.
 
-- [ ] T001 Remove the four spec/016 example fixture directories: `git rm -r specs/016-source-repository-layout/examples/01-minimal-single-service specs/016-source-repository-layout/examples/02-variant-config-root specs/016-source-repository-layout/examples/03-multi-unit-with-dropins specs/016-source-repository-layout/examples/04-host-overlay`
-- [ ] T002 Update `tests/integration/source_repo_support.rs:20`: repoint `EXAMPLES_DIR` const at top-level `examples` (or delete the const + helper if no surviving consumer remains after T001 + T026–T030 land); audit any `examples_root()` callers and fix or remove. Run `cargo check --tests` to confirm no dangling references.
-- [ ] T003 [P] Annotate `specs/016-source-repository-layout/spec.md` FR-023: append a supersession note pointing at top-level `examples/` and at this spec (`specs/017-real-world-validation/`). Do not remove the FR text — preserve historical record.
-- [ ] T004 [P] Annotate `specs/016-source-repository-layout/tasks.md` T101–T104: append ` [SUPERSEDED by spec/017]` to each line (the lines are already marked `[X]`; do not duplicate the marker). Preserve historical record.
-- [ ] T005 [P] Verify `scripts/migrate-legacy-source-repo.sh` does not reference the spec/016 example paths (per research.md D10). If it does, capture the references for a follow-up task; if not, confirm in the commit message.
+- [X] T001 Remove the four spec/016 example fixture directories: `git rm -r specs/016-source-repository-layout/examples/01-minimal-single-service specs/016-source-repository-layout/examples/02-variant-config-root specs/016-source-repository-layout/examples/03-multi-unit-with-dropins specs/016-source-repository-layout/examples/04-host-overlay`
+- [X] T002 Update `tests/integration/source_repo_support.rs:20`: repoint `EXAMPLES_DIR` const at top-level `examples` (or delete the const + helper if no surviving consumer remains after T001 + T026–T030 land); audit any `examples_root()` callers and fix or remove. Run `cargo check --tests` to confirm no dangling references.
+- [X] T003 [P] Annotate `specs/016-source-repository-layout/spec.md` FR-023: append a supersession note pointing at top-level `examples/` and at this spec (`specs/017-real-world-validation/`). Do not remove the FR text — preserve historical record.
+- [X] T004 [P] Annotate `specs/016-source-repository-layout/tasks.md` T101–T104: append ` [SUPERSEDED by spec/017]` to each line (the lines are already marked `[X]`; do not duplicate the marker). Preserve historical record.
+- [X] T005 [P] Verify `scripts/migrate-legacy-source-repo.sh` does not reference the spec/016 example paths (per research.md D10). If it does, capture the references for a follow-up task; if not, confirm in the commit message.
 
 ---
 

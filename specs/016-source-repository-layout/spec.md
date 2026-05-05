@@ -127,6 +127,15 @@ The operator has a live source repository running the legacy layout. They migrat
   - a multi-unit service repository combining Quadlet containers and native systemd sockets with drop-ins on each,
   - a host overlay repository demonstrating both drop-in additions and `config/` whole-file replacements.
 
+  > **[SUPERSEDED by spec/017]** (2026-05-05) The four in-tree example fixtures
+  > `specs/016-source-repository-layout/examples/{01-minimal-single-service,02-variant-config-root,03-multi-unit-with-dropins,04-host-overlay}/`
+  > are removed by spec/017's real-world-validation iteration, which publishes
+  > five service-shaped examples under top-level `examples/<NN-slug>/`. The
+  > same shape coverage (default config-root, variant config-root, multi-unit
+  > with drop-ins, host overlay) is retained as a side effect of the
+  > real-world translations. See `specs/017-real-world-validation/spec.md`
+  > FR-017–FR-019 for the supersession rationale.
+
 #### Migration
 
 - **FR-024**: The system MUST refuse to load legacy layouts (FR-012); migration is an out-of-band operation. A migration procedure (script or documented sequence of moves) MUST be provided as part of this feature so that the live legacy repository can be converted in a single mechanical pass.

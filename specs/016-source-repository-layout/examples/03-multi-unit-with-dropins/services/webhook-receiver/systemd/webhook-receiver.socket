@@ -1,9 +1,0 @@
-[Unit]
-Description=Webhook receiver socket activation
-
-[Socket]
-ListenStream=8080
-Accept=no
-
-[Install]
-WantedBy=sockets.target

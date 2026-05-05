@@ -1,3 +1,0 @@
-host: host-a
-services:
-  - node-exporter

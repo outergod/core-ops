@@ -2,7 +2,7 @@ use core_ops::core::types::DesiredState;
 use core_ops::io::repo::RepoError;
 
 use crate::integration::source_repo_support::{
-    git_init_commit, load_with_host, materialize_example, materialize_skeleton, write_host_yaml,
+    git_init_commit, load_with_host, materialize_skeleton, write_host_yaml,
 };
 
 fn unit_names(state: &DesiredState) -> Vec<String> {
@@ -13,85 +13,13 @@ fn unit_names(state: &DesiredState) -> Vec<String> {
         .collect()
 }
 
-// ---- Example load tests (FR-001..FR-008, happy path) ----
-
-#[test]
-fn example_01_minimal_single_service_loads() {
-    let (repo, rev) = materialize_example("01-minimal-single-service");
-    let state = load_with_host(repo.path(), &rev, "example-host").expect("load");
-    let names = unit_names(&state);
-    assert!(
-        names.iter().any(|n| n == "whoami.container"),
-        "missing whoami.container: {names:?}"
-    );
-    assert!(
-        state
-            .managed_config_paths
-            .contains(&"/etc/whoami/whoami.toml".to_string()),
-        "missing /etc/whoami/whoami.toml: {:?}",
-        state.managed_config_paths
-    );
-    assert_eq!(
-        state.managed_config_roots,
-        vec!["/etc/whoami".to_string()]
-    );
-}
-
-#[test]
-fn example_02_variant_config_root_loads() {
-    let (repo, rev) = materialize_example("02-variant-config-root");
-    let state = load_with_host(repo.path(), &rev, "example-host").expect("load");
-    let names = unit_names(&state);
-    assert!(
-        names.iter().any(|n| n == "traefik-dnschallenge.container"),
-        "missing container: {names:?}"
-    );
-    // Service id is `traefik-dnschallenge` but config-root is `traefik`.
-    assert!(
-        state
-            .managed_config_paths
-            .contains(&"/etc/traefik/traefik.yaml".to_string()),
-        "config not rooted under /etc/traefik/: {:?}",
-        state.managed_config_paths
-    );
-    assert_eq!(state.managed_config_roots, vec!["/etc/traefik".to_string()]);
-}
-
-#[test]
-fn example_03_multi_unit_with_dropins_loads() {
-    let (repo, rev) = materialize_example("03-multi-unit-with-dropins");
-    let state = load_with_host(repo.path(), &rev, "example-host").expect("load");
-    let names = unit_names(&state);
-    assert!(
-        names.iter().any(|n| n == "webhook-receiver.container"),
-        "missing container unit: {names:?}"
-    );
-    assert!(
-        names.iter().any(|n| n == "webhook-receiver.socket"),
-        "missing socket unit: {names:?}"
-    );
-}
-
-#[test]
-fn example_04_host_overlay_loads() {
-    let (repo, rev) = materialize_example("04-host-overlay");
-    let state = load_with_host(repo.path(), &rev, "host-a").expect("load");
-    let names = unit_names(&state);
-    assert!(
-        names.iter().any(|n| n == "node-exporter.container"),
-        "missing container unit: {names:?}"
-    );
-    // The host's config/ provides a whole-file replacement; the resolved
-    // destination is still `/etc/node-exporter/node-exporter.env` (FR-010
-    // invariant: rooted under /etc/<config-root>/).
-    assert!(
-        state
-            .managed_config_paths
-            .contains(&"/etc/node-exporter/node-exporter.env".to_string()),
-        "missing config target: {:?}",
-        state.managed_config_paths
-    );
-}
+// Spec/017 supersession: the four `example_0X_*_loads` tests against the
+// in-tree `specs/016-source-repository-layout/examples/` fixtures are
+// removed alongside the fixtures themselves. Their layout-shape role is
+// now covered by per-example integration tests under
+// `tests/integration/test_examples_<NN>_<slug>.rs`, which exercise the
+// real-world examples published under `examples/<NN-slug>/` via the new
+// stateless `--source-repo` CLI surface.
 
 // ---- Full systemd unit extension set (.timer / .target / .path) ----
 //
@@ -704,11 +632,33 @@ fn orphan_dropin_rejected() {
 
 #[test]
 fn repeated_load_yields_identical_workloads() {
-    let (repo, rev) = materialize_example("03-multi-unit-with-dropins");
-    let first =
-        load_with_host(repo.path(), &rev, "example-host").expect("load first");
-    let second =
-        load_with_host(repo.path(), &rev, "example-host").expect("load second");
+    let (tmp, services, hosts) = materialize_skeleton();
+    let svc = services.join("alpha");
+    let svc_quadlet = svc.join("quadlet");
+    let svc_systemd = svc.join("systemd");
+    std::fs::create_dir_all(&svc_quadlet).unwrap();
+    std::fs::create_dir_all(&svc_systemd).unwrap();
+    std::fs::write(
+        svc_quadlet.join("alpha.container"),
+        "[Container]\nImage=alpine\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(svc_quadlet.join("alpha.container.d")).unwrap();
+    std::fs::write(
+        svc_quadlet.join("alpha.container.d/10-resources.conf"),
+        "[Service]\nMemoryMax=128M\n",
+    )
+    .unwrap();
+    std::fs::write(
+        svc_systemd.join("alpha.socket"),
+        "[Socket]\nListenStream=8080\n[Install]\nWantedBy=sockets.target\n",
+    )
+    .unwrap();
+    write_host_yaml(&hosts, "example-host", &["alpha"]);
+    let rev = git_init_commit(tmp.path());
+
+    let first = load_with_host(tmp.path(), &rev, "example-host").expect("load first");
+    let second = load_with_host(tmp.path(), &rev, "example-host").expect("load second");
 
     // `repository_ref` and the internal `_repo_temp` paths differ between
     // calls (each call clones into a fresh TempDir). Compare every other

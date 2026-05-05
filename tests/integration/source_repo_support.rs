@@ -17,8 +17,6 @@ use core_ops::io::repo::{load_desired_state, RepoError, HOST_OVERRIDE_ENV};
 
 use crate::integration::env_lock::path_lock;
 
-const EXAMPLES_DIR: &str = "specs/016-source-repository-layout/examples";
-
 pub struct HostGuard(Option<OsString>);
 
 impl HostGuard {
@@ -35,10 +33,6 @@ impl Drop for HostGuard {
             std::env::remove_var(HOST_OVERRIDE_ENV);
         }
     }
-}
-
-pub fn examples_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(EXAMPLES_DIR)
 }
 
 pub fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -90,13 +84,6 @@ pub fn git_init_commit(repo: &Path) -> String {
         .output()
         .expect("git rev-parse");
     String::from_utf8_lossy(&head.stdout).trim().to_string()
-}
-
-pub fn materialize_example(name: &str) -> (TempDir, String) {
-    let tmp = TempDir::new().expect("tempdir");
-    copy_dir_recursive(&examples_root().join(name), tmp.path()).expect("copy example");
-    let rev = git_init_commit(tmp.path());
-    (tmp, rev)
 }
 
 pub fn materialize_skeleton() -> (TempDir, PathBuf, PathBuf) {
