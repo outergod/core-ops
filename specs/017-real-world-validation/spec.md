@@ -148,7 +148,7 @@ A future spec author considering an amendment to spec/016 (e.g., adding a templa
 
 #### Release governance
 
-- **FR-021**: This change MUST update `Cargo.toml` to a new `minor` version (`2.1.0` → `2.2.0`), add `changes/017-real-world-validation.md` declaring `release_intent: minor`, and re-render `CHANGELOG.md` via `cargo run --bin core-ops-release -- changelog --write`. If the inferred-bump validator detects deletions in `specs/016-source-repository-layout/examples/` as `major` per spec/011, the declared intent is bumped to `major` and the version becomes `3.0.0` — the validator's verdict is authoritative.
+- **FR-021**: This change MUST update `Cargo.toml` to the next `minor` version above the current master Cargo.toml value (master is currently at `2.1.1`; the next minor is `2.2.0`), add `changes/017-real-world-validation.md` declaring `release_intent: minor`, and re-render `CHANGELOG.md` via `cargo run --bin core-ops-release -- changelog --write`. If the inferred-bump validator detects deletions in `specs/016-source-repository-layout/examples/` as `major` per spec/011, the declared intent is bumped to `major` and the version becomes `3.0.0` — the validator's verdict is authoritative.
 
 ### Key Entities
 
