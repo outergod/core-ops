@@ -222,10 +222,17 @@ local testing. The repository layout should include:
 - `hosts/<host>/host.yaml` with explicit service selection
 - `hosts/<host>/overrides/` for host-specific drop-ins
 
-Override host selection during development with:
+Override host selection during development. Stateless (no prior `init`):
 
 ```
-CORE_OPS_HOST=<host> core-ops plan --repo <repo> --rev <rev>
+core-ops plan --source-repo <PATH> --host <host>
+```
+
+Or initialize once and let persisted state carry the repo + ref:
+
+```
+core-ops init <repo-or-path> <ref>
+core-ops plan --host <host>
 ```
 
 When adding or changing behavior, ensure tests and diagnostics preserve
