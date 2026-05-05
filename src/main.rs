@@ -12,6 +12,7 @@ use core_ops::io::state::{
     read_persisted_state, resolve_state_file, CONTROLLER_BUILD_TIME_ENV, CONTROLLER_REVISION_ENV,
     CONTROLLER_TREE_STATE_ENV, CONTROLLER_VERSION_ENV,
 };
+use core_ops::io::source_ref::{detect_provenance, SourceRefError};
 use core_ops::io::systemd::SYSTEMD_UNIT_DIR_ENV;
 use core_ops::io::{audit as audit_io, observed, repo};
 use log::LevelFilter;
@@ -43,13 +44,54 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             Ok(())
         }
         Commands::Plan(args) => {
-            let (repo_source, rev) = resolve_repo_from_state(None)?;
             let quadlet_dir = args.quadlet_dir;
             let audit_dir = args.audit_dir;
             let json = args.json;
             let verbose = args.verbose;
             set_systemd_unit_dir(&args.systemd_unit_dir);
             set_host_override(&args.host);
+
+            // Stateless mode (--source-repo): bypass init'd state lookup.
+            // Per FR-012, writes nothing to /var/lib/core-ops/. Honors
+            // --audit-dir when explicitly set (clarification Q4).
+            if let Some(source_repo) = args.source_repo {
+                let source = detect_provenance(&source_repo).map_err(map_source_ref_error)?;
+                let repo_path = source.repo_path.clone();
+                let requested_repository = source.requested_repository.clone();
+                let requested_ref = source.requested_ref.clone();
+                let deps = ReconcileDependencies {
+                    load_desired: &|| {
+                        repo::load_desired_state_from_path(
+                            &repo_path,
+                            &requested_repository,
+                            &requested_ref,
+                        )
+                        .map_err(map_plan_error)
+                    },
+                    read_observed: &|desired| {
+                        observed::read_observed_state(&quadlet_dir, Some(desired), None)
+                            .map_err(map_plan_error)
+                    },
+                    apply_plan: &|_, _| Ok(()),
+                };
+                let output = plan_cmd::plan(&deps, verbose)?;
+                audit_io::emit_journal_event(&output.audit_event).map_err(map_plan_error)?;
+                if let Some(dir) = audit_dir {
+                    let audit_path = audit_io::write_audit_record(&dir, &output.audit_record)
+                        .map_err(map_plan_error)?;
+                    if !json {
+                        println!("audit {}", audit_path);
+                    }
+                }
+                if json {
+                    println!("{}", output.machine);
+                } else {
+                    println!("{}", output.summary);
+                }
+                return Ok(());
+            }
+
+            let (repo_source, rev) = resolve_repo_from_state(None)?;
 
             let deps = ReconcileDependencies {
                 load_desired: &|| {
@@ -86,14 +128,83 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             let audit_dir = args.audit_dir;
             let json = args.json;
             let verbose = args.verbose;
+            let no_reload = args.no_reload;
+            set_systemd_unit_dir(&args.systemd_unit_dir);
+            set_host_override(&args.host);
+
+            // Stateless mode (--source-repo): bypass init'd state, never
+            // mutate /var/lib/core-ops/status.json (FR-013, SC-009).
+            // Audit records are written; the persisted controller state
+            // is left byte-identical pre/post.
+            if let Some(source_repo) = args.source_repo {
+                if rollback_to.is_some() {
+                    return Err(CoreError::new(
+                        FailureClass::Apply,
+                        "--rollback-to is incompatible with stateless --source-repo \
+                             (rollback requires the persisted retention chain set by 'core-ops init')"
+                            .to_string(),
+                    ));
+                }
+                let source = detect_provenance(&source_repo).map_err(map_source_ref_error)?;
+                let output = apply_cmd::apply_with_report_stateless(
+                    &source,
+                    &quadlet_dir,
+                    !no_reload,
+                )?;
+                let run = output.result.run.clone();
+                let synthetic = synthetic_provenance_for_stateless(
+                    output
+                        .result
+                        .desired
+                        .requested_repository
+                        .as_deref()
+                        .unwrap_or(""),
+                    output
+                        .result
+                        .desired
+                        .requested_ref
+                        .as_deref()
+                        .unwrap_or(""),
+                );
+                let event = core_ops::core::audit::build_audit_event(
+                    &run,
+                    Some(&output.plan),
+                    &output.result.verification_results,
+                    Some(&synthetic),
+                );
+                audit_io::emit_journal_event(&event).map_err(map_apply_error)?;
+                if let Some(dir) = audit_dir {
+                    let mut record = core_ops::core::audit::build_audit_record(
+                        &run.run_id,
+                        Vec::new(),
+                        &output.plan,
+                        output.result.verification_results.clone(),
+                    );
+                    record
+                        .operator_messages
+                        .push(core_ops::core::audit::summarize_evaluation(
+                            &output.result.desired,
+                        ));
+                    let _ = audit_io::write_audit_record(&dir, &record).map_err(map_apply_error)?;
+                }
+                if json {
+                    println!("{}", output.machine_report);
+                } else if verbose {
+                    println!("{}", output.verbose_report);
+                } else {
+                    println!("{}", output.human_report);
+                }
+                if run.status == RunStatus::Failure {
+                    std::process::exit(1);
+                }
+                return Ok(());
+            }
+
             let state_file = if args.force_no_state {
                 None
             } else {
                 Some(resolve_state_file(args.state_file))
             };
-            let no_reload = args.no_reload;
-            set_systemd_unit_dir(&args.systemd_unit_dir);
-            set_host_override(&args.host);
 
             let mut streamed_human_output = false;
             let output = if let Some(target_revision_id) = rollback_to.as_deref() {
@@ -256,6 +367,38 @@ fn run(cli: Cli) -> Result<(), CoreError> {
         Commands::Explain(args) => {
             set_systemd_unit_dir(&args.systemd_unit_dir);
             set_host_override(&args.host);
+
+            // Stateless mode (--source-repo): pure-read; writes nothing
+            // anywhere. Bypasses init'd state lookup entirely.
+            if let Some(source_repo) = args.source_repo {
+                let source = detect_provenance(&source_repo).map_err(map_source_ref_error)?;
+                let repo_path = source.repo_path.clone();
+                let requested_repository = source.requested_repository.clone();
+                let requested_ref = source.requested_ref.clone();
+                let deps = ReconcileDependencies {
+                    load_desired: &|| {
+                        repo::load_desired_state_from_path(
+                            &repo_path,
+                            &requested_repository,
+                            &requested_ref,
+                        )
+                        .map_err(map_plan_error)
+                    },
+                    read_observed: &|desired| {
+                        observed::read_observed_state(&args.quadlet_dir, Some(desired), None)
+                            .map_err(map_plan_error)
+                    },
+                    apply_plan: &|_, _| Ok(()),
+                };
+                let output = explain_cmd::explain(&deps, &args.object)?;
+                if args.json {
+                    println!("{}", output.machine);
+                } else {
+                    println!("{}", output.human);
+                }
+                return Ok(());
+            }
+
             let (repo_source, revision) =
                 explain_cmd::resolve_explain_target()?;
             let deps = ReconcileDependencies {
@@ -386,6 +529,63 @@ fn map_plan_error<E: std::fmt::Display>(err: E) -> CoreError {
 
 fn map_apply_error<E: std::fmt::Display>(err: E) -> CoreError {
     CoreError::new(core_ops::core::types::FailureClass::Apply, err.to_string())
+}
+
+/// Map `--source-repo` validation errors to `CoreError`. Per
+/// `contracts/cli-flag.md` the path-existence/path-shape errors exit
+/// with codes 64/66; CoreError carries the message and the process
+/// exit happens via the standard error-printing path. We log the
+/// classified exit code into the error message so operators can see
+/// it in stderr alongside the diagnostic.
+fn map_source_ref_error(err: SourceRefError) -> CoreError {
+    let exit_code = err.exit_code();
+    CoreError::new(
+        FailureClass::Plan,
+        format!("{err} (exit {exit_code})"),
+    )
+}
+
+/// Build a synthetic `PersistedProvenanceState` for stateless apply so
+/// that audit events carry the path-based `desired_repository` and
+/// `desired_requested_ref` fields without consulting any persisted
+/// /var/lib/core-ops/status.json. Stateless apply never reads or
+/// writes that file — the audit chain is the persisted record.
+fn synthetic_provenance_for_stateless(
+    requested_repository: &str,
+    requested_ref: &str,
+) -> core_ops::core::types::PersistedProvenanceState {
+    use core_ops::core::types::{
+        ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState,
+        ReconciliationProvenance, ReconciliationStatus, TreeState,
+        PERSISTED_PROVENANCE_SCHEMA_VERSION,
+    };
+    PersistedProvenanceState {
+        schema_version: PERSISTED_PROVENANCE_SCHEMA_VERSION,
+        controller: ControllerProvenance {
+            version: None,
+            revision: None,
+            build_time: None,
+            tree_state: TreeState::Unknown,
+        },
+        desired_state: DesiredStateProvenance {
+            repository: requested_repository.to_string(),
+            requested_ref: requested_ref.to_string(),
+            last_observed_revision: None,
+            last_observed_at: None,
+            layout_version: Some("1".to_string()),
+        },
+        reconciliation: ReconciliationProvenance {
+            generation: 0,
+            status: ReconciliationStatus::NeverRun,
+            running: false,
+            last_attempted_revision: None,
+            last_applied_revision: None,
+            last_started_at: None,
+            last_finished_at: None,
+            attempted_observed_divergence: None,
+        },
+        detached: false,
+    }
 }
 
 /// Read `(repository, requested_ref)` from state, allowing Detached state.

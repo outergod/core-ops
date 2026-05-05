@@ -188,6 +188,40 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
     load_layered_desired_state(&repo_path, repo_source, revision_id)
 }
 
+/// Stateless `--source-repo` loader (spec/017): operates on `repo_path`
+/// in place, without cloning into a tempdir or checking out a ref.
+///
+/// `requested_repository` and `requested_ref` carry path-based
+/// provenance prepared by [`crate::io::source_ref::detect_provenance`]
+/// — typically the canonical absolute path string and either a
+/// 40-char SHA or a `(stateless)` / `(stateless+dirty)` sentinel.
+///
+/// This is the pure-path counterpart to [`load_desired_state`] used by
+/// `core-ops plan/apply/explain --source-repo <PATH>`. The init'd-mode
+/// loader retains its existing clone-then-checkout semantics.
+pub fn load_desired_state_from_path(
+    repo_path: &Path,
+    requested_repository: &str,
+    requested_ref: &str,
+) -> Result<DesiredState, RepoError> {
+    if !repo_path.exists() {
+        return Err(RepoError::InvalidRepoSource(
+            repo_path.display().to_string(),
+        ));
+    }
+    if !repo_path.is_dir() {
+        return Err(RepoError::InvalidRepoSource(
+            repo_path.display().to_string(),
+        ));
+    }
+    validate_no_legacy_root_artifacts(repo_path)?;
+    let services_dir = repo_path.join("services");
+    if !services_dir.exists() {
+        return Err(RepoError::MissingServicesDir(services_dir));
+    }
+    load_layered_desired_state(repo_path, requested_repository, requested_ref)
+}
+
 pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<LayeredRepo, RepoError> {
     let temp = TempDir::new().map_err(|err| RepoError::GitCloneFailed(err.to_string()))?;
     if looks_like_url(repo_source) {

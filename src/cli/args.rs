@@ -15,9 +15,18 @@ Use --force to overwrite existing configuration or recover from a corrupt state 
 const PLAN_AFTER_HELP: &str = "Examples:
   core-ops plan
   core-ops plan --host edge-01
+  core-ops plan --source-repo ./my-repo --host edge-01
 
-Requires prior initialization via 'core-ops init'. Repository and ref are
-sourced exclusively from persisted controller configuration.
+Init'd mode (default, no --source-repo): requires prior initialization
+via 'core-ops init'. Repository and ref are sourced exclusively from
+persisted controller configuration.
+
+Stateless mode (--source-repo <PATH>): sources desired state from the
+filesystem directory at <PATH>, bypassing the persisted controller
+configuration written by 'core-ops init'. Requires --host. Writes
+nothing to /var/lib/core-ops/. Honors --audit-dir when explicitly set.
+For long-lived tracking, run 'core-ops init <repo> <ref>' once and omit
+--source-repo on subsequent invocations.
 
 Human-readable plan headers keep the immutable target revision primary and
 render a meaningful requested ref secondarily, for example:
@@ -29,9 +38,19 @@ const APPLY_AFTER_HELP: &str = "Examples:
   core-ops apply --verbose
   core-ops apply --rollback-to rev-1
   core-ops apply --rollback-to rev-1 --rollback-plan-only
+  core-ops apply --source-repo ./my-repo --host edge-01
 
-Requires prior initialization via 'core-ops init'. Repository and ref are
-sourced exclusively from persisted controller configuration.
+Init'd mode (default, no --source-repo): requires prior initialization
+via 'core-ops init'. Repository and ref are sourced exclusively from
+persisted controller configuration.
+
+Stateless mode (--source-repo <PATH>): converges host state from the
+filesystem directory at <PATH>, bypassing the persisted controller
+configuration written by 'core-ops init'. Requires --host. Writes audit
+records but does not mutate persisted controller state — the
+init'd configuration's desired_state.* fields are preserved byte-identical.
+For long-lived tracking, run 'core-ops init <repo> <ref>' once and omit
+--source-repo on subsequent invocations.
 
 Deterministic reconciliation uses desired, last_applied, and actual state.
 Automatic retry is bounded; repeated failure or oscillation is surfaced in the
@@ -52,12 +71,19 @@ and audit flows.";
 const EXPLAIN_AFTER_HELP: &str = "Examples:
   core-ops explain container/frontend.container
   core-ops explain mount/var-lib-demo.mount --json
+  core-ops explain --source-repo ./my-repo --host edge-01 caddy.container
 
 Explain output inspects a single known managed object using the authoritative
 plan/result model and renders full dependency and metadata context.
 
-Requires prior initialization via 'core-ops init'. Repository and ref are
-sourced exclusively from persisted controller configuration.";
+Init'd mode (default, no --source-repo): requires prior initialization
+via 'core-ops init'. Repository and ref are sourced exclusively from
+persisted controller configuration.
+
+Stateless mode (--source-repo <PATH>): inspects the directory at <PATH>
+without consulting persisted state. Requires --host. Pure-read; writes
+nothing anywhere. For long-lived tracking, run 'core-ops init <repo> <ref>'
+once and omit --source-repo on subsequent invocations.";
 
 const GLOBAL_AFTER_HELP: &str = "License:
   GNU Affero General Public License version 3 or later (AGPLv3+)";
@@ -117,6 +143,13 @@ pub struct PlanArgs {
     /// Host identity override for selecting hosts/<host>, including host-specific mount overrides.
     #[arg(long)]
     pub host: Option<String>,
+    /// Use a filesystem path as the source of desired state, bypassing the
+    /// persisted controller configuration written by 'core-ops init'.
+    /// Requires --host. The init'd mode (no flag) sources from persisted
+    /// state set by 'core-ops init <repo> <ref>'. Writes nothing under
+    /// /var/lib/core-ops/. Honors --audit-dir when explicitly set.
+    #[arg(long, value_name = "PATH", requires = "host")]
+    pub source_repo: Option<PathBuf>,
     /// System-level Quadlet directory.
     #[arg(long, default_value = "/etc/containers/systemd")]
     pub quadlet_dir: PathBuf,
@@ -139,6 +172,15 @@ pub struct ApplyArgs {
     /// Host identity override for selecting hosts/<host>, including host-specific mount overrides.
     #[arg(long)]
     pub host: Option<String>,
+    /// Use a filesystem path as the source of desired state, bypassing the
+    /// persisted controller configuration written by 'core-ops init'.
+    /// Requires --host. The init'd configuration's desired_state.* fields
+    /// are preserved byte-identical. Audit records are written; the canonical
+    /// /var/lib/core-ops/status.json is never mutated by stateless apply.
+    /// For long-lived tracking, run 'core-ops init <repo> <ref>' once and
+    /// omit --source-repo on subsequent invocations.
+    #[arg(long, value_name = "PATH", requires = "host")]
+    pub source_repo: Option<PathBuf>,
     /// System-level Quadlet directory.
     #[arg(long, default_value = "/etc/containers/systemd")]
     pub quadlet_dir: PathBuf,
@@ -248,6 +290,13 @@ pub struct ExplainArgs {
     /// Host identity override for selecting hosts/<host>.
     #[arg(long)]
     pub host: Option<String>,
+    /// Use a filesystem path as the source of desired state, bypassing the
+    /// persisted controller configuration written by 'core-ops init'.
+    /// Requires --host. Pure-read; writes nothing anywhere. For long-lived
+    /// tracking, run 'core-ops init <repo> <ref>' once and omit
+    /// --source-repo on subsequent invocations.
+    #[arg(long, value_name = "PATH", requires = "host")]
+    pub source_repo: Option<PathBuf>,
     /// System-level Quadlet directory.
     #[arg(long, default_value = "/etc/containers/systemd")]
     pub quadlet_dir: PathBuf,
@@ -261,9 +310,9 @@ pub struct ExplainArgs {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, GLOBAL_AFTER_HELP};
+    use super::{Cli, Commands, GLOBAL_AFTER_HELP};
     use crate::build_info::{cli_license_notice, long_version_text};
-    use clap::CommandFactory;
+    use clap::{CommandFactory, Parser};
 
     #[test]
     fn long_version_includes_package_version() {
@@ -285,5 +334,218 @@ mod tests {
 
         assert!(help.contains(cli_license_notice()));
         assert!(help.contains(GLOBAL_AFTER_HELP));
+    }
+
+    // ---- spec/017: --source-repo flag parsing (FR-010..FR-016) ----
+
+    #[test]
+    fn plan_accepts_source_repo_with_host() {
+        let cli = Cli::try_parse_from([
+            "core-ops",
+            "plan",
+            "--source-repo",
+            "/tmp/example",
+            "--host",
+            "edge-01",
+        ])
+        .expect("plan should accept --source-repo with --host");
+        match cli.command {
+            Commands::Plan(args) => {
+                assert_eq!(
+                    args.source_repo.as_deref(),
+                    Some(std::path::Path::new("/tmp/example"))
+                );
+                assert_eq!(args.host.as_deref(), Some("edge-01"));
+            }
+            _ => panic!("expected Plan subcommand"),
+        }
+    }
+
+    #[test]
+    fn apply_accepts_source_repo_with_host() {
+        let cli = Cli::try_parse_from([
+            "core-ops",
+            "apply",
+            "--source-repo",
+            "/tmp/example",
+            "--host",
+            "edge-01",
+        ])
+        .expect("apply should accept --source-repo with --host");
+        match cli.command {
+            Commands::Apply(args) => {
+                assert_eq!(
+                    args.source_repo.as_deref(),
+                    Some(std::path::Path::new("/tmp/example"))
+                );
+                assert_eq!(args.host.as_deref(), Some("edge-01"));
+            }
+            _ => panic!("expected Apply subcommand"),
+        }
+    }
+
+    #[test]
+    fn explain_accepts_source_repo_with_host() {
+        let cli = Cli::try_parse_from([
+            "core-ops",
+            "explain",
+            "--source-repo",
+            "/tmp/example",
+            "--host",
+            "edge-01",
+            "caddy.container",
+        ])
+        .expect("explain should accept --source-repo with --host");
+        match cli.command {
+            Commands::Explain(args) => {
+                assert_eq!(
+                    args.source_repo.as_deref(),
+                    Some(std::path::Path::new("/tmp/example"))
+                );
+                assert_eq!(args.host.as_deref(), Some("edge-01"));
+                assert_eq!(args.object, "caddy.container");
+            }
+            _ => panic!("expected Explain subcommand"),
+        }
+    }
+
+    #[test]
+    fn plan_source_repo_without_host_errors() {
+        let err = Cli::try_parse_from([
+            "core-ops",
+            "plan",
+            "--source-repo",
+            "/tmp/example",
+        ])
+        .expect_err("plan --source-repo without --host should error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--host") || msg.contains("host"),
+            "error should mention --host requirement: {msg}"
+        );
+    }
+
+    #[test]
+    fn apply_source_repo_without_host_errors() {
+        let err = Cli::try_parse_from([
+            "core-ops",
+            "apply",
+            "--source-repo",
+            "/tmp/example",
+        ])
+        .expect_err("apply --source-repo without --host should error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--host") || msg.contains("host"),
+            "error should mention --host requirement: {msg}"
+        );
+    }
+
+    #[test]
+    fn explain_source_repo_without_host_errors() {
+        let err = Cli::try_parse_from([
+            "core-ops",
+            "explain",
+            "--source-repo",
+            "/tmp/example",
+            "caddy.container",
+        ])
+        .expect_err("explain --source-repo without --host should error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--host") || msg.contains("host"),
+            "error should mention --host requirement: {msg}"
+        );
+    }
+
+    #[test]
+    fn init_rejects_source_repo() {
+        let err = Cli::try_parse_from([
+            "core-ops",
+            "init",
+            "--source-repo",
+            "/tmp/example",
+            "/repo",
+            "main",
+        ])
+        .expect_err("init must reject --source-repo");
+        assert!(
+            err.to_string().contains("--source-repo")
+                || err.to_string().contains("unexpected"),
+            "expected unexpected-argument error: {err}"
+        );
+    }
+
+    #[test]
+    fn agent_rejects_source_repo() {
+        let err = Cli::try_parse_from([
+            "core-ops",
+            "agent",
+            "--source-repo",
+            "/tmp/example",
+        ])
+        .expect_err("agent must reject --source-repo");
+        assert!(
+            err.to_string().contains("--source-repo")
+                || err.to_string().contains("unexpected"),
+            "expected unexpected-argument error: {err}"
+        );
+    }
+
+    #[test]
+    fn status_rejects_source_repo() {
+        let err = Cli::try_parse_from([
+            "core-ops",
+            "status",
+            "--source-repo",
+            "/tmp/example",
+        ])
+        .expect_err("status must reject --source-repo");
+        assert!(
+            err.to_string().contains("--source-repo")
+                || err.to_string().contains("unexpected"),
+            "expected unexpected-argument error: {err}"
+        );
+    }
+
+    #[test]
+    fn plan_help_documents_source_repo_contract() {
+        let mut command = Cli::command();
+        let plan_command = command.find_subcommand_mut("plan").expect("plan subcommand");
+        let help = plan_command.render_long_help().to_string();
+        assert!(help.contains("--source-repo"), "plan --help missing --source-repo");
+        assert!(help.contains("--host"), "plan --help missing --host requirement");
+        assert!(
+            help.contains("init"),
+            "plan --help missing init pointer per FR-016 contract"
+        );
+    }
+
+    #[test]
+    fn apply_help_documents_source_repo_contract() {
+        let mut command = Cli::command();
+        let apply_command = command.find_subcommand_mut("apply").expect("apply subcommand");
+        let help = apply_command.render_long_help().to_string();
+        assert!(help.contains("--source-repo"), "apply --help missing --source-repo");
+        assert!(help.contains("--host"), "apply --help missing --host requirement");
+        assert!(
+            help.contains("init"),
+            "apply --help missing init pointer per FR-016 contract"
+        );
+    }
+
+    #[test]
+    fn explain_help_documents_source_repo_contract() {
+        let mut command = Cli::command();
+        let explain_command = command
+            .find_subcommand_mut("explain")
+            .expect("explain subcommand");
+        let help = explain_command.render_long_help().to_string();
+        assert!(help.contains("--source-repo"), "explain --help missing --source-repo");
+        assert!(help.contains("--host"), "explain --help missing --host requirement");
+        assert!(
+            help.contains("init"),
+            "explain --help missing init pointer per FR-016 contract"
+        );
     }
 }
