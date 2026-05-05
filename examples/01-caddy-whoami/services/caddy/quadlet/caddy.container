@@ -1,0 +1,21 @@
+[Unit]
+Description=Caddy reverse proxy fronting whoami
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/caddy:2
+PublishPort=80:80
+PublishPort=443:443
+Volume=/etc/caddy:/etc/caddy:ro,Z
+Volume=caddy-data.volume:/data:Z
+Volume=caddy-config.volume:/config:Z
+Network=caddy.network
+Exec=caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target default.target

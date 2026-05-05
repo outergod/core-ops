@@ -1,0 +1,21 @@
+[Unit]
+Description=Prometheus node_exporter — host-scope sidecar
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=quay.io/prometheus/node-exporter:latest
+ContainerName=node-exporter
+PublishPort=9100:9100
+Network=observe.network
+Volume=/proc:/host/proc:ro,rslave
+Volume=/sys:/host/sys:ro,rslave
+Volume=/:/rootfs:ro,rslave
+Exec=--path.procfs=/host/proc --path.sysfs=/host/sys --path.rootfs=/rootfs --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target default.target

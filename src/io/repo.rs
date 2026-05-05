@@ -199,6 +199,12 @@ pub fn load_desired_state(repo_source: &str, revision_id: &str) -> Result<Desire
 /// This is the pure-path counterpart to [`load_desired_state`] used by
 /// `core-ops plan/apply/explain --source-repo <PATH>`. The init'd-mode
 /// loader retains its existing clone-then-checkout semantics.
+///
+/// Unlike init'd mode, this loader does not assume `repo_path` is a
+/// git working tree — `revision_id` is derived from `requested_ref`
+/// directly (it carries the SHA when the source is a clean git
+/// checkout, or a sentinel otherwise) so non-git directories load
+/// without a `git rev-parse HEAD` call (FR-015).
 pub fn load_desired_state_from_path(
     repo_path: &Path,
     requested_repository: &str,
@@ -219,7 +225,12 @@ pub fn load_desired_state_from_path(
     if !services_dir.exists() {
         return Err(RepoError::MissingServicesDir(services_dir));
     }
-    load_layered_desired_state(repo_path, requested_repository, requested_ref)
+    load_layered_desired_state_with_revision(
+        repo_path,
+        requested_repository,
+        requested_ref,
+        Some(requested_ref.to_string()),
+    )
 }
 
 pub fn load_layered_repo(repo_source: &str, revision_id: &str) -> Result<LayeredRepo, RepoError> {
@@ -284,6 +295,20 @@ fn load_layered_desired_state(
     requested_repository: &str,
     requested_ref: &str,
 ) -> Result<DesiredState, RepoError> {
+    load_layered_desired_state_with_revision(
+        repo_path,
+        requested_repository,
+        requested_ref,
+        None,
+    )
+}
+
+fn load_layered_desired_state_with_revision(
+    repo_path: &Path,
+    requested_repository: &str,
+    requested_ref: &str,
+    revision_override: Option<String>,
+) -> Result<DesiredState, RepoError> {
     let services_dir = repo_path.join("services");
     let hosts_dir = repo_path.join("hosts");
     if !hosts_dir.exists() {
@@ -329,7 +354,10 @@ fn load_layered_desired_state(
     )
     .map_err(|err| RepoError::ValidationFailed(err.to_string()))?;
     let workloads = workloads_from_evaluation(&output);
-    let resolved_revision = resolved_head_revision(repo_path)?;
+    let resolved_revision = match revision_override {
+        Some(value) => value,
+        None => resolved_head_revision(repo_path)?,
+    };
     Ok(desired_state_from_workloads(
         repo_path,
         DesiredStateInputs {

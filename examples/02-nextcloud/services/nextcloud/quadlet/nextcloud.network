@@ -1,0 +1,6 @@
+[Unit]
+Description=Intra-service network for the Nextcloud stack
+
+[Network]
+NetworkName=nextcloud
+Subnet=192.0.2.0/24

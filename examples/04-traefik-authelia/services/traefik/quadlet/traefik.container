@@ -1,0 +1,21 @@
+[Unit]
+Description=Traefik edge proxy with Authelia ForwardAuth
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/traefik:v3.1
+ContainerName=traefik
+PublishPort=80:80
+PublishPort=443:443
+Network=auth.network
+Volume=/etc/traefik:/etc/traefik:ro,Z
+Volume=/run/podman/podman.sock:/var/run/docker.sock:ro
+Exec=--configfile=/etc/traefik/traefik.yaml
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target

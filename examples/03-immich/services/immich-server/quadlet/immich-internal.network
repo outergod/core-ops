@@ -1,0 +1,6 @@
+[Unit]
+Description=Internal network: server + db + redis + ML
+
+[Network]
+NetworkName=immich-internal
+Subnet=192.0.2.0/24

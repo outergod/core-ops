@@ -1,0 +1,19 @@
+[Unit]
+Description=Traefik edge proxy for Immich
+After=network-online.target immich-server.service
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/traefik:v3.1
+ContainerName=traefik-edge
+PublishPort=80:80
+PublishPort=443:443
+Network=immich-public.network
+PodmanArgs=--label=traefik.enable=true
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target

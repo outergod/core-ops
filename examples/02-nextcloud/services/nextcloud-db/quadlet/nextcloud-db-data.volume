@@ -1,0 +1,5 @@
+[Unit]
+Description=Nextcloud Postgres data volume
+
+[Volume]
+VolumeName=nextcloud-db-data

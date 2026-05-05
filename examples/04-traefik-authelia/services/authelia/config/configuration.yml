@@ -1,0 +1,32 @@
+# Authelia configuration. Default config-root = service id = authelia
+# → file path /etc/authelia/configuration.yml on the host.
+
+theme: light
+default_2fa_method: totp
+
+server:
+  address: tcp://0.0.0.0:9091
+
+session:
+  name: authelia_session
+  domain: example.com
+  expiration: 1h
+  inactivity: 5m
+
+authentication_backend:
+  file:
+    path: /config/users_database.yml
+
+access_control:
+  default_policy: deny
+  rules:
+    - domain: whoami.example.com
+      policy: one_factor
+
+storage:
+  local:
+    path: /config/db.sqlite3
+
+notifier:
+  filesystem:
+    filename: /config/notification.txt

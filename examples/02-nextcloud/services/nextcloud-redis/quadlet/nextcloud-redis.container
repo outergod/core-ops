@@ -1,0 +1,17 @@
+[Unit]
+Description=Nextcloud Redis cache
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/redis:7-alpine
+ContainerName=nextcloud-redis
+Network=nextcloud.network
+Exec=redis-server --save "" --appendonly no
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target default.target

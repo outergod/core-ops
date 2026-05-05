@@ -1,0 +1,20 @@
+[Unit]
+Description=Prometheus metrics scraper
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/prom/prometheus:v2
+ContainerName=prometheus
+PublishPort=9090:9090
+Network=observe.network
+Volume=/etc/prometheus:/etc/prometheus:ro,Z
+Volume=prometheus-data.volume:/prometheus:Z
+Exec=--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus
+
+[Service]
+Restart=always
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target default.target

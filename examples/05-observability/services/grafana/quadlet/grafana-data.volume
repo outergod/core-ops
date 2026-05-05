@@ -1,0 +1,5 @@
+[Unit]
+Description=Grafana persistent state
+
+[Volume]
+VolumeName=grafana-data

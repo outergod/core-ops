@@ -1,0 +1,6 @@
+[Unit]
+Description=Shared observability network
+
+[Network]
+NetworkName=observe
+Subnet=192.0.2.0/24

@@ -27,6 +27,14 @@ mod test_service_selection;
 mod test_skill_install;
 mod test_socket_dropins;
 mod test_source_repo_layout;
+// spec/017 — stateless --source-repo integration coverage and per-example tests.
+mod test_examples_01_caddy_whoami;
+mod test_examples_02_nextcloud;
+mod test_examples_03_immich;
+mod test_examples_04_traefik_authelia;
+mod test_examples_05_observability;
+mod test_stateless_explain;
+mod test_stateless_plan;
 mod test_systemd_units;
 mod test_unit_lifecycle;
 mod test_validation_fail;

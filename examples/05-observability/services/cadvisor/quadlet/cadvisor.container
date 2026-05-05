@@ -1,0 +1,22 @@
+[Unit]
+Description=cadvisor — container metrics, host-scope sidecar
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=gcr.io/cadvisor/cadvisor:v0.49.1
+ContainerName=cadvisor
+PublishPort=8080:8080
+Network=observe.network
+Volume=/:/rootfs:ro,rslave
+Volume=/var/run:/var/run:ro
+Volume=/sys:/sys:ro,rslave
+Volume=/var/lib/containers:/var/lib/containers:ro,rslave
+PodmanArgs=--privileged
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target default.target

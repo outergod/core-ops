@@ -1,0 +1,19 @@
+[Unit]
+Description=Traefik edge proxy for the Nextcloud stack
+After=network-online.target nextcloud.service
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/traefik:v3.1
+ContainerName=traefik-edge
+PublishPort=80:80
+Network=nextcloud.network
+Volume=/etc/traefik:/etc/traefik:ro,Z
+Exec=--configfile=/etc/traefik/traefik.yaml
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target

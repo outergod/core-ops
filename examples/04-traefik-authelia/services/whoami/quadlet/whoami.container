@@ -1,0 +1,16 @@
+[Unit]
+Description=whoami HTTP echo backend (will be ForwardAuth-protected via host overlay)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/traefik/whoami:latest
+ContainerName=whoami
+Network=auth.network
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target default.target

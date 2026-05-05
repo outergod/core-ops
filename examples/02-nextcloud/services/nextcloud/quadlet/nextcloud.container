@@ -1,0 +1,26 @@
+[Unit]
+Description=Nextcloud (php-fpm + apache image)
+After=network-online.target nextcloud-db.service nextcloud-redis.service
+Wants=network-online.target
+Requires=nextcloud-db.service nextcloud-redis.service
+
+[Container]
+Image=docker.io/library/nextcloud:30
+ContainerName=nextcloud
+Network=nextcloud.network
+Volume=nextcloud-data.volume:/var/www/html:Z
+Environment=NEXTCLOUD_TRUSTED_DOMAINS=cloud.example.com
+Environment=POSTGRES_HOST=nextcloud-db
+Environment=POSTGRES_DB=nextcloud
+Environment=POSTGRES_USER=nextcloud
+Environment=POSTGRES_PASSWORD_FILE=/run/secrets/nextcloud-db-password
+Environment=REDIS_HOST=nextcloud-redis
+Environment=REDIS_HOST_PORT=6379
+Secret=nextcloud-db-password,target=/run/secrets/nextcloud-db-password
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target

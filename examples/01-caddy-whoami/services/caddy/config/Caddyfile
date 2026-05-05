@@ -1,0 +1,7 @@
+# Illustrative Caddyfile; replace example.com with the operator's
+# domain before applying. RFC 2606 reserved domain used here so the
+# example is safe to commit.
+
+whoami.example.com {
+    reverse_proxy whoami:80
+}

@@ -1,0 +1,7 @@
+host: example
+services:
+  - immich-server
+  - immich-database
+  - immich-redis
+  - immich-ml
+  - traefik-edge

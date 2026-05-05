@@ -1,0 +1,21 @@
+[Unit]
+Description=Immich Postgres + pgvecto.rs database
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/immich-app/postgres:16
+ContainerName=immich-database
+Network=immich-internal.network
+Volume=immich-db-data.volume:/var/lib/postgresql/data:Z
+Environment=POSTGRES_DB=immich
+Environment=POSTGRES_USER=immich
+Environment=POSTGRES_PASSWORD_FILE=/run/secrets/immich-db-password
+Secret=immich-db-password,target=/run/secrets/immich-db-password
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target
