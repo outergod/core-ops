@@ -30,9 +30,9 @@ Single Rust project per `plan.md`. Repo-root-relative paths for `src/`, `tests/`
 
 - [ ] T001 Remove the four spec/016 example fixture directories: `git rm -r specs/016-source-repository-layout/examples/01-minimal-single-service specs/016-source-repository-layout/examples/02-variant-config-root specs/016-source-repository-layout/examples/03-multi-unit-with-dropins specs/016-source-repository-layout/examples/04-host-overlay`
 - [ ] T002 Update `tests/integration/source_repo_support.rs:20`: repoint `EXAMPLES_DIR` const at top-level `examples` (or delete the const + helper if no surviving consumer remains after T001 + T026–T030 land); audit any `examples_root()` callers and fix or remove. Run `cargo check --tests` to confirm no dangling references.
-- [ ] T003 Annotate `specs/016-source-repository-layout/spec.md` FR-023: append a supersession note pointing at top-level `examples/` and at this spec (`specs/017-real-world-validation/`). Do not remove the FR text — preserve historical record.
-- [ ] T004 Annotate `specs/016-source-repository-layout/tasks.md` T101–T104: append `[X] [SUPERSEDED by spec/017]` to each line. Preserve historical record.
-- [ ] T005 Verify `scripts/migrate-legacy-source-repo.sh` does not reference the spec/016 example paths (per research.md D10). If it does, capture the references for a follow-up task; if not, confirm in the commit message.
+- [ ] T003 [P] Annotate `specs/016-source-repository-layout/spec.md` FR-023: append a supersession note pointing at top-level `examples/` and at this spec (`specs/017-real-world-validation/`). Do not remove the FR text — preserve historical record.
+- [ ] T004 [P] Annotate `specs/016-source-repository-layout/tasks.md` T101–T104: append ` [SUPERSEDED by spec/017]` to each line (the lines are already marked `[X]`; do not duplicate the marker). Preserve historical record.
+- [ ] T005 [P] Verify `scripts/migrate-legacy-source-repo.sh` does not reference the spec/016 example paths (per research.md D10). If it does, capture the references for a follow-up task; if not, confirm in the commit message.
 
 ---
 
@@ -72,8 +72,8 @@ Single Rust project per `plan.md`. Repo-root-relative paths for `src/`, `tests/`
 - [ ] T018 [P] [US1] Per-example integration test `tests/integration/test_examples_03_immich.rs`: same pattern; assert services contain `immich-server`, `immich-database`, `immich-redis`, `immich-ml`, `traefik`.
 - [ ] T019 [P] [US1] Per-example integration test `tests/integration/test_examples_04_traefik_authelia.rs`: same pattern; assert services contain `traefik`, `authelia`, and at least one protected backend.
 - [ ] T020 [P] [US1] Per-example integration test `tests/integration/test_examples_05_observability.rs`: same pattern; assert services contain `prometheus`, `grafana`, `node-exporter`, `cadvisor`.
-- [ ] T021 [US1] Stateless plan integration test `tests/integration/test_stateless_plan.rs`: cover (a) `--source-repo` against a non-git tempdir → exit 0 with `(stateless)` provenance, (b) clean git checkout → SHA provenance, (c) dirty working tree → `(stateless+dirty)` provenance, (d) missing `--host` → clap exit 2, (e) non-directory path → exit 64, (f) `--audit-dir` honored when explicitly set.
-- [ ] T022 [US1] Stateless explain integration test `tests/integration/test_stateless_explain.rs`: pure-read invocation against any one example; assert exit 0, no writes to `/var/lib/core-ops/`, no audit files created when `--audit-dir` not set.
+- [ ] T021 [P] [US1] Stateless plan integration test `tests/integration/test_stateless_plan.rs`: cover (a) `--source-repo` against a non-git tempdir → exit 0 with `(stateless)` provenance, (b) clean git checkout → SHA provenance, (c) dirty working tree → `(stateless+dirty)` provenance, (d) missing `--host` → clap exit 2, (e) non-directory path → exit 64, (f) `--audit-dir` honored when explicitly set.
+- [ ] T022 [P] [US1] Stateless explain integration test `tests/integration/test_stateless_explain.rs`: pure-read invocation against **each of the five examples** (one sub-test per example, picking a deterministic object id from each — e.g., the first `*.container` declared in the example's services). Per sub-test assert exit 0, no writes to `/var/lib/core-ops/`, no audit files created when `--audit-dir` not set. This is the SC-011 coverage task — "any of the five published examples" requires all five exercised, not one.
 
 ### Implementation for User Story 1
 
@@ -85,7 +85,7 @@ Single Rust project per `plan.md`. Repo-root-relative paths for `src/`, `tests/`
 - [ ] T026 [P] [US1] Author `examples/04-traefik-authelia/`: Traefik + Authelia + protected backend (e.g., whoami), ForwardAuth middleware composition via Traefik labels (drop-ins on the protected backend), cross-service network, host overlay with auth domain configured, README citing Authelia's Traefik integration docs.
 - [ ] T027 [P] [US1] Author `examples/05-observability/`: Prometheus + Grafana + node-exporter + cadvisor, host-scope sidecars with `/proc` and `/sys` bind mounts (declared as `Volume=/proc:/host/proc:ro,rslave`-style mounts), scrape-config templating limitation captured in README + synthesis table, host overlay, README citing Prometheus/Grafana/node-exporter/cadvisor official compose examples.
 - [ ] T028 [US1] Register the five new test modules in `tests/integration/mod.rs`: `pub mod test_examples_01_caddy_whoami;` through `pub mod test_examples_05_observability;` plus `pub mod test_stateless_plan;` and `pub mod test_stateless_explain;` (single file → sequential).
-- [ ] T029 [US1] Add `## Real-World Examples` section to repo-root `README.md` between `## First Interaction` and `## Installation (Current Phase)`, linking each of the five examples with a one-line purpose statement (single file → sequential).
+- [ ] T029 [P] [US1] Add `## Real-World Examples` section to repo-root `README.md` between `## First Interaction` and `## Installation (Current Phase)`, linking each of the five examples with a one-line purpose statement (single file → sequential within itself, parallel with all other US1 tasks).
 
 **Checkpoint**: At this point, US1 is fully functional. A reviewer can run any of the five examples via stateless plan/explain. SC-001/003/006/007/008 measurable.
 
@@ -121,8 +121,8 @@ Single Rust project per `plan.md`. Repo-root-relative paths for `src/`, `tests/`
 ### Tests for User Story 3 (REQUIRED) ⚠️
 
 - [ ] T033 [US3] Stateless apply integration test `tests/integration/test_stateless_apply.rs`: stateless apply against a synthetic source repo in tempdir; assert (a) exit 0, (b) audit record produced, (c) status snapshot reports `desired_state.repository = <canonical-path>`, `desired_state.requested_ref` matches expected sentinel/SHA per the source's git state (FR-013, US3 AC1, US3 AC2).
-- [ ] T034 [US3] Add to `test_stateless_apply.rs` or new file: init'd-state preservation test — `core-ops init <synthetic-repo> main` (write init'd state to a `--state-file` tempdir), then `core-ops apply --source-repo <other-path> --host <host> --state-file <same-tempdir>`, assert `desired_state.repository` and `desired_state.requested_ref` from the init'd phase are byte-identical pre/post the stateless apply (SC-009).
-- [ ] T035 [P] [US3] Add to `test_stateless_apply.rs`: provenance-shape coverage — three sub-cases asserting `(stateless)` / `(stateless+dirty)` / SHA recorded under three working-tree conditions (matches T021's plan-side coverage but for apply's persisted snapshot).
+- [ ] T034 [US3] Add to `test_stateless_apply.rs` or new file: (a) **Init'd-state preservation test** — `core-ops init <synthetic-repo> main` (write init'd state to a `--state-file` tempdir), then `core-ops apply --source-repo <other-path> --host <host> --state-file <same-tempdir>`, assert `desired_state.repository` and `desired_state.requested_ref` from the init'd phase are byte-identical pre/post the stateless apply (SC-009). (b) **Stateless-apply → init'd-plan transition test** (US3 AC3) — after the stateless apply lands, run `core-ops init <synthetic-repo> main --force --state-file <same-tempdir>` then `core-ops plan --state-file <same-tempdir>` (no `--source-repo`); assert plan exits 0 and produces a normal init'd-mode plan with no detached-state header and no rollback ambiguity surfacing from the prior stateless apply.
+- [ ] T035 [US3] Add to `test_stateless_apply.rs`: provenance-shape coverage — three sub-cases asserting `(stateless)` / `(stateless+dirty)` / SHA recorded under three working-tree conditions (matches T021's plan-side coverage but for apply's persisted snapshot). Sequential within `test_stateless_apply.rs` after T033/T034.
 
 ### Implementation for User Story 3
 
@@ -167,7 +167,7 @@ Single Rust project per `plan.md`. Repo-root-relative paths for `src/`, `tests/`
 - [ ] T046 Run final `cargo build --locked --bin core-ops --bin core-ops-verify --bin core-ops-release` plus `cargo test` plus `cargo clippy --all-targets -- -D warnings`. ALL MUST PASS. This is the merge gate.
 - [ ] T047 Run `cargo run --bin core-ops-release -- validate --base-ref master` — release governance gate must pass with the declared release-intent matching or exceeding the validator's inferred bump.
 - [ ] T048 Run quickstart.md validation manually: execute Steps 1–6 against each of the five examples; confirm acceptance check items at end of quickstart.md all pass.
-- [ ] T049 Privacy gate: `grep -rE 'not\.one|ulthar|192\.168\.1\.2' examples/` MUST return zero matches (SC-005). Scan the examples dir for any leaked operator-private values.
+- [ ] T049 Privacy + RFC-compliance gate: (a) `grep -rE 'not\.one|ulthar|192\.168\.1\.2|gcloud[-_]dns|gcloud\.json' examples/` MUST return zero matches (SC-005, leaked operator-private values). (b) RFC 2606 compliance: every fully-qualified hostname under `examples/` MUST end in one of `.example.com`, `.example.org`, `.example.net`, `.test`, `.invalid`, `.localhost`, or be an unqualified service name (Quadlet container hostnames, intra-network references). (c) RFC 5737 compliance: every IPv4 literal MUST fall in `192.0.2.0/24`, `198.51.100.0/24`, or `203.0.113.0/24` (FR-008). Implementer crafts the exact grep/lint pattern; non-compliant hosts/IPs MUST be rewritten before merge.
 - [ ] T050 Spec/017 self-update: tick off completed tasks in this `tasks.md` file as work lands, per the `feedback_speckit_tasks_checklist.md` discipline. Do not batch the ticks — update per task as it ships.
 
 ---
@@ -180,7 +180,7 @@ Single Rust project per `plan.md`. Repo-root-relative paths for `src/`, `tests/`
 - **Phase 2 (Foundational, T006–T015)**: Depends on Phase 1 completion. **BLOCKS all user stories.** T006 → T007 → T008 (same file `args.rs`); T009 / T010 / T011 / T012 parallel after T006–T008; T013 sequential after T006–T008; T014 parallel with T009; T015 (validation gate) sequential after all above.
 - **Phase 3 (US1, T016–T029)**: Depends on Phase 2 completion. T016–T020 (per-example tests) parallel; T023–T027 (per-example authoring) parallel and independent of T016–T020 ordering — but each test passes only after its example exists. T021 / T022 (stateless plan/explain integration tests) parallel with T016–T020. T028 (mod.rs registration) sequential after T016–T022. T029 (root README) parallel with everything else.
 - **Phase 4 (US2, T030–T032)**: Depends on Phase 2 + at least one example from Phase 3 (T024 specifically for T030). T030 / T031 parallel with each other if they live in different files; T032 single-file pass → sequential.
-- **Phase 5 (US3, T033–T036)**: Depends on Phase 2 (T011 specifically). T033 / T034 / T035 parallel; T036 (mod.rs registration) sequential after T036.
+- **Phase 5 (US3, T033–T036)**: Depends on Phase 2 (T011 specifically). T033 / T034 / T035 are all in `test_stateless_apply.rs` and therefore sequential within that file (no `[P]`); T036 (mod.rs registration) sequential after T035 and after T028 (single-file edits to `tests/integration/mod.rs`).
 - **Phase 6 (US4, T037–T039)**: Depends on Phase 3 completion (synthesis review needs all examples authored). T037 → T038 → T039 sequential (each operates on `spec.md`).
 - **Phase 7 (Polish, T040–T050)**: Depends on Phase 3, 4, 5, 6 completion. T040 / T041 / T042 parallel; T043 → T044 → T045 sequential (release governance pipeline); T046 → T047 sequential after T043–T045; T048 / T049 parallel; T050 cross-cutting.
 
