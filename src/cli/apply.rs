@@ -855,7 +855,15 @@ pub fn apply_with_report_stateless(
                 &requested_repository,
                 &requested_ref,
             )
-            .map_err(map_plan_error)
+            // Per `contracts/cli-flag.md` Error semantics: a path that
+            // exists as a directory but is not a spec/016-conformant
+            // source-repo (missing services/, legacy artifacts, etc.)
+            // exits 65 (`EX_DATAERR`). Thread the documented exit code
+            // through `CoreError.exit_code` so automation can classify
+            // by status alone.
+            .map_err(|err| {
+                CoreError::with_exit_code(FailureClass::Plan, err.to_string(), 65)
+            })
         },
         read_observed: &|desired| {
             read_observed_state(quadlet_dir, Some(desired), None).map_err(map_plan_error)

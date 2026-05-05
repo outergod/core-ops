@@ -109,10 +109,15 @@ pub fn detect_provenance(path: &Path) -> Result<StatelessSource, SourceRefError>
     })?;
     let requested_repository = canonical.to_string_lossy().into_owned();
     let requested_ref = if is_inside_work_tree(&canonical) {
-        if working_tree_dirty(&canonical) {
-            "(stateless+dirty)".to_string()
-        } else {
-            head_sha(&canonical).unwrap_or_else(|| "(stateless)".to_string())
+        // Per research.md D1 step 5: on any subprocess error, fall
+        // back to `(stateless)`. We distinguish three states:
+        //   Some(true)  → working tree definitely dirty
+        //   Some(false) → working tree definitely clean
+        //   None        → could not determine; treat as non-verifiable
+        match working_tree_clean(&canonical) {
+            Some(false) => "(stateless+dirty)".to_string(),
+            Some(true) => head_sha(&canonical).unwrap_or_else(|| "(stateless)".to_string()),
+            None => "(stateless)".to_string(),
         }
     } else {
         "(stateless)".to_string()
@@ -138,18 +143,23 @@ fn is_inside_work_tree(path: &Path) -> bool {
     }
 }
 
-fn working_tree_dirty(path: &Path) -> bool {
+/// Probe whether the working tree at `path` is clean.
+///
+/// `Some(true)`  — `git status --porcelain` succeeded with empty output.
+/// `Some(false)` — `git status --porcelain` succeeded with non-empty output.
+/// `None`        — subprocess failed (git missing, invocation error, or
+///                non-zero exit); the caller falls back to `(stateless)`
+///                per `research.md` D1 step 5 so probe failure is not
+///                conflated with an actually-dirty tree in the audit chain.
+fn working_tree_clean(path: &Path) -> Option<bool> {
     match Command::new("git")
         .arg("-C")
         .arg(path)
         .args(["status", "--porcelain", "--", "."])
         .output()
     {
-        Ok(out) if out.status.success() => !out.stdout.is_empty(),
-        // Subprocess failed; treat as dirty to be conservative — the
-        // controller cannot confirm a clean tree, so the audit chain
-        // surfaces the indeterminacy rather than claim a SHA.
-        _ => true,
+        Ok(out) if out.status.success() => Some(out.stdout.is_empty()),
+        _ => None,
     }
 }
 

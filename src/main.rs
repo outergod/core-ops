@@ -67,7 +67,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                             &requested_repository,
                             &requested_ref,
                         )
-                        .map_err(map_plan_error)
+                        .map_err(map_stateless_layout_error)
                     },
                     read_observed: &|desired| {
                         observed::read_observed_state(&quadlet_dir, Some(desired), None)
@@ -385,7 +385,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                             &requested_repository,
                             &requested_ref,
                         )
-                        .map_err(map_plan_error)
+                        .map_err(map_stateless_layout_error)
                     },
                     read_observed: &|desired| {
                         observed::read_observed_state(&args.quadlet_dir, Some(desired), None)
@@ -544,6 +544,19 @@ fn map_apply_error<E: std::fmt::Display>(err: E) -> CoreError {
 fn map_source_ref_error(err: SourceRefError) -> CoreError {
     let exit_code = err.exit_code();
     CoreError::with_exit_code(FailureClass::Plan, err.to_string(), exit_code)
+}
+
+/// Map a `RepoError` (parser/layout failure) surfaced from
+/// `load_desired_state_from_path` in stateless mode to `CoreError`
+/// with exit code 65 (`EX_DATAERR`) per `contracts/cli-flag.md`
+/// Error semantics: "<PATH> is a directory but layout is invalid →
+/// 65". A directory that exists but is not a spec/016-conformant
+/// source-repo (e.g., missing `services/`, legacy artifacts at the
+/// root, malformed `service.yaml`) hits this path. Distinct from
+/// usage errors (64) and path-shape errors (66) so automation can
+/// classify by exit status alone.
+fn map_stateless_layout_error<E: std::fmt::Display>(err: E) -> CoreError {
+    CoreError::with_exit_code(FailureClass::Plan, err.to_string(), 65)
 }
 
 /// Build a synthetic `PersistedProvenanceState` for stateless apply so

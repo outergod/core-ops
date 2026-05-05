@@ -187,6 +187,30 @@ fn stateless_plan_against_missing_path_errors_with_exit_code_64() {
 }
 
 #[test]
+fn stateless_plan_against_invalid_layout_errors_with_exit_code_65() {
+    // Per `contracts/cli-flag.md` Error semantics: <PATH> is a
+    // directory but layout is invalid → exit 65 (`EX_DATAERR`).
+    // Distinct from path-shape errors (64) so automation can
+    // classify malformed inputs from generic runtime failures.
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    // Empty directory: passes the path-existence + is-directory
+    // checks, then fails at the parser layer with MissingServicesDir.
+    let qdir = quadlet_dir();
+    let output = run_plan(tmp.path(), "example", &qdir);
+    assert!(
+        !output.status.success(),
+        "invalid layout must error; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(65),
+        "invalid layout must exit 65 (EX_DATAERR) per contracts/cli-flag.md"
+    );
+}
+
+#[test]
 fn stateless_plan_honors_explicit_audit_dir() {
     let tmp = tempfile::TempDir::new().expect("tempdir");
     write_minimal_layout(tmp.path());
