@@ -189,6 +189,24 @@ A future spec author considering an amendment to spec/016 (e.g., adding a templa
 - **SC-010**: After this change merges, the four `specs/016-source-repository-layout/examples/` subdirectories are absent; `cargo test` passes with the spec/017 example tests as the sole example-fixture coverage.
 - **SC-011**: `core-ops explain --source-repo <PATH> --host <HOST> <object-id>` succeeds against any of the five published examples without prior `core-ops init` and writes nothing to `/var/lib/core-ops/`.
 
+## Synthesis table
+
+<!-- Populated during translation (Phase 3 tasks T023–T027) and reviewed during this phase. See contracts/synthesis-table.md for invariants. -->
+
+| Friction | Affected examples | Classification | Rationale | Action |
+|----------|-------------------|----------------|-----------|--------|
+| Stateless plan/apply/explain blocked all five examples (CLI gap, not layout gap) | 01, 02, 03, 04, 05 | A | Layout was sufficient; bottleneck was missing `--source-repo` CLI surface. Self-escalation absorbed in this slice per 2026-05-05 operator approval. | Escalate to spec/017 (this iteration absorbs the fix) |
+| Nextcloud first-run requires interactive admin-account wizard | 02 | B | Product behavior of the upstream Nextcloud image, not a layout limitation. The example documents the post-apply step in its `## Known limitations`. | Documented in `02-nextcloud/README.md` |
+| Domain / hostname placeholders in committed configs require operator edits before applying | 02, 04 | B | FR-008 forces RFC 2606 reserved domains in committed configs (`*.example.com`, etc.); operators replace with their real domain in the scaffold copy. Authoring concern, not a layout gap. | Documented in `02-nextcloud/README.md` |
+| Podman-secret values cannot ship in the source repo; operators must `podman secret create` on the host | 02, 03, 04 | B | FR-009 forbids fake-or-real credentials in `examples/`. The Quadlet `Secret=` references the secret by name; the value lives in the host's secrets store. | Documented in `02-nextcloud/README.md` |
+| GPU device shape is host-specific (Intel/AMD VAAPI vs NVIDIA CDI) | 03 | B | Host overlay drop-in is the documented escape — operators replace `AddDevice=/dev/dri:/dev/dri` with `AddDevice=nvidia.com/gpu=all` (or the `PodmanArgs=--device` CDI form) in their own scaffold copy. No layout change required. | Documented in `03-immich/README.md` |
+| Immich library upload often backed by NFS in real homelabs; NFS mount declarations not exercised | 03 | C | Real workload would extend the example with `*.mount` units under the layout, but mount-aware reconciliation against NFS is orthogonal to the validation iteration's scope. Tracked as a follow-up. | Tracked in `docs/follow-ups.md` |
+| Authelia user database (`users_database.yml`) cannot ship in the source repo without leaking credentials | 04 | B | FR-009 forbids fake-or-real credentials in `examples/`. Operators must create `/etc/authelia/users_database.yml` on the target host before applying. | Documented in `04-traefik-authelia/README.md` |
+| TLS cert resolver not wired (Traefik `entryPoints.websecure` declared without `certResolver`) | 04 | B | ACME (DNS-01 / HTTP-01) configuration is operator-domain-specific and FR-009-incompatible (would require domain + DNS credentials). Operators wire it up in their scaffold copy. | Documented in `04-traefik-authelia/README.md` |
+| Authelia secrets (JWT, session, storage) sourced via `AUTHELIA_*_FILE` from a secrets backend | 04 | C | Common across many real workloads (Authelia, Nextcloud DB, Immich DB). The existing "Secrets UX" follow-up in `docs/follow-ups.md` is the right home; no new follow-up bullet needed. | Tracked in `docs/follow-ups.md` |
+| Prometheus per-host scrape-target list cannot be expressed without templating | 05 | B | Spec/016 has no templating layer; the documented escape is a host-overlay whole-file replacement under `hosts/<host>/prometheus/config/prometheus.yml`. The example demonstrates this. Future work can amend spec/016 with templating if the workaround proves insufficient at scale. | Documented in `05-observability/README.md` |
+| cadvisor requires `--privileged` for cgroup-v2 reads | 05 | B | Documented upstream pattern. Operators on hardened hosts may substitute fine-grained capabilities; the example uses the documented form via `PodmanArgs=--privileged`. | Documented in `05-observability/README.md` |
+
 ## Assumptions
 
 - The five-setup roster is operator-confirmed and frozen for this slice: Caddy + whoami; Nextcloud (community multi-container) + Postgres + Redis + Traefik; Immich server + db + redis + ML + Traefik; Traefik + Authelia + protected backend; Prometheus + Grafana + node-exporter + cadvisor.

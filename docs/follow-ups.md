@@ -84,6 +84,17 @@ Instead of a warning that the user doesn't have permission to read or operate on
 
 For now, go with option 2.
 
+## NFS-backed library mounts in real workloads
+
+Real homelab workloads (Immich photo library, Nextcloud data
+directory, etc.) frequently back container volumes with NFS mounts
+declared in `services/<svc>/systemd/*.mount` units. Spec/017's
+`examples/03-immich/` uses a Podman-managed `*.volume` instead because
+NFS mount declarations are orthogonal to the validation iteration's
+scope. A future iteration could ship a worked example exercising
+mount-aware reconciliation against an NFS source. (Spec/017 synthesis
+table classification: C.)
+
 ## Source Repository UX
 
 There is no user-facing and no agent-facing documentation for the required layout of the source Git repository. Even the naming is not aligned (`Source repository` vs `workload Git repository`).
