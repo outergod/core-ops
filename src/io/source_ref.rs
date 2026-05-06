@@ -180,11 +180,25 @@ fn is_inside_work_tree(path: &Path) -> bool {
 ///                non-zero exit); the caller falls back to `(stateless)`
 ///                per `research.md` D1 step 5 so probe failure is not
 ///                conflated with an actually-dirty tree in the audit chain.
+///
+/// Passes `--untracked-files=normal` explicitly so the probe is
+/// independent of `status.showUntrackedFiles` set anywhere in the
+/// user's gitconfig levels. Without this override, a repo (or user)
+/// with `status.showUntrackedFiles=no` would silently classify an
+/// uncommitted authoring edit as clean and emit the parent commit's
+/// SHA instead of `(stateless+dirty)` — exactly the operator state
+/// stateless mode is meant to flag.
 fn working_tree_clean(path: &Path) -> Option<bool> {
     match Command::new("git")
         .arg("-C")
         .arg(path)
-        .args(["status", "--porcelain", "--", "."])
+        .args([
+            "status",
+            "--porcelain",
+            "--untracked-files=normal",
+            "--",
+            ".",
+        ])
         .output()
     {
         Ok(out) if out.status.success() => Some(out.stdout.is_empty()),
@@ -263,6 +277,35 @@ mod tests {
 
         let result = detect_provenance(tmp.path()).expect("detect");
         assert_eq!(result.requested_ref, "(stateless+dirty)");
+    }
+
+    #[test]
+    fn dirty_detection_overrides_repo_show_untracked_files_no() {
+        // Repo (or user) config can set `status.showUntrackedFiles=no`,
+        // which would normally make `git status --porcelain` skip
+        // untracked files. The probe MUST override that with
+        // `--untracked-files=normal` so authoring edits in a
+        // stateless source-repo are still classified dirty.
+        let tmp = TempDir::new().expect("tempdir");
+        run_git(tmp.path(), &["init", "-q"]);
+        std::fs::write(tmp.path().join("README"), "fixture\n").expect("write");
+        run_git(tmp.path(), &["add", "."]);
+        run_git(tmp.path(), &["commit", "-q", "-m", "fixture"]);
+        // Pin the regression: locally configure the repo to hide
+        // untracked files. Without the `--untracked-files=normal`
+        // override, the next probe would falsely report clean.
+        run_git(
+            tmp.path(),
+            &["config", "--local", "status.showUntrackedFiles", "no"],
+        );
+        std::fs::write(tmp.path().join("scratch.txt"), "wip\n").expect("write");
+
+        let result = detect_provenance(tmp.path()).expect("detect");
+        assert_eq!(
+            result.requested_ref, "(stateless+dirty)",
+            "untracked files MUST be detected even when the repo \
+             configures status.showUntrackedFiles=no"
+        );
     }
 
     #[test]
