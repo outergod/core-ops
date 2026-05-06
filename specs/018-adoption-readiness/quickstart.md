@@ -44,7 +44,7 @@ test -x docs/onboarding-script.sh && grep -F examples/03-immich docs/onboarding-
 grep -iE '(not\.one|ulthar|192\.168\.|10\.0\.|172\.16\.)' docs/onboarding.cast docs/onboarding-script.sh  # exit 1 (no matches)
 
 # 4. Walkthrough fidelity (reviewer manual step)
-core-ops plan --source-repo examples/03-immich --host immich  # spot-check non-elided README lines
+core-ops plan --source-repo examples/03-immich --host example  # spot-check non-elided README lines
 
 # 5. Asciinema playback
 asciinema play docs/onboarding.cast                           # plays end-to-end ≤ 90 s

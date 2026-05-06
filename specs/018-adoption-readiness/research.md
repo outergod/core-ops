@@ -86,7 +86,7 @@ Resolve unknowns surfaced during plan authoring before Phase 1 design begins. Al
 
 ## R5 — Walkthrough block fidelity verification
 
-**Decision**: Verify FR-006 / SC-007a / SC-007b at PR review time by re-running `core-ops plan --source-repo examples/03-immich --host immich` against the post-018 master tree and spot-checking each non-elided line in the README walkthrough blocks against the actual command output. **Not a CI gate** (per FR-019).
+**Decision**: Verify FR-006 / SC-007a / SC-007b at PR review time by re-running `core-ops plan --source-repo examples/03-immich --host example` against the post-018 master tree and spot-checking each non-elided line in the README walkthrough blocks against the actual command output. **Not a CI gate** (per FR-019).
 
 **Rationale**:
 - The walkthrough's purpose is to convey deterministic CLI behavior. The fidelity claim ("every non-elided line is byte-identical to actual output") is verifiable by re-execution.
