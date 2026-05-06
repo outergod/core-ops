@@ -45,6 +45,7 @@ container workloads (Podman/Quadlet), but the controller is not.
 ## Architecture
 
 ```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 50, 'rankSpacing': 70, 'padding': 20}}}%%
 flowchart LR
   GIT[Git repository<br/>services/ + hosts/]
   CORE[core-ops<br/>plan / apply / explain]
