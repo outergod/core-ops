@@ -142,20 +142,14 @@ a container is not a supported consumption method.
 
 ## Why CoreOps exists
 
-Systemd-based hosts already have a clear operating model:
+Systemd-based hosts already have a clear operating model: units define
+behavior, and the system converges toward that definition. Most tooling
+around them either replaces the model (Kubernetes, orchestration layers)
+or ignores it (imperative configuration management).
 
-- units define behavior  
-- the system converges toward that definition  
-
-But most tooling around them does one of two things:
-
-- replaces the model (Kubernetes, orchestration layers)  
-- ignores it (imperative configuration management)  
-
-CoreOps stays inside that model.
-
-It treats systemd and Quadlet as the source of truth and builds a
-convergence workflow around them instead of replacing them.
+CoreOps stays inside the model. It treats systemd and Quadlet as the source
+of truth and builds a convergence workflow around them instead of replacing
+them.
 
 ---
 
