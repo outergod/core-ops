@@ -10,6 +10,9 @@
 
 ---
 
+<!-- T004 reorder: §3 mental model goes here (filled by T006). Legacy
+"What is CoreOps?" + "What CoreOps Does" sit below for T006 to absorb. -->
+
 ## What is CoreOps?
 
 CoreOps is a convergence engine for systemd-based hosts.
@@ -28,25 +31,6 @@ CoreOps exists in that gap.
 
 ---
 
-## Why CoreOps Exists
-
-Systemd-based hosts already have a clear operating model:
-
-- units define behavior  
-- the system converges toward that definition  
-
-But most tooling around them does one of two things:
-
-- replaces the model (Kubernetes, orchestration layers)  
-- ignores it (imperative configuration management)  
-
-CoreOps stays inside that model.
-
-It treats systemd and Quadlet as the source of truth and builds a
-convergence workflow around them instead of replacing them.
-
----
-
 ## What CoreOps Does
 
 - Converges host-managed workloads declaratively  
@@ -57,62 +41,9 @@ convergence workflow around them instead of replacing them.
 
 ---
 
-## What CoreOps Is Not
+<!-- T004 reorder: §4 Architecture and §5 Walkthrough go here (filled by T009). -->
 
-- Kubernetes or general container orchestration  
-- A replacement for systemd  
-- Generic imperative configuration management (e.g. Ansible-style)  
-- A custom templating language or DSL  
-- Fleet orchestration across many hosts (at this stage)  
-
----
-
-## Supported Systems
-
-- **Supported:** Fedora CoreOS  
-- **Expected to work:** other systemd-based hosts (untested)  
-- **Unsupported:** non-systemd environments  
-
-CoreOps operates directly on host-level systemd state and running CoreOps from
-a container is not a supported consumption method.
-
----
-
-## Credibility
-
-[![CI](https://github.com/outergod/core-ops/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/outergod/core-ops/actions/workflows/ci.yml)
-[![E2E Gate](https://github.com/outergod/core-ops/actions/workflows/e2e-gate.yml/badge.svg)](https://github.com/outergod/core-ops/actions/workflows/e2e-gate.yml)
-[![Latest Release](https://img.shields.io/github/v/release/outergod/core-ops)](https://github.com/outergod/core-ops/releases/latest)
-
-| Signal | Value |
-|--------|-------|
-| Published artifacts | `x86_64 raw binary`, `aarch64 raw binary`, `x86_64 tar.gz + checksums`, `aarch64 tar.gz + checksums` |
-| Verification environment | `fedora-coreos-self-hosted@2026-04-fcos` |
-
-This section is the stable credibility surface for outside evaluators. The badges
-above reflect live CI health and the latest published release version and update
-automatically as the project evolves.
-
----
-
-## First Interaction
-
-After installing the binary:
-
-```bash
-core-ops --version
-core-ops status
-``` 
-
-A valid installation should:
-
-* report a build identity
-* expose current system state
-* produce stable, inspectable output
-
----
-
-## Real-World Examples
+## Real-world examples
 
 Five real-world homelab setups translated into the source-repository
 layout. Each is runnable via stateless `--source-repo` invocation
@@ -138,7 +69,20 @@ copying an example to your own setup directory, run
 
 ---
 
-## Installation (Current Phase)
+## Quick start
+
+After installing the binary:
+
+```bash
+core-ops --version
+core-ops status
+```
+
+A valid installation should:
+
+* report a build identity
+* expose current system state
+* produce stable, inspectable output
 
 CoreOps is currently distributed as direct binaries for `x86_64` (`amd64`)
 and `aarch64` (`arm64`).
@@ -183,6 +127,61 @@ To override the quadlet directory or other defaults, use a systemd drop-in:
 ```bash
 systemctl edit core-ops.service
 ```
+
+### Supported systems
+
+- **Supported:** Fedora CoreOS  
+- **Expected to work:** other systemd-based hosts (untested)  
+- **Unsupported:** non-systemd environments  
+
+CoreOps operates directly on host-level systemd state and running CoreOps from
+a container is not a supported consumption method.
+
+---
+
+## Why CoreOps exists
+
+Systemd-based hosts already have a clear operating model:
+
+- units define behavior  
+- the system converges toward that definition  
+
+But most tooling around them does one of two things:
+
+- replaces the model (Kubernetes, orchestration layers)  
+- ignores it (imperative configuration management)  
+
+CoreOps stays inside that model.
+
+It treats systemd and Quadlet as the source of truth and builds a
+convergence workflow around them instead of replacing them.
+
+---
+
+## What CoreOps is not
+
+- Kubernetes or general container orchestration  
+- A replacement for systemd  
+- Generic imperative configuration management (e.g. Ansible-style)  
+- A custom templating language or DSL  
+- Fleet orchestration across many hosts (at this stage)  
+
+---
+
+## Credibility
+
+[![CI](https://github.com/outergod/core-ops/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/outergod/core-ops/actions/workflows/ci.yml)
+[![E2E Gate](https://github.com/outergod/core-ops/actions/workflows/e2e-gate.yml/badge.svg)](https://github.com/outergod/core-ops/actions/workflows/e2e-gate.yml)
+[![Latest Release](https://img.shields.io/github/v/release/outergod/core-ops)](https://github.com/outergod/core-ops/releases/latest)
+
+| Signal | Value |
+|--------|-------|
+| Published artifacts | `x86_64 raw binary`, `aarch64 raw binary`, `x86_64 tar.gz + checksums`, `aarch64 tar.gz + checksums` |
+| Verification environment | `fedora-coreos-self-hosted@2026-04-fcos` |
+
+This section is the stable credibility surface for outside evaluators. The badges
+above reflect live CI health and the latest published release version and update
+automatically as the project evolves.
 
 ---
 
@@ -234,15 +233,7 @@ owns that transition and is idempotent on re-run.
 
 ---
 
-## Target Audience
-
-* Homelab operators working with systemd-based hosts
-* Small and medium infrastructure teams
-* Operators who prefer inspectable, host-native workflows
-
----
-
-## AI Authorship
+## AI authorship
 
 CoreOps is developed with AI assistance.
 
@@ -256,16 +247,14 @@ Behavioral guarantees come from:
 
 ---
 
-## License
+## Target audience · License · Further reading
+
+* Homelab operators working with systemd-based hosts
+* Small and medium infrastructure teams
+* Operators who prefer inspectable, host-native workflows
 
 CoreOps is licensed under the GNU Affero General Public License v3 or later
-(AGPLv3+).
-
-See [LICENSE](LICENSE).
-
----
-
-## Further Reading
+(AGPLv3+). See [LICENSE](LICENSE).
 
 * [CHANGELOG.md](CHANGELOG.md)
 * [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
