@@ -120,7 +120,7 @@ No `src/`, `tests/`, `.github/workflows/`, `examples/`, `Cargo.toml`, `Cargo.loc
   ```
   Verify FR-004: ≥ 4 nodes, contains substrings `Git`, `core-ops`, `systemd`. Audit/status edges use dashed `-.->` syntax to signal side-output status.
 - [X] T018 [US3] Author 2–4 lines of prose in `## Architecture` immediately around the Mermaid block (per US3-AC-3): name the four nodes (`Git repository`, `core-ops`, `systemd + Quadlet units`, `host`), the side-output (`audit + status`), and the flow direction (left-to-right) in plain text. The architecture must be recoverable when Mermaid fails to render.
-- [ ] T019 [US3] Push the branch and open a draft PR; verify on the GitHub PR preview that the Mermaid block renders as a diagram (not as a raw fenced code block). Adjust syntax if rendering fails (e.g., move `<br/>` placement, simplify node labels). Manual visual verification — not a CI gate.
+- [X] T019 [US3] Push the branch and open a draft PR; verify on the GitHub PR preview that the Mermaid block renders as a diagram (not as a raw fenced code block). Adjust syntax if rendering fails (e.g., move `<br/>` placement, simplify node labels). Manual visual verification — not a CI gate.
 
 **Checkpoint**: US3 complete. The Mermaid diagram renders on GitHub; the prose covers non-Mermaid renderers.
 
