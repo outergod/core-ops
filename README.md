@@ -42,7 +42,25 @@ container workloads (Podman/Quadlet), but the controller is not.
 
 ---
 
-<!-- T004 reorder: §4 Architecture and §5 Walkthrough go here (filled by T009). -->
+## Architecture
+
+> *[Populated by US3 implementation (tasks T017–T019).]* This section
+> will contain a Mermaid block depicting the high-level flow
+> (`Git → core-ops → systemd/Quadlet → host`) with audit/status as
+> side outputs, plus surrounding prose recoverable when Mermaid
+> fails to render.
+
+---
+
+## What using CoreOps feels like
+
+> *[Populated by US2 implementation (tasks T011–T016).]* This section
+> will contain a verbatim plan-output block from `core-ops plan
+> --source-repo examples/03-immich --host immich`, an idempotent
+> re-run "no changes" snippet, and a link to a sanitized asciinema
+> recording at `docs/onboarding.cast`.
+
+---
 
 ## Real-world examples
 
