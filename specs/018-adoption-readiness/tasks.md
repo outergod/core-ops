@@ -83,8 +83,8 @@ No `src/`, `tests/`, `.github/workflows/`, `examples/`, `Cargo.toml`, `Cargo.loc
 
 ### Implementation for User Story 2
 
-- [ ] T011 [P] [US2] Run `core-ops plan --source-repo examples/03-immich --host immich` against post-018 master tree; capture output verbatim into a working buffer for T013. Note the recognizable Quadlet unit identifiers from `examples/03-immich/services/` (e.g., `immich-server.container`, `immich-internal.network`, `immich-public.network`, `immich-database.container`, `immich-redis.container`, `immich-ml.container`, `traefik-edge.container`) for reference under SC-007.
-- [ ] T012 [P] [US2] Run `core-ops apply --source-repo examples/03-immich --host immich` on a sanitized test host, then run `core-ops plan --source-repo examples/03-immich --host immich` a second time; capture the idempotent "no changes" output (per FR-006 second block). Output goes to a working buffer for T013.
+- [ ] T011 [P] [US2] Run `core-ops plan --source-repo examples/03-immich --host immich` against post-018 master tree on a clean host (no prior apply against `--host immich`); capture output verbatim into a working buffer for T013. Note the recognizable Quadlet unit identifiers from `examples/03-immich/services/` (e.g., `immich-server.container`, `immich-internal.network`, `immich-public.network`, `immich-database.container`, `immich-redis.container`, `immich-ml.container`, `traefik-edge.container`) for reference under SC-007.
+- [ ] T012 [US2] Run `core-ops apply --source-repo examples/03-immich --host immich` on a sanitized test host, then run `core-ops plan --source-repo examples/03-immich --host immich` a second time; capture the idempotent "no changes" output (per FR-006 second block). Output goes to a working buffer for T013. **Not marked [P]**: shares the `--host immich` state with T011 — apply mutates host state that T011's pre-apply plan reads. Run T012 after T011 completes (sequential), or use a fresh isolated host to safely parallelize.
 - [ ] T013 [US2] Author the `## What using CoreOps feels like` section in `README.md` (replacing the placeholder T009 inserted): one short intro paragraph naming the canonical command; first fenced code block from T011 (plan output, elide repeats with `...` lines, keep recognizable unit identifiers); second fenced code block from T012 (idempotent re-run); both blocks verbatim from real invocations per FR-006. Combined non-blank line count SHOULD be ≤ ~25 (SC-007b). No paraphrasing.
 - [ ] T014 [US2] Execute `docs/onboarding-script.sh` (T003) to record `docs/onboarding.cast`. Verify with `head -n 1 docs/onboarding.cast | jq '.version'` returns `2` (SC-005), `head -n 1 docs/onboarding.cast | jq '.duration'` returns ≤ 90 (SC-005a), and `asciinema play docs/onboarding.cast` plays end-to-end. If duration > 90 s, narrow the demo scope per FR-007 (skip status, skip re-run, drop a service) — DO NOT extend the cap.
 - [ ] T015 [US2] Run sanitization stop-list grep: `grep -iE '(not\.one|ulthar|192\.168\.|10\.0\.|172\.16\.)' docs/onboarding.cast docs/onboarding-script.sh` MUST return zero matches (SC-006a, FR-009a). If matches found, re-record with a cleaner shell environment (env-scrub hostname, paths, any leaked private values).
@@ -162,7 +162,7 @@ No `src/`, `tests/`, `.github/workflows/`, `examples/`, `Cargo.toml`, `Cargo.loc
 - **Phase 1 (Setup)**: No dependencies — T001 and T002 can start immediately and run in parallel.
 - **Phase 2 (Foundational)**: T003 depends on Phase 1 completion (script lives alongside the spec scaffold). Blocks T014 in Phase 4 (recording requires the script).
 - **Phase 3 (US1, P1, MVP)**: Depends on Phase 2 completion. T004–T009 are sequential (all touch `README.md`); T010 depends on T004–T009.
-- **Phase 4 (US2)**: Depends on Phase 3 completion (walkthrough placeholder must exist before T013 fills it). T011 and T012 can run in parallel; T013 depends on both. T014 depends on T003 + T013. T015 depends on T014. T016 depends on T015.
+- **Phase 4 (US2)**: Depends on Phase 3 completion (walkthrough placeholder must exist before T013 fills it). T011 and T012 are sequential by default (T011 before T012) since they share `--host immich` state on a single host; only safely parallel on isolated hosts. T013 depends on both. T014 depends on T003 + T013. T015 depends on T014. T016 depends on T015.
 - **Phase 5 (US3)**: Depends on Phase 3 completion (architecture placeholder must exist). T017 → T018 → T019 sequential.
 - **Phase 6 (US4)**: Depends on Phase 1 completion (skeleton from T001) and ideally on Phase 3/4/5 (so the checklist can encode the actual final structure). Recommend running after Phase 4 and Phase 5 land.
 - **Phase 7 (Polish)**: Depends on all prior phases. T021–T024 can run in parallel. T025 has a 24-hour cool-off prerequisite. T026 depends on T025. T027 depends on the final commit. T028 depends on T027.
@@ -176,7 +176,7 @@ No `src/`, `tests/`, `.github/workflows/`, `examples/`, `Cargo.toml`, `Cargo.loc
 ### Parallel opportunities
 
 - T001 ∥ T002 (different files in `specs/018-adoption-readiness/`).
-- T011 ∥ T012 (read-only `core-ops` invocations against the same example, different commands).
+- ~~T011 ∥ T012~~ — sequential by default (shared `--host` state); only safely parallel on isolated hosts.
 - US2 (Phase 4) ∥ US3 (Phase 5) once Phase 3 lands.
 - T021 ∥ T022 ∥ T023 ∥ T024 (independent grep / wc / link checks).
 
