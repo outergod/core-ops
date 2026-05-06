@@ -187,6 +187,77 @@ fn stateless_plan_against_missing_path_errors_with_exit_code_64() {
 }
 
 #[test]
+fn stateless_plan_output_is_unaffected_by_prior_initd_state() {
+    // FR-012 + clarification Q2: stateless plan must not consult
+    // persisted controller state. Asserts structurally that
+    // identical stateless plan invocations produce byte-identical
+    // output whether `CORE_OPS_STATE_FILE` points at a populated
+    // init'd state file from an unrelated repository or at a
+    // non-existent path.
+
+    use core_ops::io::state::persist_success_state;
+
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    write_minimal_layout(tmp.path());
+    let qdir = quadlet_dir();
+
+    let with_state_dir = tempfile::TempDir::new().expect("with-state tempdir");
+    let state_file = with_state_dir.path().join("status.json");
+    persist_success_state(
+        &state_file,
+        "file:///var/lib/core-ops/some-other-repo",
+        "unrelated-rev-v9",
+        "feedfacefeedfacefeedfacefeedfacefeedface",
+    )
+    .expect("persist init'd state");
+    let with_state = coreops()
+        .arg("plan")
+        .arg("--source-repo")
+        .arg(tmp.path())
+        .arg("--host")
+        .arg("example")
+        .arg("--quadlet-dir")
+        .arg(&qdir)
+        .env("CORE_OPS_STATE_FILE", &state_file)
+        .output()
+        .expect("invoke core-ops with init'd state");
+    assert!(
+        with_state.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&with_state.stderr)
+    );
+
+    let without_state_dir = tempfile::TempDir::new().expect("without-state tempdir");
+    let absent = without_state_dir.path().join("nonexistent.json");
+    let without_state = coreops()
+        .arg("plan")
+        .arg("--source-repo")
+        .arg(tmp.path())
+        .arg("--host")
+        .arg("example")
+        .arg("--quadlet-dir")
+        .arg(&qdir)
+        .env("CORE_OPS_STATE_FILE", &absent)
+        .output()
+        .expect("invoke core-ops without init'd state");
+    assert!(
+        without_state.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&without_state.stderr)
+    );
+
+    assert_eq!(
+        with_state.stdout, without_state.stdout,
+        "stateless plan output diverged based on persisted state contents"
+    );
+    let stdout = String::from_utf8_lossy(&with_state.stdout);
+    assert!(
+        !stdout.contains("[DETACHED]"),
+        "stateless plan must not surface a [DETACHED] header from unrelated init'd state: {stdout}"
+    );
+}
+
+#[test]
 fn stateless_plan_against_invalid_layout_errors_with_exit_code_65() {
     // Per `contracts/cli-flag.md` Error semantics: <PATH> is a
     // directory but layout is invalid → exit 65 (`EX_DATAERR`).

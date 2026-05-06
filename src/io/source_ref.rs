@@ -207,13 +207,21 @@ fn classify_git_state(path: &Path) -> GitClassification {
 /// `Ok(true)`   — `git rev-parse --is-inside-work-tree` exited 0
 ///                with stdout `true`.
 /// `Ok(false)`  — `git` ran successfully and definitively reported
-///                that `path` is not in a work tree (exit non-zero
-///                with `fatal: not a git repository...`, the
-///                canonical non-git case, or exit 0 with stdout
-///                `false`).
-/// `Err(reason)` — the `git` binary itself failed to spawn (missing
-///                from `$PATH`, fork error, etc.). The caller emits
-///                a stderr warning before falling back to `(stateless)`.
+///                "not a git repository" (the canonical non-git
+///                case), or exit 0 with stdout `false`.
+/// `Err(reason)` — the probe failed in a way that does NOT prove
+///                `path` is not a git repo: the `git` binary failed
+///                to spawn (missing from `$PATH`, fork error), or
+///                git ran but exited non-zero for an unrecognized
+///                reason (corrupt `.git/HEAD`, permission error
+///                reading `.git/`, locked index, etc.). The caller
+///                emits a stderr warning before falling back to
+///                `(stateless)`.
+///
+/// The stderr content is inspected to keep the canonical
+/// "not a git repository" path warning-free while surfacing the
+/// damaged-repo case (which would otherwise masquerade as a clean
+/// non-git directory).
 fn is_inside_work_tree(path: &Path) -> Result<bool, String> {
     let output = Command::new("git")
         .arg("-C")
@@ -221,13 +229,21 @@ fn is_inside_work_tree(path: &Path) -> Result<bool, String> {
         .args(["rev-parse", "--is-inside-work-tree"])
         .output()
         .map_err(|err| format!("`git rev-parse --is-inside-work-tree` could not be spawned: {err}"))?;
-    if !output.status.success() {
-        // Git ran and reported non-zero. By far the most common
-        // reason is "fatal: not a git repository" — a definitive
-        // answer, not a probe failure. Treat as not-in-work-tree.
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).trim() == "true");
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // The canonical non-git case prints "fatal: not a git repository
+    // (or any parent up to ...)". Treat that as a definitive `Ok(false)`
+    // — no probe-failure warning. Anything else (corrupt HEAD, locked
+    // index, permission error inside `.git/`, etc.) is a probe failure.
+    if stderr.contains("not a git repository") {
         return Ok(false);
     }
-    Ok(String::from_utf8_lossy(&output.stdout).trim() == "true")
+    Err(format!(
+        "`git rev-parse --is-inside-work-tree` exited non-zero: {}",
+        stderr.trim()
+    ))
 }
 
 /// Probe whether the working tree at `path` is clean.

@@ -100,6 +100,73 @@ pub fn plan(deps: &ReconcileDependencies<'_>, verbose: bool) -> Result<PlanOutpu
     })
 }
 
+/// Stateless `core-ops plan --source-repo` entry point (spec/017).
+///
+/// Mirrors [`plan`] but does NOT consult any persisted controller
+/// state — no `detached_header_from_state`, no
+/// `last_applied_revision_from_state`, no
+/// `last_applied_snapshot_for_scope`. Honors the FR-012 contract
+/// that stateless plan is a pure read-and-render operation with
+/// respect to controller state, AND extends it inward: a corrupt
+/// or unreadable `/var/lib/core-ops/*` cannot derail a stateless
+/// run, and detached-header state from an unrelated init'd
+/// configuration cannot leak into stateless output.
+pub fn plan_stateless(
+    deps: &ReconcileDependencies<'_>,
+    verbose: bool,
+) -> Result<PlanOutput, CoreError> {
+    let result = reconcile_plan(deps)?;
+    let observed = (deps.read_observed)(&result.desired)?;
+    let scope_id = scope_id_for_observed(&observed);
+    let desired_snapshot = build_desired_snapshot_from_state(&result.desired, &scope_id);
+    let observed_snapshot = build_observed_snapshot(&observed, Some(&result.desired), &scope_id);
+    let verification_results = normalize_verification_results_for_desired(
+        &result.desired,
+        verify_state(&result.desired, &observed),
+    );
+    // Stateless mode has no last_applied baseline by design (init'd
+    // state is never read, FR-013 / SC-009). Treat as FirstRun for
+    // header-rendering purposes — the source path is always the
+    // primary identifier in the rendered header.
+    let run_display_state = if observed_snapshot.objects.is_empty() {
+        ApplyRunDisplayState::FirstRun
+    } else {
+        ApplyRunDisplayState::Recovery
+    };
+    let mut deterministic = reconcile_deterministic_plan_with_runtime(
+        &desired_snapshot,
+        None,
+        &observed_snapshot,
+        &verification_results,
+    )?;
+    deterministic.plan.requested_repository = result.desired.requested_repository.clone();
+    deterministic.plan.requested_ref = result.desired.requested_ref.clone();
+    let diffs = result.diffs;
+    let mut audit = build_audit_record(&result.run.run_id, diffs.clone(), &result.plan, Vec::new());
+    audit
+        .operator_messages
+        .push(summarize_evaluation(&result.desired));
+    if !result.desired.mount_declarations.is_empty() {
+        audit.operator_messages.push(format!(
+            "mounts: native-artifacts={}, dependencies={}",
+            result.desired.mount_declarations.len(),
+            result.desired.mount_dependencies.len()
+        ));
+    }
+    let event = build_audit_event(&result.run, Some(&result.plan), &[], None);
+    let summary = format_deterministic_plan_report_with_options_and_state(
+        &deterministic.plan,
+        verbose,
+        run_display_state,
+    );
+    Ok(PlanOutput {
+        summary,
+        machine: format_deterministic_plan_json(&deterministic.plan),
+        audit_record: audit,
+        audit_event: event,
+    })
+}
+
 pub fn render_deterministic_plan(
     plan: &crate::core::types::DeterministicReconciliationPlan,
 ) -> DeterministicPlanOutput {

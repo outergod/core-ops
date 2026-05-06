@@ -52,9 +52,12 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             set_systemd_unit_dir(&args.systemd_unit_dir);
             set_host_override(&args.host);
 
-            // Stateless mode (--source-repo): bypass init'd state lookup.
-            // Per FR-012, writes nothing to /var/lib/core-ops/. Honors
-            // --audit-dir when explicitly set (clarification Q4).
+            // Stateless mode (--source-repo): bypass init'd state lookup
+            // entirely. Per FR-012 + the dedicated `plan_stateless`
+            // engine, writes nothing to /var/lib/core-ops/ AND reads
+            // no persisted controller state — corrupt/unreadable
+            // /var/lib/core-ops/* cannot derail a stateless run.
+            // Honors --audit-dir when explicitly set (clarification Q4).
             if let Some(source_repo) = args.source_repo {
                 let source = detect_provenance(&source_repo).map_err(map_source_ref_error)?;
                 let repo_path = source.repo_path.clone();
@@ -75,7 +78,7 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                     },
                     apply_plan: &|_, _| Ok(()),
                 };
-                let output = plan_cmd::plan(&deps, verbose)?;
+                let output = plan_cmd::plan_stateless(&deps, verbose)?;
                 audit_io::emit_journal_event(&output.audit_event).map_err(map_plan_error)?;
                 if let Some(dir) = audit_dir {
                     let audit_path = audit_io::write_audit_record(&dir, &output.audit_record)
