@@ -104,7 +104,7 @@ No `src/`, `tests/`, `.github/workflows/`, `examples/`, `Cargo.toml`, `Cargo.loc
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Author the Mermaid block in `README.md` `## Architecture` section (replacing the placeholder T009 inserted). Suggested structure (matching the recommended preview from clarification):
+- [X] T017 [US3] Author the Mermaid block in `README.md` `## Architecture` section (replacing the placeholder T009 inserted). Suggested structure (matching the recommended preview from clarification):
   ```mermaid
   flowchart LR
     GIT[Git repository<br/>services/ + hosts/]

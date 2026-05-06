@@ -44,11 +44,21 @@ container workloads (Podman/Quadlet), but the controller is not.
 
 ## Architecture
 
-> *[Populated by US3 implementation (tasks T017–T019).]* This section
-> will contain a Mermaid block depicting the high-level flow
-> (`Git → core-ops → systemd/Quadlet → host`) with audit/status as
-> side outputs, plus surrounding prose recoverable when Mermaid
-> fails to render.
+```mermaid
+flowchart LR
+  GIT[Git repository<br/>services/ + hosts/]
+  CORE[core-ops<br/>plan / apply / explain]
+  STATE[systemd + Quadlet units<br/>generated state]
+  HOST[host<br/>systemd-managed services]
+  AUDIT[(audit + status<br/>JSON snapshot)]
+  GIT --> CORE
+  CORE --> STATE
+  STATE --> HOST
+  CORE -.-> AUDIT
+  HOST -.-> AUDIT
+```
+
+> *[Surrounding prose populated by T018.]*
 
 ---
 
