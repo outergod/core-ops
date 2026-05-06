@@ -57,6 +57,11 @@
           butane
           libvirt
           virt-manager
+          # `asciinema` records the spec/018 onboarding cast
+          # (`docs/onboarding.cast`) and is invoked by
+          # `docs/onboarding-script.sh`. Version is pinned by nixpkgs
+          # and asserted in the script header per spec/018 R1+FR-009.
+          asciinema
         ] ++ [
           rustToolchain
           rustAnalyzer
