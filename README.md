@@ -163,10 +163,13 @@ them.
 
 ---
 
-<!-- T005 dissolved the "## Credibility" heading; badges promoted to top
-of file. The signal table and blurb stay here for T008 to fold into
-"## Trust and release model" along with Minimal Trust Story and the
-Release & Verification Model. -->
+## Trust and release model
+
+CoreOps modifies host-level systemd and Quadlet artifacts in explicitly
+configured locations. Operators audit behavior through plan output before
+changes, apply and verification reports during changes, persisted provenance
+and status after changes, and release identity and changelog continuity.
+Recovery happens through explicit reconciliation, not silent mutation.
 
 | Signal | Value |
 |--------|-------|
@@ -174,55 +177,20 @@ Release & Verification Model. -->
 | Verification environment | `fedora-coreos-self-hosted@2026-04-fcos` |
 
 The badges at the top of this README reflect live CI health and the latest
-published release version, and update automatically as the project evolves.
+published release; they update automatically as the project evolves.
 
----
+CoreOps defines its public guarantees through a maintained specification,
+executable VM-backed verification scenarios, and a release gate. A build is
+only considered distribution-ready once the release gate passes; the
+verification environment is versioned to detect drift over time.
 
-## Minimal Trust Story
-
-CoreOps modifies host-level systemd and Quadlet artifacts in explicitly
-configured locations.
-
-Operators can audit behavior through:
-
-* plan output before changes
-* apply and verification reports during changes
-* persisted provenance and status after changes
-* release identity and changelog continuity
-
-Recovery is expected to happen through explicit reconciliation and
-documented retry/rollback behavior — not silent mutation.
-
----
-
-## Release & Verification Model
-
-CoreOps defines its public guarantees through:
-
-* a maintained specification
-* executable verification scenarios
-* a release gate
-
-A build is only considered distribution-ready once the release gate passes.
-
-The verification environment is versioned to detect drift over time.
-
-Releasable changes are expected to carry explicit SemVer intent, update the
-canonical version in `Cargo.toml`, update a checked-in release fragment at
-`changes/<change-id>.md`, and keep `CHANGELOG.md` current.
-
-Maintainers and CI validate this contract through the dedicated helper binary:
-
-```bash
-cargo run --bin core-ops-release -- validate
-```
-
-Once a feature PR lands on `master`, the post-merge release job promotes the
-rendered `[Unreleased]` block to a new `[<version>] - <date>` section, removes
-the consumed fragments under `changes/`, and publishes the GitHub Release at
-the merge commit (which also creates the git tag). Maintainers do not edit
-`CHANGELOG.md` after the `[Unreleased]` block — `core-ops-release promote`
-owns that transition and is idempotent on re-run.
+Releasable changes carry explicit SemVer intent, update the canonical version
+in `Cargo.toml`, add a checked-in release fragment at `changes/<change-id>.md`,
+and keep `CHANGELOG.md` current. Maintainers and CI validate this contract
+through `cargo run --bin core-ops-release -- validate`. Post-merge, the
+release job promotes the rendered `[Unreleased]` block to a tagged section
+and publishes a GitHub Release at the merge commit; `core-ops-release promote`
+owns that transition idempotently.
 
 ---
 
