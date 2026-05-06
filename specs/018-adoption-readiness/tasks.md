@@ -45,7 +45,7 @@ No `src/`, `tests/`, `.github/workflows/`, `examples/`, `Cargo.toml`, `Cargo.loc
 
 **⚠️ CRITICAL**: T003 must complete before T014 (recording the cast) in Phase 4.
 
-- [ ] T003 Author `docs/onboarding-script.sh`: executable shell script with shebang `#!/usr/bin/env bash`, version-pinned `asciinema` invocation in the header (per research.md R1, FR-009), env-scrubbed shell launcher (`env -i HOME=/home/op PATH=... TERM=xterm-256color PS1='op@example $ ' bash --noprofile --norc -c '...'` per research.md R4), deterministic command sequence exercising `core-ops plan --source-repo examples/03-immich --host example` plus apply + idempotent re-run, and the literal string `examples/03-immich` in the body (FR-009, SC-006). `chmod +x docs/onboarding-script.sh`.
+- [X] T003 Author `docs/onboarding-script.sh`: executable shell script with shebang `#!/usr/bin/env bash`, version-pinned `asciinema` invocation in the header (per research.md R1, FR-009), env-scrubbed shell launcher (`env -i HOME=/home/op PATH=... TERM=xterm-256color PS1='op@example $ ' bash --noprofile --norc -c '...'` per research.md R4), deterministic command sequence exercising `core-ops plan --source-repo examples/03-immich --host example` plus apply + idempotent re-run, and the literal string `examples/03-immich` in the body (FR-009, SC-006). `chmod +x docs/onboarding-script.sh`.
 
 **Checkpoint**: Foundation ready — Phase 3 (US1 MVP) and Phase 5 (US3) can now begin in parallel.
 
