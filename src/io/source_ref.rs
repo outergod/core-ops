@@ -137,19 +137,25 @@ pub fn detect_provenance(path: &Path) -> Result<StatelessSource, SourceRefError>
         source: err,
     })?;
     let requested_repository = canonical.to_string_lossy().into_owned();
-    let requested_ref = if is_inside_work_tree(&canonical) {
-        // Per research.md D1 step 5: on any subprocess error, fall
-        // back to `(stateless)`. We distinguish three states:
-        //   Some(true)  → working tree definitely dirty
-        //   Some(false) → working tree definitely clean
-        //   None        → could not determine; treat as non-verifiable
-        match working_tree_clean(&canonical) {
-            Some(false) => "(stateless+dirty)".to_string(),
-            Some(true) => head_sha(&canonical).unwrap_or_else(|| "(stateless)".to_string()),
-            None => "(stateless)".to_string(),
+    let requested_ref = match classify_git_state(&canonical) {
+        GitClassification::NotGit => "(stateless)".to_string(),
+        GitClassification::Dirty => "(stateless+dirty)".to_string(),
+        GitClassification::Clean(sha) => sha,
+        GitClassification::ProbeFailed(reason) => {
+            // Per `contracts/cli-flag.md` Error semantics: probe
+            // failures (`git` missing, subprocess error, unexpected
+            // non-zero exit downstream of a positive
+            // `is-inside-work-tree`) fall back to `(stateless)`
+            // BUT emit a stderr warning so operators don't
+            // silently lose the distinction between an actually
+            // non-git source and a degraded probe.
+            eprintln!(
+                "warning: git ref detection failed for {}: {}; recording as non-git source",
+                canonical.display(),
+                reason
+            );
+            "(stateless)".to_string()
         }
-    } else {
-        "(stateless)".to_string()
     };
     Ok(StatelessSource {
         repo_path: canonical,
@@ -158,28 +164,81 @@ pub fn detect_provenance(path: &Path) -> Result<StatelessSource, SourceRefError>
     })
 }
 
-fn is_inside_work_tree(path: &Path) -> bool {
-    match Command::new("git")
+/// Outcome of probing the git state at a stateless `--source-repo`
+/// path. Used by [`detect_provenance`] to map to the documented
+/// `requested_ref` value (`(stateless)` / `(stateless+dirty)` /
+/// 40-char SHA) plus emit a stderr warning when the probe degraded.
+enum GitClassification {
+    /// `git` ran successfully and confirmed the path is not inside a
+    /// work tree. No warning emitted — this is the canonical
+    /// non-git stateless source.
+    NotGit,
+    /// `git` ran successfully and the working tree is clean at the
+    /// returned 40-char HEAD SHA.
+    Clean(String),
+    /// `git` ran successfully and the working tree has uncommitted
+    /// changes (modified / added / deleted / untracked).
+    Dirty,
+    /// A git subprocess failed in a way that prevents classification
+    /// (binary missing, unexpected non-zero exit downstream of a
+    /// positive `is-inside-work-tree`, malformed output). Carries
+    /// a short reason for the operator-facing warning. Per
+    /// `contracts/cli-flag.md` the caller falls back to `(stateless)`.
+    ProbeFailed(String),
+}
+
+fn classify_git_state(path: &Path) -> GitClassification {
+    match is_inside_work_tree(path) {
+        Ok(false) => GitClassification::NotGit,
+        Err(reason) => GitClassification::ProbeFailed(reason),
+        Ok(true) => match working_tree_clean(path) {
+            Ok(false) => GitClassification::Dirty,
+            Err(reason) => GitClassification::ProbeFailed(reason),
+            Ok(true) => match head_sha(path) {
+                Ok(sha) => GitClassification::Clean(sha),
+                Err(reason) => GitClassification::ProbeFailed(reason),
+            },
+        },
+    }
+}
+
+/// Probe whether `path` is inside a git work tree.
+///
+/// `Ok(true)`   — `git rev-parse --is-inside-work-tree` exited 0
+///                with stdout `true`.
+/// `Ok(false)`  — `git` ran successfully and definitively reported
+///                that `path` is not in a work tree (exit non-zero
+///                with `fatal: not a git repository...`, the
+///                canonical non-git case, or exit 0 with stdout
+///                `false`).
+/// `Err(reason)` — the `git` binary itself failed to spawn (missing
+///                from `$PATH`, fork error, etc.). The caller emits
+///                a stderr warning before falling back to `(stateless)`.
+fn is_inside_work_tree(path: &Path) -> Result<bool, String> {
+    let output = Command::new("git")
         .arg("-C")
         .arg(path)
         .args(["rev-parse", "--is-inside-work-tree"])
         .output()
-    {
-        Ok(out) if out.status.success() => {
-            String::from_utf8_lossy(&out.stdout).trim() == "true"
-        }
-        _ => false,
+        .map_err(|err| format!("`git rev-parse --is-inside-work-tree` could not be spawned: {err}"))?;
+    if !output.status.success() {
+        // Git ran and reported non-zero. By far the most common
+        // reason is "fatal: not a git repository" — a definitive
+        // answer, not a probe failure. Treat as not-in-work-tree.
+        return Ok(false);
     }
+    Ok(String::from_utf8_lossy(&output.stdout).trim() == "true")
 }
 
 /// Probe whether the working tree at `path` is clean.
 ///
-/// `Some(true)`  — `git status --porcelain` succeeded with empty output.
-/// `Some(false)` — `git status --porcelain` succeeded with non-empty output.
-/// `None`        — subprocess failed (git missing, invocation error, or
-///                non-zero exit); the caller falls back to `(stateless)`
-///                per `research.md` D1 step 5 so probe failure is not
-///                conflated with an actually-dirty tree in the audit chain.
+/// `Ok(true)`   — `git status --porcelain` succeeded with empty output.
+/// `Ok(false)`  — `git status --porcelain` succeeded with non-empty output.
+/// `Err(reason)` — subprocess failed unexpectedly (binary missing,
+///                non-zero exit, etc.). Surfaced as a warning by
+///                the caller; per `research.md` D1 step 5 we still
+///                fall back to `(stateless)` so probe failure is
+///                not conflated with an actually-dirty tree.
 ///
 /// Passes `--untracked-files=normal` explicitly so the probe is
 /// independent of `status.showUntrackedFiles` set anywhere in the
@@ -188,8 +247,8 @@ fn is_inside_work_tree(path: &Path) -> bool {
 /// uncommitted authoring edit as clean and emit the parent commit's
 /// SHA instead of `(stateless+dirty)` — exactly the operator state
 /// stateless mode is meant to flag.
-fn working_tree_clean(path: &Path) -> Option<bool> {
-    match Command::new("git")
+fn working_tree_clean(path: &Path) -> Result<bool, String> {
+    let output = Command::new("git")
         .arg("-C")
         .arg(path)
         .args([
@@ -200,24 +259,37 @@ fn working_tree_clean(path: &Path) -> Option<bool> {
             ".",
         ])
         .output()
-    {
-        Ok(out) if out.status.success() => Some(out.stdout.is_empty()),
-        _ => None,
+        .map_err(|err| format!("`git status --porcelain` could not be spawned: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "`git status --porcelain` exited non-zero: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
     }
+    Ok(output.stdout.is_empty())
 }
 
-fn head_sha(path: &Path) -> Option<String> {
+fn head_sha(path: &Path) -> Result<String, String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(path)
         .args(["rev-parse", "HEAD"])
         .output()
-        .ok()?;
+        .map_err(|err| format!("`git rev-parse HEAD` could not be spawned: {err}"))?;
     if !output.status.success() {
-        return None;
+        return Err(format!(
+            "`git rev-parse HEAD` exited non-zero: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
     }
     let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (sha.len() == 40 && sha.chars().all(|c| c.is_ascii_hexdigit())).then_some(sha)
+    if sha.len() == 40 && sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        Ok(sha)
+    } else {
+        Err(format!(
+            "`git rev-parse HEAD` returned unexpected output: {sha:?}"
+        ))
+    }
 }
 
 #[cfg(test)]
