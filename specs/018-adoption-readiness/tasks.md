@@ -7,7 +7,7 @@ description: "Task list for 018-adoption-readiness implementation"
 **Input**: Design documents from `/specs/018-adoption-readiness/`
 **Prerequisites**: `plan.md`, `spec.md`, `research.md`, `quickstart.md`. `data-model.md` and `contracts/` are intentionally absent (per spec FR-015).
 
-**Tests**: **Exempted.** Spec/018 is documentation-only. FR-017 forbids any `src/` or `tests/` modifications; FR-019 explicitly forbids adding a CI lint step that enforces structural rules. Verification is reviewer-driven via `specs/018-adoption-readiness/checklists/readme-structure.md` (T020 below). The standard `cargo test` and `cargo clippy --all-targets -- -D warnings` gates remain authoritative for the codebase but are not exercised by this iteration's tasks since no Rust source is touched.
+**Tests**: **Exempted from new authorship.** Spec/018 is documentation-only. FR-019 explicitly forbids adding a CI lint step that enforces structural rules; no new tests, fixtures, or CI assertions are introduced. **Mechanical maintenance** of existing integration tests and fixtures IS permitted under FR-017's carve-out when assertions reference renamed README section names (driven by FR-001) or pin the bumped controller version string (driven by the `packaged_readme_surface` Cargo.toml bump). Verification of the structural contract itself is reviewer-driven via `specs/018-adoption-readiness/checklists/readme-structure.md` (T020 below). The standard `cargo test` and `cargo clippy --all-targets -- -D warnings` gates remain authoritative for the codebase.
 
 **Organization**: Tasks are grouped by user story. US1 (P1) is the MVP — restructured README with placeholders for the artifacts US2 and US3 contribute. US2 and US3 are independent fills of the placeholders. US4 codifies the structural contract for future maintainers.
 
@@ -22,11 +22,13 @@ description: "Task list for 018-adoption-readiness implementation"
 Single Rust crate at repository root. This iteration touches:
 
 - `README.md` (modified)
+- `Cargo.toml`, `Cargo.lock` (patch bump 2.2.0 → 2.2.1, governance-driven; per FR-017 carve-out)
 - `docs/onboarding.cast`, `docs/onboarding-script.sh` (new)
 - `specs/018-adoption-readiness/checklists/readme-structure.md`, `specs/018-adoption-readiness/synthesis.md` (new)
+- `tests/integration/test_distribution_*.rs`, `tests/fixtures/distribution/entrypoint-snapshot.md`, `tests/fixtures/provenance_state/valid-success.json` — mechanical maintenance updates only (FR-001 section renames + Cargo.toml version bump; per FR-017 carve-out)
 - `CHANGELOG.md` (auto-rendered by `core-ops-release changelog --write`)
 
-No `src/`, `tests/`, `.github/workflows/`, `examples/`, `Cargo.toml`, `Cargo.lock`, or `LICENSE` modifications.
+No `src/`, `.github/workflows/`, `examples/`, or `LICENSE` modifications.
 
 ---
 
@@ -57,7 +59,7 @@ No `src/`, `tests/`, `.github/workflows/`, `examples/`, `Cargo.toml`, `Cargo.loc
 
 **Independent Test**: Open the rendered `README.md` on GitHub. Within the first 120 lines (excluding badges and title), the reader encounters: badge row → mental model heading → architecture placeholder → walkthrough placeholder → real-world examples link list. Stop-list grep returns 0 matches. `wc -l README.md` ≤ 400.
 
-> **No tests authored** — exempted per FR-019. Structural verification is via T020 checklist + T021/T022 polish checks.
+> **No new tests authored** — per FR-019 (no new CI lint surface). Structural verification is via T020 checklist + T021/T022 polish checks. (Existing integration tests may receive mechanical fixture-maintenance updates per the FR-017 carve-out when README section names change.)
 
 ### Implementation for User Story 1
 
@@ -147,7 +149,7 @@ No `src/`, `tests/`, `.github/workflows/`, `examples/`, `Cargo.toml`, `Cargo.loc
 - [ ] T021 [P] Final structural pass: `wc -l README.md` ≤ 400 (SC-001); `grep -c '^## 30-second mental model' README.md` = 1 (SC-003); `grep -c '```mermaid' README.md` ≥ 1 (SC-004).
 - [ ] T022 [P] Final stop-list pass: `grep -ciE '(enterprise-ready|industry-leading|production-grade|🚀)' README.md` = 0 (SC-008).
 - [ ] T023 [P] Final link-resolve pass: confirm every pre-018 README link target still resolves — `LICENSE`, `CHANGELOG.md`, `CODE_OF_CONDUCT.md`, `docs/development.md`, each `examples/<NN-slug>/README.md` for NN ∈ {01,02,03,04,05} (SC-009). Use a one-liner: `grep -oE '\]\(([^)]+)\)' README.md | sed -E 's/\]\(|\)//g' | xargs -I{} test -e {} || echo "{} missing"`.
-- [ ] T024 [P] Final no-source-touched pass: `git diff master..HEAD --stat -- src/ tests/ Cargo.toml Cargo.lock .github/workflows/ examples/ LICENSE` returns empty (SC-010, FR-017).
+- [ ] T024 [P] Final no-source-touched pass: `git diff master..HEAD --stat -- src/ .github/workflows/ examples/ LICENSE` returns empty (SC-010, FR-017). `Cargo.toml`, `Cargo.lock`, and `tests/` are excluded from this check per the FR-017 carve-out (governance-driven version bump + mechanical fixture maintenance for FR-001 section renames).
 - [ ] T025 Dogfooding pass per SC-011 / FR Clarification Q4: after a cooling-off period of ≥ 24 h since the last `README.md` edit, open the rendered `README.md` on the GitHub PR preview cold. Time-box: 5 minutes for the read. Then write down — verbatim, without re-consulting the README — what was taken away in answer to "What does CoreOps do and what does running it look like?" Capture the answer in `specs/018-adoption-readiness/synthesis.md` under the "Dogfooding pass" heading. Assess pass/fail per US1's Independent Test (must reference: host-native systemd/Quadlet convergence; Git → core-ops → systemd flow; ≥ 1 CLI command seen; sense of project credibility from badges/version).
 - [ ] T026 Author the body of `specs/018-adoption-readiness/synthesis.md` (skeleton from T002) per SC-012: address proposal §9 questions — (a) did onboarding clarity materially improve, (b) what adoption/trust gaps remain, (c) does the repository now communicate the operational experience more effectively. Operator-attested answers; reference T025 outcome explicitly.
 - [ ] T027 Run `cargo run --bin core-ops-release -- validate --base-ref master` from repo root; confirm `Outcome: passed` and `Classification: exempt` with `Applied Rules: always_exempt_documentation_or_formatting`. If `CHANGELOG aligned: no`, run `cargo run --bin core-ops-release -- changelog --write` and re-validate.
@@ -209,10 +211,10 @@ This iteration is single-author. The dogfooding step (T025) is self-attestation 
 
 ## Notes
 
-- **Tests are exempted** per FR-019. The verification surface is `specs/018-adoption-readiness/checklists/readme-structure.md` (T020), not CI.
-- **No Rust changes** → no `cargo test` / `cargo clippy` tasks. Existing gates remain authoritative for the codebase but are unaffected by 018.
+- **No new tests authored** per FR-019. The verification surface is `specs/018-adoption-readiness/checklists/readme-structure.md` (T020), not CI. Existing integration tests and fixtures may receive mechanical maintenance updates per the FR-017 carve-out when README section names change (FR-001) or when fixtures pin the bumped Cargo.toml version (`packaged_readme_surface` carve-out).
+- **No Rust source changes** → no `cargo test` / `cargo clippy` tasks specific to spec/018. Existing gates remain authoritative; if mechanical fixture maintenance lands, run `cargo test` and `cargo clippy --all-targets -- -D warnings` to confirm the codebase remains green.
 - **Release governance**: `release_intent: patch` in `changes/018-adoption-readiness.md` (already created). Validates as exempt under `always_exempt_documentation_or_formatting`. CHANGELOG.md re-rendered via `core-ops-release changelog --write` and re-validated by T027.
-- **No `Cargo.toml` bump**: docs-only changes do not require a version bump; the post-merge promote step will tag a new patch version automatically if the workflow chooses, or leave as-is per existing release governance.
+- **`Cargo.toml` patch bump (2.2.0 → 2.2.1) is required** by the `packaged_readme_surface` release-governance rule because `README.md` ships in published release bundles (see `decision_018-packaged-readme-surface-cargo-bump`). FR-017 was relaxed mid-implementation to permit this.
 - **No VM-backed scenario**: explicitly exempted in spec/plan Constitution Alignment under Principle 10 (no externally visible host behavior change).
 - Update task checkboxes (`- [ ]` → `- [X]`) as work lands per memory feedback (`feedback_speckit_tasks_checklist.md`): per-task, not batched at session end.
 - Commit per logical group (one task or one tightly-coupled cluster). Conventional commit format `docs(spec/018): ...`.

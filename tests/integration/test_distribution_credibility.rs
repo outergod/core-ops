@@ -16,7 +16,9 @@ fn credibility_surface_matches_release_metadata_fixture() {
     )
     .expect("parse release metadata");
 
-    assert!(readme.contains("## Credibility"));
+    // Per spec/018 FR-001 §10, the standalone `## Credibility` heading was folded into
+    // `## Trust and release model`; the artifact-availability table moved with it.
+    assert!(readme.contains("## Trust and release model"));
     // Live badges replaced the static release identity, gate status, and verification status values
     assert!(readme.contains("actions/workflows/ci.yml/badge.svg"), "missing CI badge");
     assert!(readme.contains("actions/workflows/e2e-gate.yml/badge.svg"), "missing E2E gate badge");
@@ -34,8 +36,9 @@ fn credibility_snapshot_fixture_lists_stable_sections() {
     )
     .expect("read entrypoint snapshot");
 
-    assert!(contents.contains("Credibility"));
-    assert!(contents.contains("Installation (Current Phase)"));
-    assert!(contents.contains("Release & Verification Model"));
-    assert!(contents.contains("Supported Systems"));
+    // Spec/018 FR-001 ordering — the snapshot tracks the post-restructure section names.
+    assert!(contents.contains("30-second mental model"));
+    assert!(contents.contains("Architecture"));
+    assert!(contents.contains("What using CoreOps feels like"));
+    assert!(contents.contains("Trust and release model"));
 }

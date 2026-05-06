@@ -9,7 +9,8 @@ fn repo_root() -> std::path::PathBuf {
 fn readme_documents_binary_installation_sequence() {
     let contents = fs::read_to_string(repo_root().join("README.md")).expect("read README");
 
-    assert!(contents.contains("## Installation (Current Phase)"));
+    // Per spec/018 FR-001 §7, "Installation (Current Phase)" was folded into "Quick start".
+    assert!(contents.contains("## Quick start"));
     assert!(contents.contains("x86_64"));
     assert!(contents.contains("aarch64"));
     assert!(contents.contains("core-ops-linux-<arch>.tar.gz"));
