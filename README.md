@@ -58,7 +58,11 @@ flowchart LR
   HOST -.-> AUDIT
 ```
 
-> *[Surrounding prose populated by T018.]*
+**Read left-to-right.** A Git repository (`services/` + `hosts/`)
+feeds `core-ops` (`plan` / `apply` / `explain`), which generates
+systemd + Quadlet units that the host runs under systemd. Audit and
+status are JSON side outputs of both `core-ops` and the host — the
+same architecture the diagram above shows when GitHub renders it.
 
 ---
 
