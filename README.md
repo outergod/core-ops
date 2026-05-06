@@ -17,34 +17,28 @@
 
 ---
 
-<!-- T004 reorder: §3 mental model goes here (filled by T006). Legacy
-"What is CoreOps?" + "What CoreOps Does" sit below for T006 to absorb. -->
+## 30-second mental model
 
-## What is CoreOps?
+CoreOps is a convergence engine for systemd-based hosts. You declare desired
+state in a Git repository — services and host overlays expressed as Quadlet
+units, systemd drop-ins, and config files — and CoreOps converges the host
+to match.
 
-CoreOps is a convergence engine for systemd-based hosts.
+It treats systemd and Quadlet as the source of truth. It does not replace
+them with a custom orchestrator and does not require image rebuilds for
+every change. Reconciliation is declarative, idempotent, and inspectable:
 
-It takes a declared system state and makes the host match it —  
-without hiding systemd, without introducing a new orchestration layer,  
-and without requiring image rebuilds for every change.
+* `core-ops plan` shows the diff between desired and observed state.
+* `core-ops apply` makes the host match.
+* `core-ops status` reports applied state with provenance back to the
+  Git revision that produced it.
 
-If you are managing Fedora CoreOS or similar systems and find yourself
-choosing between:
+Each step is dry-runnable, audit-trail-producing, and re-runnable.
+Re-running against a converged host is a no-op.
 
-- rebuilding images for every iteration, or  
-- drifting into imperative host configuration  
-
-CoreOps exists in that gap.
-
----
-
-## What CoreOps Does
-
-- Converges host-managed workloads declaratively  
-- Works with systemd-native and Quadlet-native workflows  
-- Produces inspectable plans, reports, and machine-readable output  
-- Preserves provenance and reconciliation state for later audit  
-- Executes VM-backed verification scenarios against real systems  
+CoreOps is host-native: it runs on the target host (typically Fedora CoreOS),
+not in a container, and operates directly on systemd state. Workloads are
+container workloads (Podman/Quadlet), but the controller is not.
 
 ---
 
