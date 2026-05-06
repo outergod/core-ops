@@ -8,6 +8,13 @@
   <strong>Host-native convergence for systemd-based systems</strong>
 </p>
 
+<p align="center">
+<a href="https://github.com/outergod/core-ops/actions/workflows/ci.yml"><img src="https://github.com/outergod/core-ops/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a>
+<a href="https://github.com/outergod/core-ops/actions/workflows/e2e-gate.yml"><img src="https://github.com/outergod/core-ops/actions/workflows/e2e-gate.yml/badge.svg" alt="E2E Gate"></a>
+<a href="https://github.com/outergod/core-ops/releases/latest"><img src="https://img.shields.io/github/v/release/outergod/core-ops" alt="Latest Release"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License: AGPL-3.0-or-later"></a>
+</p>
+
 ---
 
 <!-- T004 reorder: §3 mental model goes here (filled by T006). Legacy
@@ -168,20 +175,18 @@ convergence workflow around them instead of replacing them.
 
 ---
 
-## Credibility
-
-[![CI](https://github.com/outergod/core-ops/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/outergod/core-ops/actions/workflows/ci.yml)
-[![E2E Gate](https://github.com/outergod/core-ops/actions/workflows/e2e-gate.yml/badge.svg)](https://github.com/outergod/core-ops/actions/workflows/e2e-gate.yml)
-[![Latest Release](https://img.shields.io/github/v/release/outergod/core-ops)](https://github.com/outergod/core-ops/releases/latest)
+<!-- T005 dissolved the "## Credibility" heading; badges promoted to top
+of file. The signal table and blurb stay here for T008 to fold into
+"## Trust and release model" along with Minimal Trust Story and the
+Release & Verification Model. -->
 
 | Signal | Value |
 |--------|-------|
 | Published artifacts | `x86_64 raw binary`, `aarch64 raw binary`, `x86_64 tar.gz + checksums`, `aarch64 tar.gz + checksums` |
 | Verification environment | `fedora-coreos-self-hosted@2026-04-fcos` |
 
-This section is the stable credibility surface for outside evaluators. The badges
-above reflect live CI health and the latest published release version and update
-automatically as the project evolves.
+The badges at the top of this README reflect live CI health and the latest
+published release version, and update automatically as the project evolves.
 
 ---
 
