@@ -112,6 +112,32 @@ A valid installation should:
 
 ---
 
+## Real-World Examples
+
+Five real-world homelab setups translated into the source-repository
+layout. Each is runnable via stateless `--source-repo` invocation
+without `core-ops init`. See `examples/<NN-slug>/README.md` for setup
+intent, sources, and known limitations.
+
+* [`examples/01-caddy-whoami`](examples/01-caddy-whoami) — Caddy reverse proxy fronting whoami (single-Container baseline).
+* [`examples/02-nextcloud`](examples/02-nextcloud) — Nextcloud + Postgres + Redis + Traefik (multi-Container, intra-service network, persistent storage).
+* [`examples/03-immich`](examples/03-immich) — Immich photo server with ML worker (GPU device, multi-network).
+* [`examples/04-traefik-authelia`](examples/04-traefik-authelia) — Traefik + Authelia + protected backend (cross-service ForwardAuth composition).
+* [`examples/05-observability`](examples/05-observability) — Prometheus + Grafana + node-exporter + cadvisor (host-scope sidecars).
+
+Try one without committing to anything:
+
+```sh
+core-ops plan --source-repo examples/01-caddy-whoami --host example
+```
+
+No prior `core-ops init` required; nothing is written under
+`/var/lib/core-ops/`. To switch into long-lived tracking mode after
+copying an example to your own setup directory, run
+`git init && core-ops init <path> <ref>` once.
+
+---
+
 ## Installation (Current Phase)
 
 CoreOps is currently distributed as direct binaries for `x86_64` (`amd64`)

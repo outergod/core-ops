@@ -1,0 +1,17 @@
+[Unit]
+Description=Immich ML inference worker
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/immich-app/immich-machine-learning:release
+ContainerName=immich-ml
+Network=immich-internal.network
+Volume=immich-ml-cache.volume:/cache:Z
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target

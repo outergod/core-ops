@@ -1,0 +1,25 @@
+[Unit]
+Description=Immich photo/video server
+After=network-online.target immich-database.service immich-redis.service
+Wants=network-online.target
+Requires=immich-database.service immich-redis.service
+
+[Container]
+Image=ghcr.io/immich-app/immich-server:release
+ContainerName=immich-server
+Network=immich-internal.network
+Network=immich-public.network
+Volume=immich-upload.volume:/usr/src/app/upload:Z
+Environment=DB_HOSTNAME=immich-database
+Environment=DB_PORT=5432
+Environment=DB_USERNAME=immich
+Environment=DB_DATABASE_NAME=immich
+Environment=REDIS_HOSTNAME=immich-redis
+Environment=IMMICH_MACHINE_LEARNING_URL=http://immich-ml:3003
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target

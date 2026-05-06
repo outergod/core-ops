@@ -1,0 +1,16 @@
+[Unit]
+Description=whoami HTTP echo backend
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/traefik/whoami:latest
+ContainerName=whoami
+Network=caddy.network
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target default.target

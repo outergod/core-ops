@@ -1,0 +1,33 @@
+# Host-side whole-file replacement of the prometheus.yml so this host
+# can scrape its own additional targets without forking the base
+# service. See README's "Known limitations" — true scrape-config
+# templating (per-host target lists computed by core-ops) is not yet
+# supported (synthesis table classification: B — workaround in this
+# host overlay).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  - job_name: node-exporter
+    static_configs:
+      - targets:
+          - node-exporter:9100
+
+  - job_name: cadvisor
+    static_configs:
+      - targets:
+          - cadvisor:8080
+
+  # Host-specific: scrape an external dashboard endpoint reachable on
+  # the host network. Replace 198.51.100.1 with the operator's address.
+  - job_name: example-host-router
+    static_configs:
+      - targets:
+          - 198.51.100.1:9100

@@ -7,6 +7,7 @@ pub mod observed;
 pub mod quadlet;
 pub mod release_governance;
 pub mod repo;
+pub mod source_ref;
 pub mod state;
 pub mod systemd;
 pub mod verification_artifacts;

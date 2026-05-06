@@ -1,0 +1,6 @@
+[Unit]
+Description=Public-facing network shared with the edge proxy
+
+[Network]
+NetworkName=immich-public
+Subnet=198.51.100.0/24

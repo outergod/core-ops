@@ -6,25 +6,17 @@ Deferred implementation work and discoveries that should be revisited after the 
 
 ### Init Command
 
-`core-ops` currently expects every `plan`, `apply` (or `agent`) to be supplied with `repo` and `rev` arguments. At the same time, expected use through operators is to initialize `core-ops` once against a repository and a tracking branch, and keep running `plan`, `apply` etc. against that.
-
-`repository` and `requested_ref` are already tracked through `core-ops`, so `repo` should be taken from their and `rev` be assumed to be the latest tracking `requested_ref`. 
-
-In their place, a new `init` command shall be introduced in the form of `init [repo] [ref]` that sets up `core-ops` state with the tracking repository and ref. At the same time, remove the `repo` and `rev` arguments from `plan` and `apply`, effectively making the CLI stateful and aligned with the state store.
+> Historical note: the `init`-as-explicit-entry-point + remove-`repo`/`rev`
+> redesign described here shipped in spec/015. Stateless `--source-repo`
+> for plan/apply/explain shipped in spec/017. The remaining open items
+> in this section are about argument persistence and recovery UX,
+> below.
 
 Other arguments currently taken by `plan`, `apply`, and `agent` which should persist are `quadlet-dir`, `systemd-unit-dir`, `state-file`, and `audit-dir`.
 
-Rollbacks would then be validated against `rev`s on the tracking branch, and otherwise refuse action if pointing to a non-reachable commit from the current ref.
 `rollback-plan-only` (apply option) is completely misplaced and should instead become the `rollback` option for `plan`.
 
 There should be an explicit flow to re-initialize using `init`, e.g. using `--reinitialize` that changes the tracking repo and/or ref.
-
-Summary:
-- CoreOps already persists tracking repository/ref in controller state
-- CLI UX should be aligned with that existing persistence
-- init becomes the explicit operator entry point for managing this persisted desired-state configuration
-
-Read specs 004, 006, and 007 to get the full picture.
 
 ### Reconciliation Cleanup
 
@@ -84,17 +76,30 @@ Instead of a warning that the user doesn't have permission to read or operate on
 
 For now, go with option 2.
 
+## NFS-backed library mounts in real workloads
+
+Real homelab workloads (Immich photo library, Nextcloud data
+directory, etc.) frequently back container volumes with NFS mounts
+declared in `services/<svc>/systemd/*.mount` units. Spec/017's
+`examples/03-immich/` uses a Podman-managed `*.volume` instead because
+NFS mount declarations are orthogonal to the validation iteration's
+scope. A future iteration could ship a worked example exercising
+mount-aware reconciliation against an NFS source. (Spec/017 synthesis
+table classification: C.)
+
 ## Source Repository UX
 
-There is no user-facing and no agent-facing documentation for the required layout of the source Git repository. Even the naming is not aligned (`Source repository` vs `workload Git repository`).
+> The `Source repository` vs `workload Git repository` naming gap and the
+> remaining authoring-tool follow-ups below. Spec/016 + spec/017 closed
+> the "rich, documented real-life examples" and "QnA for known
+> limitations" bullets — see `examples/<NN-slug>/` and the synthesis
+> table at `specs/017-real-world-validation/spec.md`.
 
 There should ideally be:
 - User facing documentation how to author valid source repositories
 - Agentic documentation for the same
 - An installable Agent skill that teaches agents how to deal with source repositories
 - A core-ops command that creates a source repository with basic layout, README.md and AGENTS.md from scratch (maybe plus the skill)
-- Important: Rich, documented real-life examples of actual source repositories with real services, overrides, mounts etc.
-- QnA for source repository use cases / known limitations and workarounds
 
 These changes should be structured around schema, patterns (conventions), and tooling.
 

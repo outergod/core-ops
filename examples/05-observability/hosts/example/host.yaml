@@ -1,0 +1,6 @@
+host: example
+services:
+  - prometheus
+  - grafana
+  - node-exporter
+  - cadvisor

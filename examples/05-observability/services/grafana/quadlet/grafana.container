@@ -1,0 +1,19 @@
+[Unit]
+Description=Grafana dashboards
+After=network-online.target prometheus.service
+Wants=network-online.target
+
+[Container]
+Image=docker.io/grafana/grafana:11
+ContainerName=grafana
+PublishPort=3000:3000
+Network=observe.network
+Volume=grafana-data.volume:/var/lib/grafana:Z
+Volume=/etc/grafana:/etc/grafana:ro,Z
+
+[Service]
+Restart=always
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target default.target

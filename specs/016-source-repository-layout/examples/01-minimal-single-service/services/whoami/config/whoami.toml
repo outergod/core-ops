@@ -1,6 +1,0 @@
-# Example placeholder config for the minimal whoami service.
-# Layout version 1 deploys this file to /etc/whoami/whoami.toml because
-# the service has no service.yaml, so config-root defaults to "whoami".
-
-[example]
-note = "This file demonstrates the default config-root path. The whoami container references /etc/whoami/whoami.toml as a read-only mount."

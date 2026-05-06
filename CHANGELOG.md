@@ -8,6 +8,9 @@ versioning for public release policy decisions.
 ## [Unreleased]
 
 <!-- core-ops-release:start -->
+### Changed
+
+- Add stateless `--source-repo <PATH>` flag for plan/apply/explain plus five real-world homelab examples under `examples/<NN-slug>/`.
 <!-- core-ops-release:end -->
 
 ## [2.1.1] - 2026-05-04

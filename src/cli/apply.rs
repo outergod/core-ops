@@ -827,6 +827,191 @@ pub fn execute_rollback_with_report(
     })
 }
 
+/// Stateless apply entry point (spec/017): converges host state from a
+/// filesystem-resident source-repo without consulting or mutating the
+/// persisted controller state at `/var/lib/core-ops/status.json`.
+///
+/// Per FR-013 and SC-009, stateless apply MUST NOT mutate the
+/// init'd-mode persisted `desired_state.repository` /
+/// `desired_state.requested_ref`. This function achieves that by
+/// performing zero state-file I/O — no `persist_in_progress_state`,
+/// no `persist_finished_state`, no deterministic-state writes. The
+/// audit chain (emitted by the caller) is the persisted record.
+///
+/// `source` carries the canonical path plus path-based provenance
+/// strings produced by [`crate::io::source_ref::detect_provenance`].
+pub fn apply_with_report_stateless(
+    source: &crate::io::source_ref::StatelessSource,
+    quadlet_dir: &Path,
+    reload_systemd: bool,
+) -> Result<ApplyReportBundle, CoreError> {
+    let repo_path = source.repo_path.clone();
+    let requested_repository = source.requested_repository.clone();
+    let requested_ref = source.requested_ref.clone();
+    let deps = ReconcileDependencies {
+        load_desired: &|| {
+            crate::io::repo::load_desired_state_from_path(
+                &repo_path,
+                &requested_repository,
+                &requested_ref,
+            )
+            // Per `contracts/cli-flag.md` Error semantics: a path that
+            // exists as a directory but is not a spec/016-conformant
+            // source-repo (missing services/, legacy artifacts, etc.)
+            // exits 65 (`EX_DATAERR`). Thread the documented exit code
+            // through `CoreError.exit_code` so automation can classify
+            // by status alone.
+            .map_err(|err| {
+                CoreError::with_exit_code(FailureClass::Plan, err.to_string(), 65)
+            })
+        },
+        read_observed: &|desired| {
+            read_observed_state(quadlet_dir, Some(desired), None).map_err(map_plan_error)
+        },
+        apply_plan: &|plan, desired| {
+            apply_plan_with_desired(plan, desired, quadlet_dir, reload_systemd)
+                .map(|_| ())
+                .map_err(map_apply_error)
+        },
+    };
+
+    let plan_result = reconcile_plan(&deps)?;
+    let observed_before = (deps.read_observed)(&plan_result.desired)?;
+    let scope_id = scope_id_for_observed(&observed_before);
+    let desired_snapshot = build_desired_snapshot_from_state(&plan_result.desired, &scope_id);
+    let observed_snapshot =
+        build_observed_snapshot(&observed_before, Some(&plan_result.desired), &scope_id);
+    let verification_results_before = normalize_verification_results_for_desired(
+        &plan_result.desired,
+        verify_state(&plan_result.desired, &observed_before),
+    );
+    // Stateless mode has no last_applied baseline (init'd state is
+    // intentionally not consulted). Treat as FirstRun semantically.
+    let mut deterministic = reconcile_deterministic_plan_with_runtime(
+        &desired_snapshot,
+        None,
+        &observed_snapshot,
+        &verification_results_before,
+    )?
+    .plan;
+    deterministic.requested_repository = plan_result.desired.requested_repository.clone();
+    deterministic.requested_ref = plan_result.desired.requested_ref.clone();
+
+    let result = reconcile_apply_with_retry(&deps, DEFAULT_RETRY_BUDGET)?;
+    if result
+        .desired
+        .mount_declarations
+        .iter()
+        .any(|mount| mount.automount)
+    {
+        deterministic.scope_id = scope_id.clone();
+    }
+    let run_display_state = if observed_snapshot.objects.is_empty() {
+        ApplyRunDisplayState::FirstRun
+    } else {
+        ApplyRunDisplayState::Recovery
+    };
+    let human_report = format_apply_output_report(
+        &deterministic,
+        &result.verification_results,
+        result.convergence.as_ref(),
+        ApplyHumanMode::Default,
+        run_display_state,
+    );
+    let verbose_report = format_apply_output_report(
+        &deterministic,
+        &result.verification_results,
+        result.convergence.as_ref(),
+        ApplyHumanMode::Verbose,
+        run_display_state,
+    );
+    let machine_report = format_apply_output_json(
+        &deterministic,
+        &result.verification_results,
+        result.convergence.as_ref(),
+    );
+    let result_view = build_result_output(
+        &deterministic,
+        &result.verification_results,
+        result.convergence.as_ref(),
+    );
+    let result_report = format_result_output_report(&result_view);
+    let result_machine_report = format_result_output_json(&result_view);
+
+    Ok(ApplyReportBundle {
+        result,
+        human_report,
+        verbose_report,
+        machine_report,
+        result_report,
+        result_machine_report,
+        plan: plan_result.plan,
+    })
+}
+
+/// Build a synthetic `PersistedProvenanceState` for stateless apply
+/// so that the audit event surfaces path-based provenance plus the
+/// actual run outcome (success / failure) without consulting any
+/// persisted `/var/lib/core-ops/status.json`.
+///
+/// `revision_id` is the resolved desired-state revision (a SHA, a
+/// `(stateless)` / `(stateless+dirty)` sentinel, or a synthetic id
+/// from `load_desired_state_from_path`); `run_status` is the apply
+/// outcome. Together they populate the audit event's
+/// `reconciliation_status`, `attempted_revision`, and
+/// `applied_revision` fields with values that reflect what actually
+/// happened — fixing the prior bug where every stateless apply
+/// emitted `reconciliation_status = "never_run"`.
+pub fn synthetic_stateless_provenance(
+    requested_repository: &str,
+    requested_ref: &str,
+    revision_id: &str,
+    run_status: RunStatus,
+) -> crate::core::types::PersistedProvenanceState {
+    use crate::core::types::{
+        ControllerProvenance, DesiredStateProvenance, PersistedProvenanceState,
+        ReconciliationProvenance, ReconciliationStatus, TreeState,
+        PERSISTED_PROVENANCE_SCHEMA_VERSION,
+    };
+    let reconciliation_status = match run_status {
+        RunStatus::Success => ReconciliationStatus::Success,
+        RunStatus::Failure => ReconciliationStatus::Failed,
+    };
+    let last_applied_revision = match run_status {
+        RunStatus::Success => Some(revision_id.to_string()),
+        RunStatus::Failure => None,
+    };
+    PersistedProvenanceState {
+        schema_version: PERSISTED_PROVENANCE_SCHEMA_VERSION,
+        controller: ControllerProvenance {
+            version: None,
+            revision: None,
+            build_time: None,
+            tree_state: TreeState::Unknown,
+        },
+        desired_state: DesiredStateProvenance {
+            repository: requested_repository.to_string(),
+            requested_ref: requested_ref.to_string(),
+            last_observed_revision: Some(revision_id.to_string()),
+            last_observed_at: None,
+            layout_version: Some("1".to_string()),
+        },
+        reconciliation: ReconciliationProvenance {
+            // Stateless mode has no prior generation context — this
+            // is a single ad-hoc run, semantically generation 1.
+            generation: 1,
+            status: reconciliation_status,
+            running: false,
+            last_attempted_revision: Some(revision_id.to_string()),
+            last_applied_revision,
+            last_started_at: None,
+            last_finished_at: None,
+            attempted_observed_divergence: None,
+        },
+        detached: false,
+    }
+}
+
 fn classify_apply_run_display_state(
     last_applied_revision: Option<&str>,
     observed_snapshot: &crate::core::types::NormalizedSnapshot,
@@ -929,15 +1114,9 @@ fn default_host_scope_id() -> Option<String> {
 }
 
 fn map_plan_error<E: std::fmt::Display>(err: E) -> CoreError {
-    CoreError {
-        class: FailureClass::Plan,
-        message: err.to_string(),
-    }
+    CoreError::new(FailureClass::Plan, err.to_string())
 }
 
 fn map_apply_error<E: std::fmt::Display>(err: E) -> CoreError {
-    CoreError {
-        class: FailureClass::Apply,
-        message: err.to_string(),
-    }
+    CoreError::new(FailureClass::Apply, err.to_string())
 }

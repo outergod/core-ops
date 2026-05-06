@@ -155,10 +155,7 @@ fn plan_and_result_rendering_complete_within_interactive_budget() {
 }
 
 fn map_io_error<E: std::fmt::Display>(err: E) -> CoreError {
-    CoreError {
-        class: core_ops::core::types::FailureClass::Apply,
-        message: err.to_string(),
-    }
+    CoreError::new(core_ops::core::types::FailureClass::Apply, err.to_string())
 }
 
 struct PathGuard {

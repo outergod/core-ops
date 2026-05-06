@@ -1,0 +1,17 @@
+[Unit]
+Description=Authelia identity provider + ForwardAuth target
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/authelia/authelia:4
+ContainerName=authelia
+Network=auth.network
+Volume=/etc/authelia:/config:Z
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target

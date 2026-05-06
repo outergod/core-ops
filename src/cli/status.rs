@@ -299,6 +299,13 @@ fn meaningful_requested_ref<'a>(target: &str, requested_ref: Option<&'a str>) ->
 }
 
 fn short_revision(revision: &str) -> &str {
+    // spec/017 stateless-mode sentinels (`(stateless)`, `(stateless+dirty)`)
+    // begin with `(`, which is invalid in git ref names per
+    // `git check-ref-format`. Preserve them verbatim instead of
+    // truncating to 8 chars (which would cut to `(statele`).
+    if revision.starts_with('(') {
+        return revision;
+    }
     &revision[..revision.len().min(8)]
 }
 

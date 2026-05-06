@@ -1,0 +1,6 @@
+[Unit]
+Description=Cross-service network for Traefik + Authelia + protected backends
+
+[Network]
+NetworkName=auth
+Subnet=192.0.2.0/24

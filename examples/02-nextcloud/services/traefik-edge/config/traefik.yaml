@@ -1,0 +1,17 @@
+# Illustrative Traefik static configuration. Service id is
+# `traefik-edge` but `service.yaml` declares `config-root: traefik` so
+# this file deploys to /etc/traefik/traefik.yaml.
+
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    exposedByDefault: false
+    network: nextcloud
+
+api:
+  dashboard: false

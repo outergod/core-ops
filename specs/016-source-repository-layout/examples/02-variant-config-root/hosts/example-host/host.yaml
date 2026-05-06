@@ -1,3 +1,0 @@
-host: example-host
-services:
-  - traefik-dnschallenge

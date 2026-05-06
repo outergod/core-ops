@@ -1,0 +1,6 @@
+host: example
+services:
+  - nextcloud
+  - nextcloud-db
+  - nextcloud-redis
+  - traefik-edge

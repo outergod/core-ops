@@ -1,0 +1,5 @@
+[Unit]
+Description=Persistent state for Caddy (certs, OCSP staples)
+
+[Volume]
+VolumeName=caddy-data
