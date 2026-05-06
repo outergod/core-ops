@@ -35,7 +35,7 @@ No `src/`, `tests/`, `.github/workflows/`, `examples/`, `Cargo.toml`, `Cargo.loc
 **Purpose**: Scaffold the spec directory's optional artifacts that later phases populate.
 
 - [X] T001 [P] Create `specs/018-adoption-readiness/checklists/` directory and an empty `readme-structure.md` skeleton (header + table-of-checks placeholder). Populated by T020 in Phase 6.
-- [ ] T002 [P] Create `specs/018-adoption-readiness/synthesis.md` skeleton with frontmatter + section headers for "Dogfooding pass", "What materially improved", "Remaining adoption/trust gaps", "Operational communication effectiveness" (proposal §9 questions). Populated by T025 in Phase 7.
+- [X] T002 [P] Create `specs/018-adoption-readiness/synthesis.md` skeleton with frontmatter + section headers for "Dogfooding pass", "What materially improved", "Remaining adoption/trust gaps", "Operational communication effectiveness" (proposal §9 questions). Populated by T025 in Phase 7.
 
 ---
 
