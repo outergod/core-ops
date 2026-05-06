@@ -8,6 +8,9 @@ versioning for public release policy decisions.
 ## [Unreleased]
 
 <!-- core-ops-release:start -->
+### Changed
+
+- Restructure README around operational comprehension; add Mermaid architecture diagram, 30-second mental model, `examples/03-immich` walkthrough, and `docs/onboarding.cast` asciinema recording. No CLI or behavior changes.
 <!-- core-ops-release:end -->
 
 ## [2.2.4] - 2026-05-07
