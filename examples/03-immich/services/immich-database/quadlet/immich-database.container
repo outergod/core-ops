@@ -4,7 +4,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Container]
-Image=ghcr.io/immich-app/postgres:16
+Image=ghcr.io/immich-app/postgres:16-vectorchord0.3.0-pgvector0.8.0-pgvectors0.2.0
 ContainerName=immich-database
 Network=immich-internal.network
 Volume=immich-db-data.volume:/var/lib/postgresql/data:Z
