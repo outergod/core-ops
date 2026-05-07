@@ -136,7 +136,7 @@ No `src/`, `.github/workflows/`, `examples/`, or `LICENSE` modifications.
 
 ### Implementation for User Story 4
 
-- [ ] T020 [US4] Populate `specs/018-adoption-readiness/checklists/readme-structure.md` (skeleton from T001) with one runnable check per FR/SC: line-budget (`wc -l README.md` ≤ 400), badge-row composition (4 badges, no others promoted), mental-model heading existence + position, Mermaid block existence + node substrings, walkthrough two-block + line budget, sanitization stop-list grep, hype stop-list grep, link-target resolve check (every pre-018 link still resolves), no third-party JS embed (`grep -E '(asciinema\.org/.*\.js|<iframe|<script)' README.md` returns 0). Each check labeled with the FR/SC it verifies.
+- [X] T020 [US4] Populate `specs/018-adoption-readiness/checklists/readme-structure.md` (skeleton from T001) with one runnable check per FR/SC: line-budget (`wc -l README.md` ≤ 400), badge-row composition (4 badges, no others promoted), mental-model heading existence + position, Mermaid block existence + node substrings, walkthrough two-block + line budget, sanitization stop-list grep, hype stop-list grep, link-target resolve check (every pre-018 link still resolves), no third-party JS embed (`grep -E '(asciinema\.org/.*\.js|<iframe|<script)' README.md` returns 0). Each check labeled with the FR/SC it verifies.
 
 **Checkpoint**: US4 complete. Structural contract is documented and runnable.
 
