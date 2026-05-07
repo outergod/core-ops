@@ -14,8 +14,10 @@ Environment=DB_HOSTNAME=immich-database
 Environment=DB_PORT=5432
 Environment=DB_USERNAME=immich
 Environment=DB_DATABASE_NAME=immich
+Environment=DB_PASSWORD_FILE=/run/secrets/immich-db-password
 Environment=REDIS_HOSTNAME=immich-redis
 Environment=IMMICH_MACHINE_LEARNING_URL=http://immich-ml:3003
+Secret=immich-db-password,target=/run/secrets/immich-db-password
 
 [Service]
 Restart=always
