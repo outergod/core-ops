@@ -16,13 +16,13 @@
 </p>
 
 <p align="center">
-  <a href="https://asciinema.org/a/XKhpmzM8ZWg56Wu2">
+  <a href="https://asciinema.org/a/HaqIw05gehGk2YpH">
     <img src="docs/assets/core-ops-demo.gif" alt="CoreOps terminal demo: plan, diff, explain, and apply" width="820">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://asciinema.org/a/XKhpmzM8ZWg56Wu2">Watch the full terminal session on asciinema</a>
+  <a href="https://asciinema.org/a/HaqIw05gehGk2YpH">Watch the full terminal session on asciinema</a>
 </p>
 
 ---
@@ -65,7 +65,7 @@ Plan for host example @ (stateless) (first run)
 
 [+] container/immich-database.container			missing
     requires
-      ├─ [+] network/immich-internal.network		missing
+      ├─ [+] network/immich-internal.network	missing
       └─ [+] volume/immich-db-data.volume		missing
     Δ content (21 additions)
       + [Unit]
