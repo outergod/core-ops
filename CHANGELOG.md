@@ -8,10 +8,13 @@ versioning for public release policy decisions.
 ## [Unreleased]
 
 <!-- core-ops-release:start -->
+<!-- core-ops-release:end -->
+
+## [2.2.3] - 2026-05-07
+
 ### Changed
 
 - Stateless `plan` and `apply` no longer flag a healthy host as "recovery from failed initial apply"; introduce `ApplyRunDisplayState::Stateless` so the rendered header carries only the `(stateless)` path-based provenance prefix when the host has converged objects but no `/var/lib/core-ops/` baseline. Empty-host invocations continue to render `(first run)` as before.
-<!-- core-ops-release:end -->
 
 ## [2.2.2] - 2026-05-07
 
