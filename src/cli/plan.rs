@@ -125,13 +125,20 @@ pub fn plan_stateless(
         verify_state(&result.desired, &observed),
     );
     // Stateless mode has no last_applied baseline by design (init'd
-    // state is never read, FR-013 / SC-009). Treat as FirstRun for
-    // header-rendering purposes — the source path is always the
-    // primary identifier in the rendered header.
+    // state is never read, FR-013 / SC-009). When the host is empty,
+    // "(first run)" is still useful and accurate; the user is about
+    // to create everything from scratch. When the host already has
+    // observed objects we cannot safely tag the run as "recovery
+    // from failed initial apply" — there is no record distinguishing
+    // "host has units because a prior apply succeeded" from "host
+    // has units because a prior apply failed mid-flight." Fall back
+    // to the dedicated `Stateless` variant in that case so the
+    // path-based provenance prefix (`(stateless)`) carries the
+    // operationally relevant signal alone.
     let run_display_state = if observed_snapshot.objects.is_empty() {
         ApplyRunDisplayState::FirstRun
     } else {
-        ApplyRunDisplayState::Recovery
+        ApplyRunDisplayState::Stateless
     };
     let mut deterministic = reconcile_deterministic_plan_with_runtime(
         &desired_snapshot,

@@ -34,6 +34,13 @@ pub enum ApplyRunDisplayState {
     Managed,
     FirstRun,
     Recovery,
+    /// Stateless mode (`--source-repo`): no `/var/lib/core-ops/` baseline is
+    /// read or written, so the controller cannot distinguish "host has units
+    /// because a prior apply succeeded" from "host has units because a prior
+    /// apply failed mid-flight." The first-run / recovery suffix does not
+    /// apply; the path-based provenance prefix (e.g. `(stateless)`) carries
+    /// the operationally relevant signal.
+    Stateless,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1997,6 +2004,9 @@ fn apply_header_revision_context(
                 crate::cli::status::render_revision_with_requested_ref(target, requested_ref)
             )
         }
+        ApplyRunDisplayState::Stateless => {
+            crate::cli::status::render_revision_with_requested_ref(target, requested_ref)
+        }
         ApplyRunDisplayState::Managed => match previous {
             Some(previous) if previous != target => {
                 format!(
@@ -2659,6 +2669,9 @@ fn plan_header_revision_context_with_state(
             "{} (recovery from failed initial apply)",
             crate::cli::status::render_revision_with_requested_ref(target, requested_ref)
         ),
+        (_, ApplyRunDisplayState::Stateless) => {
+            crate::cli::status::render_revision_with_requested_ref(target, requested_ref)
+        }
         (None, ApplyRunDisplayState::Managed) => {
             crate::cli::status::render_revision_with_requested_ref(target, requested_ref)
         }
