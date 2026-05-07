@@ -98,8 +98,8 @@ invocation produces no changes — the host is already where the
 declaration says it should be:
 
 ```text
-Plan for host example @ (stateless) (recovery from failed initial apply)
-────────────────────────────────────────────────────────────────────────
+Plan for host example @ (stateless)
+───────────────────────────────────
 [·] Unchanged • 10
 
 [·] container/immich-database.container			unchanged
