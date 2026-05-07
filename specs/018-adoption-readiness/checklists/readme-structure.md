@@ -151,10 +151,20 @@ Expected: zero matches. The asciicast is referenced as the in-tree `docs/onboard
 ```sh
 test -f docs/onboarding.cast
 head -n 1 docs/onboarding.cast | jq '.version'
-head -n 1 docs/onboarding.cast | jq '.duration'
+# Duration check — branches on cast version. In asciicast v2 the
+# header carries an absolute `duration` field. In asciicast v3 each
+# event line is `[delta, type, data]` where `delta` is the time
+# since the previous event; total duration = sum of all deltas.
+v=$(head -n 1 docs/onboarding.cast | jq '.version')
+if [ "$v" = "2" ]; then
+  head -n 1 docs/onboarding.cast | jq '.duration'
+else
+  awk 'NR>1' docs/onboarding.cast \
+    | jq -s 'map(.[0]) | add'
+fi
 ```
 
-Expected: file exists; `.version` is `2`; `.duration` is a number ≤ `90`. If `.duration` is `null`, asciinema 2.4.0 omitted it on completion — re-run the post-processing block from C-006 above (it computes duration from the last event timestamp).
+Expected: file exists; `.version` is `2` or `3` (asciicast v2 from asciinema 2.x or v3 from asciinema 3.x; `agg` 1.7.0 renders both). The duration value MUST be ≤ `90`.
 
 ### C-011a — GIF sidecar exists and is embedded inline (FR-007 / FR-013 / SC-005b)
 
