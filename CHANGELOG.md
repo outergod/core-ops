@@ -8,10 +8,13 @@ versioning for public release policy decisions.
 ## [Unreleased]
 
 <!-- core-ops-release:start -->
+<!-- core-ops-release:end -->
+
+## [2.2.2] - 2026-05-07
+
 ### Changed
 
 - Wire `immich-db-password` Podman secret + `DB_PASSWORD_FILE` env var into `examples/03-immich/services/immich-server/quadlet/immich-server.container`; without these, `immich-server` could never authenticate to the Postgres database started by `immich-database.container` and entered a restart loop with `password authentication failed for user "immich"`.
-<!-- core-ops-release:end -->
 
 ## [2.2.1] - 2026-05-07
 
