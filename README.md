@@ -15,6 +15,16 @@
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License: AGPL-3.0-or-later"></a>
 </p>
 
+<p align="center">
+  <a href="https://asciinema.org/a/XKhpmzM8ZWg56Wu2">
+    <img src="docs/assets/core-ops-demo.gif" alt="CoreOps terminal demo: plan, diff, explain, and apply" width="820">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://asciinema.org/a/XKhpmzM8ZWg56Wu2">Watch the full terminal session on asciinema</a>
+</p>
+
 ---
 
 ## 30-second mental model
@@ -39,31 +49,6 @@ Re-running against a converged host is a no-op.
 CoreOps is host-native: it runs on the target host (typically Fedora CoreOS),
 not in a container, and operates directly on systemd state. Workloads are
 container workloads (Podman/Quadlet), but the controller is not.
-
----
-
-## Architecture
-
-```mermaid
-%%{init: {'flowchart': {'nodeSpacing': 50, 'rankSpacing': 70, 'padding': 20}}}%%
-flowchart LR
-  GIT[Git repository<br/>services/ + hosts/]
-  CORE[core-ops<br/>plan / apply / explain]
-  STATE[systemd + Quadlet units<br/>generated state]
-  HOST[host<br/>systemd-managed services]
-  AUDIT[(audit + status<br/>JSON snapshot)]
-  GIT --> CORE
-  CORE --> STATE
-  STATE --> HOST
-  CORE -.-> AUDIT
-  HOST -.-> AUDIT
-```
-
-**Read left-to-right.** A Git repository (`services/` + `hosts/`)
-feeds `core-ops` (`plan` / `apply` / `explain`), which generates
-systemd + Quadlet units that the host runs under systemd. Audit and
-status are JSON side outputs of both `core-ops` and the host — the
-same architecture the diagram above shows when GitHub renders it.
 
 ---
 
@@ -112,15 +97,30 @@ Summary
 10 unchanged
 ```
 
-<p align="center">
-  <a href="https://asciinema.org/a/CAST_ID">
-    <img src="docs/assets/core-ops-demo.gif" alt="CoreOps terminal demo: plan, diff, explain, and apply" width="820">
-  </a>
-</p>
+---
 
-<p align="center">
-  <a href="https://asciinema.org/a/CAST_ID">Watch the full terminal session on asciinema</a>
-</p>
+## Architecture
+
+```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 50, 'rankSpacing': 70, 'padding': 20}}}%%
+flowchart LR
+  GIT[Git repository<br/>services/ + hosts/]
+  CORE[core-ops<br/>plan / apply / explain]
+  STATE[systemd + Quadlet units<br/>generated state]
+  HOST[host<br/>systemd-managed services]
+  AUDIT[(audit + status<br/>JSON snapshot)]
+  GIT --> CORE
+  CORE --> STATE
+  STATE --> HOST
+  CORE -.-> AUDIT
+  HOST -.-> AUDIT
+```
+
+**Read left-to-right.** A Git repository (`services/` + `hosts/`)
+feeds `core-ops` (`plan` / `apply` / `explain`), which generates
+systemd + Quadlet units that the host runs under systemd. Audit and
+status are JSON side outputs of both `core-ops` and the host — the
+same architecture the diagram above shows when GitHub renders it.
 
 ---
 
