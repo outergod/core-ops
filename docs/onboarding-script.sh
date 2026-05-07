@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # docs/onboarding-script.sh — regeneration entry point for docs/onboarding.cast
 #
-# Records an asciinema session exercising the spec/017 stateless
-# `--source-repo` CLI surface against `examples/03-immich` (Immich
-# photo server) per spec/018 FR-005 / FR-007 / FR-009. The output
-# `docs/onboarding.cast` is the cast linked from the README walkthrough
-# section.
+# Records an asciinema session of `core-ops apply --source-repo
+# examples/03-immich --host example` — the single beat where the
+# spec/006 streaming output is operationally interesting (the
+# line-by-line "creating... → created" progression as podman/systemd
+# processes each unit). Static plan and idempotent-re-run blocks
+# live in the README walkthrough section (FR-006); they do not
+# need motion. The cast and its rendered GIF sidecar at
+# `docs/assets/core-ops-demo.gif` (produced by `agg`) are linked
+# from the README walkthrough section per spec/018 FR-005 / FR-007 /
+# FR-009.
 #
 # ── Versions (asserted at re-record time) ────────────────────────────
 #   asciinema 2.4.0    (nix devshell pin; see flake.nix)
@@ -105,16 +110,14 @@ demo() {
   printf '\n'
 }
 
-# Beat 1 — initial plan: shows the diff against an empty host.
-demo 'core-ops plan --source-repo examples/03-immich --host example'
-
-# Beat 2 — apply: converges the host to the desired state.
-demo 'core-ops apply --source-repo examples/03-immich --host example'
-
-# Beat 3 — idempotent re-run: the second plan reports no actionable
-# diff, demonstrating that re-running against a converged host is a
-# no-op (FR-007).
-demo 'core-ops plan --source-repo examples/03-immich --host example'
+# Single beat — `apply` is the operationally interesting moment: it
+# streams the line-by-line "creating... → created" progression in
+# real time as podman/systemd processes each unit. The static
+# `plan` and idempotent re-run code blocks live in the README's
+# walkthrough section (per FR-006) and do not benefit from
+# motion; including them in the cast wastes the 90 s budget on
+# uneventful output.
+demo 'sudo core-ops apply --source-repo examples/03-immich --host example'
 BASH
 
 # `--idle-time-limit=2` compresses any pause ≥ 2s in playback so the
