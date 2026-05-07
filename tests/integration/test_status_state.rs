@@ -252,11 +252,13 @@ fn apply_creates_state_snapshot_on_first_run_from_implicit_path() {
 
     let implicit_state_path = resolve_state_file(None);
     let _output = apply_with_report(
-        repo.to_str().unwrap(),
-        &rev,
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().unwrap(),
+            &rev,
+            Some(implicit_state_path),
+        ),
         &host_quadlets,
         false,
-        Some(implicit_state_path),
     )
     .expect("apply");
 
@@ -323,7 +325,7 @@ fn apply_can_explicitly_opt_out_of_state_persistence() {
     let host_quadlets = temp.join("host_quadlets");
     fs::create_dir_all(&host_quadlets).expect("host quadlets");
 
-    let output = apply_with_report(repo.to_str().unwrap(), &rev, &host_quadlets, false, None)
+    let output = apply_with_report(&core_ops::cli::apply::ApplyTarget::initd(repo.to_str().unwrap(), &rev, None), &host_quadlets, false)
         .expect("apply");
 
     assert!(!state_path.exists());

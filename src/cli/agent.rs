@@ -68,11 +68,9 @@ pub fn run_agent(config: &AgentConfig) -> Result<AgentExitReason, CoreError> {
         .map_err(|err| CoreError::new(FailureClass::Apply, err.to_string()))?;
 
     let result = apply_cmd::apply_with_report(
-        &repo,
-        &rev,
+        &apply_cmd::ApplyTarget::initd(&repo, &rev, Some(state_path.clone())),
         &config.quadlet_dir,
         config.reload_systemd,
-        Some(state_path.clone()),
     );
 
     let release_result = lock

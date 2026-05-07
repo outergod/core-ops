@@ -137,11 +137,13 @@ fn failed_reconciliation_preserves_last_applied_revision_and_desired_state_field
     fs::create_dir_all(&host_quadlets).expect("host quadlets");
 
     let first = core_ops::cli::apply::apply_with_report(
-        repo.to_str().expect("repo path"),
-        "main",
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().expect("repo path"),
+            "main",
+            Some(state_file.clone()),
+        ),
         &host_quadlets,
         true,
-        Some(state_file.clone()),
     )
     .expect("first apply");
     assert_eq!(first.result.run.summary, "converged");
@@ -151,11 +153,13 @@ fn failed_reconciliation_preserves_last_applied_revision_and_desired_state_field
     fs::write(&fail_marker, "").expect("write fail marker");
 
     let second = core_ops::cli::apply::apply_with_report(
-        repo.to_str().expect("repo path"),
-        "main",
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().expect("repo path"),
+            "main",
+            Some(state_file.clone()),
+        ),
         &host_quadlets,
         true,
-        Some(state_file.clone()),
     )
     .expect("second apply");
     assert_eq!(
@@ -219,11 +223,13 @@ fn desired_state_provenance_remains_host_scoped() {
     fs::create_dir_all(&host_quadlets).expect("host quadlets");
 
     let result = core_ops::cli::apply::apply_with_report(
-        repo.to_str().expect("repo path"),
-        "main",
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().expect("repo path"),
+            "main",
+            Some(state_file.clone()),
+        ),
         &host_quadlets,
         true,
-        Some(state_file.clone()),
     )
     .expect("apply");
     assert_eq!(result.result.run.summary, "converged");
@@ -280,11 +286,13 @@ fn deterministic_apply_persists_convergence_state_next_to_status_snapshot() {
     fs::create_dir_all(&host_quadlets).expect("host quadlets");
 
     let output = core_ops::cli::apply::apply_with_report(
-        repo.to_str().expect("repo path"),
-        "main",
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().expect("repo path"),
+            "main",
+            Some(state_file.clone()),
+        ),
         &host_quadlets,
         true,
-        Some(state_file.clone()),
     )
     .expect("apply");
     assert_eq!(output.result.run.summary, "converged");
@@ -356,21 +364,25 @@ fn apply_report_uses_retained_baseline_for_unchanged_reruns() {
     fs::create_dir_all(&host_quadlets).expect("host quadlets");
 
     let first = core_ops::cli::apply::apply_with_report(
-        repo.to_str().expect("repo path"),
-        "main",
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().expect("repo path"),
+            "main",
+            Some(state_file.clone()),
+        ),
         &host_quadlets,
         true,
-        Some(state_file.clone()),
     )
     .expect("first apply");
     assert_eq!(first.result.run.summary, "converged");
 
     let second = core_ops::cli::apply::apply_with_report(
-        repo.to_str().expect("repo path"),
-        "main",
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().expect("repo path"),
+            "main",
+            Some(state_file),
+        ),
         &host_quadlets,
         true,
-        Some(state_file),
     )
     .expect("second apply");
 

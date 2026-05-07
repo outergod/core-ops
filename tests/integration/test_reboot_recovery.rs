@@ -117,11 +117,13 @@ fn apply_persists_status_snapshot_across_repeat_runs() {
     fs::create_dir_all(&host_quadlets).expect("host quadlets");
 
     let first = core_ops::cli::apply::apply_with_report(
-        repo.to_str().expect("repo path"),
-        &rev,
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().expect("repo path"),
+            &rev,
+            Some(state_file.clone()),
+        ),
         &host_quadlets,
         true,
-        Some(state_file.clone()),
     )
     .expect("first apply");
     assert_eq!(first.result.run.summary, "converged");
@@ -133,11 +135,13 @@ fn apply_persists_status_snapshot_across_repeat_runs() {
     assert!(first_contents.contains("\"generation\": 1"));
 
     let second = core_ops::cli::apply::apply_with_report(
-        repo.to_str().expect("repo path"),
-        &rev,
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().expect("repo path"),
+            &rev,
+            Some(state_file.clone()),
+        ),
         &host_quadlets,
         true,
-        Some(state_file.clone()),
     )
     .expect("second apply");
     assert_eq!(second.result.run.summary, "converged");

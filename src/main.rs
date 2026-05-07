@@ -140,73 +140,30 @@ fn run(cli: Cli) -> Result<(), CoreError> {
             // mutate /var/lib/core-ops/status.json (FR-013, SC-009).
             // Audit records are written; the persisted controller state
             // is left byte-identical pre/post.
-            if let Some(source_repo) = args.source_repo {
-                if rollback_to.is_some() {
-                    return Err(CoreError::new(
-                        FailureClass::Apply,
-                        "--rollback-to is incompatible with stateless --source-repo \
-                             (rollback requires the persisted retention chain set by 'core-ops init')"
-                            .to_string(),
-                    ));
-                }
-                let source = detect_provenance(&source_repo).map_err(map_source_ref_error)?;
-                let output = apply_cmd::apply_with_report_stateless(
-                    &source,
-                    &quadlet_dir,
-                    !no_reload,
-                )?;
-                let run = output.result.run.clone();
-                let synthetic = apply_cmd::synthetic_stateless_provenance(
-                    output
-                        .result
-                        .desired
-                        .requested_repository
-                        .as_deref()
-                        .unwrap_or(""),
-                    output
-                        .result
-                        .desired
-                        .requested_ref
-                        .as_deref()
-                        .unwrap_or(""),
-                    &output.result.desired.revision_id,
-                    run.status.clone(),
-                );
-                let event = core_ops::core::audit::build_audit_event(
-                    &run,
-                    Some(&output.plan),
-                    &output.result.verification_results,
-                    Some(&synthetic),
-                );
-                audit_io::emit_journal_event(&event).map_err(map_apply_error)?;
-                if let Some(dir) = audit_dir {
-                    let mut record = core_ops::core::audit::build_audit_record(
-                        &run.run_id,
-                        Vec::new(),
-                        &output.plan,
-                        output.result.verification_results.clone(),
-                    );
-                    record
-                        .operator_messages
-                        .push(core_ops::core::audit::summarize_evaluation(
-                            &output.result.desired,
-                        ));
-                    let _ = audit_io::write_audit_record(&dir, &record).map_err(map_apply_error)?;
-                }
-                if json {
-                    println!("{}", output.machine_report);
-                } else if verbose {
-                    println!("{}", output.verbose_report);
-                } else {
-                    println!("{}", output.human_report);
-                }
-                if run.status == RunStatus::Failure {
-                    std::process::exit(1);
-                }
-                return Ok(());
+            //
+            // Stateless and init'd share the apply dispatch ladder
+            // below: the same `ApplyTarget` abstraction feeds the same
+            // three streaming variants (`apply_with_report{,_streaming,_streaming_interactive}`).
+            // The single divergence is that rollback (`--rollback-to`)
+            // is init'd-only — it requires the persisted retention
+            // chain `core-ops init` sets up.
+            if args.source_repo.is_some() && rollback_to.is_some() {
+                return Err(CoreError::new(
+                    FailureClass::Apply,
+                    "--rollback-to is incompatible with stateless --source-repo \
+                         (rollback requires the persisted retention chain set by 'core-ops init')"
+                        .to_string(),
+                ));
             }
 
-            let state_file = if args.force_no_state {
+            let stateless_source = if let Some(source_repo) = args.source_repo.as_ref() {
+                Some(detect_provenance(source_repo).map_err(map_source_ref_error)?)
+            } else {
+                None
+            };
+
+            let state_file = if stateless_source.is_some() || args.force_no_state {
+                // Stateless mode: never read or write `/var/lib/core-ops/status.json`.
                 None
             } else {
                 Some(resolve_state_file(args.state_file))
@@ -224,66 +181,86 @@ fn run(cli: Cli) -> Result<(), CoreError> {
                     state_file.clone(),
                     rollback_plan_only,
                 )?
-            } else if json {
-                let (repo_source, rev) = resolve_from_state(state_file.clone())?;
-                apply_cmd::apply_with_report(
-                    &repo_source,
-                    &rev,
-                    &quadlet_dir,
-                    !no_reload,
-                    state_file.clone(),
-                )?
             } else {
-                let (repo_source, rev) = resolve_from_state(state_file.clone())?;
-                let stdout = io::stdout();
-                let interactive = stdout.is_terminal();
-                streamed_human_output = true;
-                let mode = if verbose {
-                    core_ops::cli::report::ApplyHumanMode::Verbose
+                let target = if let Some(source) = stateless_source.as_ref() {
+                    apply_cmd::ApplyTarget::stateless(source.clone())
                 } else {
-                    core_ops::cli::report::ApplyHumanMode::Default
+                    let (repo_source, rev) = resolve_from_state(state_file.clone())?;
+                    apply_cmd::ApplyTarget::initd(repo_source, rev, state_file.clone())
                 };
-                if interactive {
-                    let mut handle = io::stdout();
-                    let mut spinner = InteractiveApplyDisplay::new();
-                    let output = apply_cmd::apply_with_report_streaming_interactive(
-                        &repo_source,
-                        &rev,
-                        &quadlet_dir,
-                        !no_reload,
-                        state_file.clone(),
-                        mode,
-                        |event| {
-                            let _ = spinner.render(&mut handle, event);
-                        },
-                    )?;
-                    let _ = spinner.finish(&mut handle);
-                    output
+
+                if json {
+                    apply_cmd::apply_with_report(&target, &quadlet_dir, !no_reload)?
                 } else {
-                    let mut handle = stdout.lock();
-                    apply_cmd::apply_with_report_streaming(
-                        &repo_source,
-                        &rev,
-                        &quadlet_dir,
-                        !no_reload,
-                        state_file.clone(),
-                        mode,
-                        |chunk| {
-                            let _ = handle.write_all(chunk.as_bytes());
-                            let _ = handle.flush();
-                        },
-                    )?
+                    let stdout = io::stdout();
+                    let interactive = stdout.is_terminal();
+                    streamed_human_output = true;
+                    let mode = if verbose {
+                        core_ops::cli::report::ApplyHumanMode::Verbose
+                    } else {
+                        core_ops::cli::report::ApplyHumanMode::Default
+                    };
+                    if interactive {
+                        let mut handle = io::stdout();
+                        let mut spinner = InteractiveApplyDisplay::new();
+                        let output = apply_cmd::apply_with_report_streaming_interactive(
+                            &target,
+                            &quadlet_dir,
+                            !no_reload,
+                            mode,
+                            |event| {
+                                let _ = spinner.render(&mut handle, event);
+                            },
+                        )?;
+                        let _ = spinner.finish(&mut handle);
+                        output
+                    } else {
+                        let mut handle = stdout.lock();
+                        apply_cmd::apply_with_report_streaming(
+                            &target,
+                            &quadlet_dir,
+                            !no_reload,
+                            mode,
+                            |chunk| {
+                                let _ = handle.write_all(chunk.as_bytes());
+                                let _ = handle.flush();
+                            },
+                        )?
+                    }
                 }
             };
             let run = output.result.run.clone();
+            // Stateless mode (no state_file) builds a synthetic
+            // PersistedProvenanceState carrying path-based provenance +
+            // the actual run outcome so the audit event surfaces the
+            // same fields as init'd mode (vs. the old prevailing
+            // `reconciliation_status = "never_run"` bug).
+            let stateless_provenance = stateless_source.as_ref().map(|_| {
+                apply_cmd::synthetic_stateless_provenance(
+                    output
+                        .result
+                        .desired
+                        .requested_repository
+                        .as_deref()
+                        .unwrap_or(""),
+                    output
+                        .result
+                        .desired
+                        .requested_ref
+                        .as_deref()
+                        .unwrap_or(""),
+                    &output.result.desired.revision_id,
+                    run.status.clone(),
+                )
+            });
+            let initd_persisted = state_file
+                .as_ref()
+                .and_then(|path| read_persisted_state(path).ok().flatten());
             let event = core_ops::core::audit::build_audit_event(
                 &run,
                 Some(&output.plan),
                 &output.result.verification_results,
-                state_file
-                    .as_ref()
-                    .and_then(|path| read_persisted_state(path).ok().flatten())
-                    .as_ref(),
+                stateless_provenance.as_ref().or(initd_persisted.as_ref()),
             );
             audit_io::emit_journal_event(&event).map_err(map_apply_error)?;
             if let Some(dir) = audit_dir {

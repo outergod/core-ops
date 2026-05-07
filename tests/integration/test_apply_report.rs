@@ -101,7 +101,7 @@ fn apply_report_uses_phase_aware_human_and_machine_output() {
     let host_quadlets = temp_dir("core_ops_host_apply_report");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
 
-    let output = apply_with_report(repo.to_str().unwrap(), &rev, &host_quadlets, false, None)
+    let output = apply_with_report(&core_ops::cli::apply::ApplyTarget::initd(repo.to_str().unwrap(), &rev, None), &host_quadlets, false)
         .expect("apply report");
 
     assert!(output.human_report.contains("Apply for host"));
@@ -144,7 +144,7 @@ fn apply_report_only_narrates_phases_in_verbose_mode() {
     let host_quadlets = temp_dir("core_ops_host_apply_narration");
     fs::create_dir_all(&host_quadlets).expect("create host quadlets");
 
-    let output = apply_with_report(repo.to_str().unwrap(), &rev, &host_quadlets, false, None)
+    let output = apply_with_report(&core_ops::cli::apply::ApplyTarget::initd(repo.to_str().unwrap(), &rev, None), &host_quadlets, false)
         .expect("apply report");
 
     assert!(!output.human_report.contains("Phases"));
@@ -196,11 +196,9 @@ fn apply_report_distinguishes_first_run_and_recovery_headers() {
     let first_run_quadlets = temp_dir("core_ops_host_apply_first_run");
     fs::create_dir_all(&first_run_quadlets).expect("create host quadlets");
     let first_run_output = apply_with_report(
-        repo.to_str().unwrap(),
-        &rev,
+        &core_ops::cli::apply::ApplyTarget::initd(repo.to_str().unwrap(), &rev, None),
         &first_run_quadlets,
         false,
-        None,
     )
     .expect("first run apply report");
     assert!(first_run_output.human_report.contains("(first run)"));
@@ -213,11 +211,9 @@ fn apply_report_distinguishes_first_run_and_recovery_headers() {
     )
     .expect("write residual quadlet");
     let recovery_output = apply_with_report(
-        repo.to_str().unwrap(),
-        &rev,
+        &core_ops::cli::apply::ApplyTarget::initd(repo.to_str().unwrap(), &rev, None),
         &recovery_quadlets,
         false,
-        None,
     )
     .expect("recovery apply report");
     assert!(recovery_output
@@ -368,11 +364,9 @@ fn apply_streaming_report_emits_progress_then_terminal_lines() {
 
     let mut transcript = String::new();
     let output = apply_with_report_streaming(
-        repo.to_str().unwrap(),
-        &rev,
+        &core_ops::cli::apply::ApplyTarget::initd(repo.to_str().unwrap(), &rev, None),
         &host_quadlets,
         false,
-        None,
         ApplyHumanMode::Default,
         |chunk| transcript.push_str(chunk),
     )
@@ -414,11 +408,13 @@ fn apply_report_fails_when_persisted_state_path_is_unreadable() {
     fs::create_dir_all(&state_dir).expect("create state dir");
 
     let err = match apply_with_report(
-        repo.to_str().unwrap(),
-        &rev,
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().unwrap(),
+            &rev,
+            Some(state_dir.clone()),
+        ),
         &host_quadlets,
         false,
-        Some(state_dir.clone()),
     ) {
         Ok(_) => panic!("apply should fail on unreadable state path"),
         Err(err) => err,
