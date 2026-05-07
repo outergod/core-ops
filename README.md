@@ -69,11 +69,48 @@ same architecture the diagram above shows when GitHub renders it.
 
 ## What using CoreOps feels like
 
-> *[Populated by US2 implementation (tasks T011–T016).]* This section
-> will contain a verbatim plan-output block from `core-ops plan
-> --source-repo examples/03-immich --host immich`, an idempotent
-> re-run "no changes" snippet, and a link to a sanitized asciinema
-> recording at `docs/onboarding.cast`.
+You declare desired state in a Git repository and ask `core-ops` what
+it will do before doing anything. Plan output for the canonical Immich
+walkthrough on a clean host:
+
+```text
+Plan for host example @ (stateless) (first run)
+───────────────────────────────────────────────
+[+] Create • 10
+
+[+] container/immich-database.container			missing
+    requires
+      ├─ [+] network/immich-internal.network		missing
+      └─ [+] volume/immich-db-data.volume		missing
+    Δ content (21 additions)
+      + [Unit]
+      + Description=Immich Postgres + pgvecto.rs database
+      ...
+...
+
+Summary
+───────
+10 creates
+```
+
+After `core-ops apply` converges the host, re-running the same
+invocation produces no changes — the host is already where the
+declaration says it should be:
+
+```text
+Plan for host example @ (stateless) (recovery from failed initial apply)
+────────────────────────────────────────────────────────────────────────
+[·] Unchanged • 10
+
+[·] container/immich-database.container			unchanged
+[·] container/immich-server.container			unchanged
+[·] container/traefik-edge.container			unchanged
+...
+
+Summary
+───────
+10 unchanged
+```
 
 ---
 
