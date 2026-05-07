@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use core_ops::cli::apply::{apply_with_report_stateless, synthetic_stateless_provenance};
+use core_ops::cli::apply::{apply_with_report, synthetic_stateless_provenance, ApplyTarget};
 use core_ops::core::types::{ReconciliationStatus, RunStatus};
 use core_ops::io::repo::HOST_OVERRIDE_ENV;
 use core_ops::io::source_ref::detect_provenance;
@@ -105,7 +105,7 @@ fn stateless_apply_records_path_based_provenance_in_audit_event() {
     let stateless = detect_provenance(&source).expect("detect provenance");
     assert_eq!(stateless.requested_ref, "(stateless+dirty)");
 
-    let bundle = apply_with_report_stateless(&stateless, &host_quadlets, false)
+    let bundle = apply_with_report(&ApplyTarget::stateless(stateless.clone()), &host_quadlets, false)
         .expect("stateless apply");
 
     // (a)+(b): apply produced a populated bundle.
@@ -169,7 +169,7 @@ fn stateless_apply_preserves_initd_persisted_state() {
     let host_quadlets = temp_dir("core_ops_stateless_apply_other_qdir");
     fs::create_dir_all(&host_quadlets).expect("quadlet dir");
     let stateless = detect_provenance(&source).expect("detect provenance");
-    let _bundle = apply_with_report_stateless(&stateless, &host_quadlets, false)
+    let _bundle = apply_with_report(&ApplyTarget::stateless(stateless.clone()), &host_quadlets, false)
         .expect("stateless apply");
 
     // (3) Re-read the init'd state file and assert byte-identical
@@ -206,7 +206,7 @@ fn stateless_apply_provenance_shapes_match_working_tree_state() {
         fs::create_dir_all(&qdir).expect("qdir");
         let stateless = detect_provenance(&source).expect("detect provenance");
         assert_eq!(stateless.requested_ref, "(stateless)");
-        let bundle = apply_with_report_stateless(&stateless, &qdir, false)
+        let bundle = apply_with_report(&ApplyTarget::stateless(stateless.clone()), &qdir, false)
             .expect("apply non-git");
         assert_eq!(
             bundle.result.desired.requested_ref.as_deref(),
@@ -225,7 +225,7 @@ fn stateless_apply_provenance_shapes_match_working_tree_state() {
         fs::create_dir_all(&qdir).expect("qdir");
         let stateless = detect_provenance(&source).expect("detect provenance");
         assert_eq!(stateless.requested_ref, sha);
-        let bundle = apply_with_report_stateless(&stateless, &qdir, false)
+        let bundle = apply_with_report(&ApplyTarget::stateless(stateless.clone()), &qdir, false)
             .expect("apply clean");
         assert_eq!(bundle.result.desired.requested_ref.as_deref(), Some(sha.as_str()));
     }
@@ -242,7 +242,7 @@ fn stateless_apply_provenance_shapes_match_working_tree_state() {
         fs::create_dir_all(&qdir).expect("qdir");
         let stateless = detect_provenance(&source).expect("detect provenance");
         assert_eq!(stateless.requested_ref, "(stateless+dirty)");
-        let bundle = apply_with_report_stateless(&stateless, &qdir, false)
+        let bundle = apply_with_report(&ApplyTarget::stateless(stateless.clone()), &qdir, false)
             .expect("apply dirty");
         assert_eq!(
             bundle.result.desired.requested_ref.as_deref(),
@@ -323,7 +323,7 @@ fn stateless_apply_then_initd_plan_against_same_tree_does_not_surface_detached_s
 
     // Stateless apply phase.
     let stateless = detect_provenance(&source).expect("detect provenance");
-    apply_with_report_stateless(&stateless, &qdir, false).expect("stateless apply");
+    apply_with_report(&ApplyTarget::stateless(stateless.clone()), &qdir, false).expect("stateless apply");
 
     // Sanity check: after stateless apply, no canonical state file at
     // `state_file` was created (we explicitly never wrote one).

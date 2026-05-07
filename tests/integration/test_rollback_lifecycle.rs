@@ -162,11 +162,13 @@ fn rollback_from_converged_sets_detached_flag() {
 
     // Apply at rev2 to create a converged + retained snapshot state
     let bundle = apply_with_report(
-        repo.to_str().unwrap(),
-        &rev2,
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().unwrap(),
+            &rev2,
+            Some(state_path.clone()),
+        ),
         &quadlet_dir,
         false,
-        Some(state_path.clone()),
     )
     .expect("initial apply");
 
@@ -255,11 +257,13 @@ fn rollback_sets_detached_flag_even_when_already_detached() {
 
     // Apply at rev2 to build retained snapshots
     let bundle = apply_with_report(
-        repo.to_str().unwrap(),
-        &rev2,
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().unwrap(),
+            &rev2,
+            Some(state_path.clone()),
+        ),
         &quadlet_dir,
         false,
-        Some(state_path.clone()),
     )
     .expect("initial apply");
 
@@ -269,11 +273,13 @@ fn rollback_sets_detached_flag_even_when_already_detached() {
 
     // Also apply at rev1 to build retained snapshot for rev1
     let bundle2 = apply_with_report(
-        repo.to_str().unwrap(),
-        &rev1,
+        &core_ops::cli::apply::ApplyTarget::initd(
+            repo.to_str().unwrap(),
+            &rev1,
+            Some(state_path.clone()),
+        ),
         &quadlet_dir,
         false,
-        Some(state_path.clone()),
     )
     .expect("apply rev1");
 

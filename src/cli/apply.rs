@@ -70,16 +70,129 @@ pub struct ApplyReportBundle {
     pub plan: crate::core::types::ReconciliationPlan,
 }
 
+/// Source of the desired state plus state-backend behaviour for an
+/// `apply` invocation. Init'd mode (`core-ops apply` after
+/// `core-ops init`) reads + writes the persisted controller state
+/// at `state_path`; stateless mode (`--source-repo PATH`) keeps no
+/// persistent state by design (FR-013 / SC-009 of spec/017).
+///
+/// All three streaming variants
+/// (`apply_with_report`, `apply_with_report_streaming`,
+/// `apply_with_report_streaming_interactive`) accept `&ApplyTarget`
+/// so the same TTY-detection ladder in `src/main.rs` can drive both
+/// modes without duplicate dispatch logic.
+#[derive(Clone, Debug)]
+pub enum ApplyTarget {
+    Initd {
+        repo_source: String,
+        revision: String,
+        state_path: Option<std::path::PathBuf>,
+    },
+    Stateless {
+        source: crate::io::source_ref::StatelessSource,
+    },
+}
+
+impl ApplyTarget {
+    pub fn initd(
+        repo_source: impl Into<String>,
+        revision: impl Into<String>,
+        state_path: Option<std::path::PathBuf>,
+    ) -> Self {
+        Self::Initd {
+            repo_source: repo_source.into(),
+            revision: revision.into(),
+            state_path,
+        }
+    }
+
+    pub fn stateless(source: crate::io::source_ref::StatelessSource) -> Self {
+        Self::Stateless { source }
+    }
+
+    pub fn state_path(&self) -> Option<&Path> {
+        match self {
+            Self::Initd { state_path, .. } => state_path.as_deref(),
+            Self::Stateless { .. } => None,
+        }
+    }
+
+    pub fn is_stateless(&self) -> bool {
+        matches!(self, Self::Stateless { .. })
+    }
+
+    /// String to record as the apply event's `repo_source` (audit /
+    /// persisted state). For init'd mode, the operator's repo URL or
+    /// path; for stateless mode, the canonical source-repo path.
+    pub fn repo_source_for_record(&self) -> &str {
+        match self {
+            Self::Initd { repo_source, .. } => repo_source,
+            Self::Stateless { source } => &source.requested_repository,
+        }
+    }
+
+    /// Revision string to record. For init'd mode, the operator's
+    /// requested ref. For stateless mode, the path-based provenance
+    /// sentinel (`<sha>` / `(stateless)` / `(stateless+dirty)`).
+    pub fn revision_for_record(&self) -> &str {
+        match self {
+            Self::Initd { revision, .. } => revision,
+            Self::Stateless { source } => &source.requested_ref,
+        }
+    }
+
+    fn load_desired(
+        &self,
+    ) -> Result<crate::core::types::DesiredState, crate::core::errors::CoreError> {
+        match self {
+            Self::Initd {
+                repo_source,
+                revision,
+                ..
+            } => load_desired_state(repo_source, revision).map_err(map_plan_error),
+            Self::Stateless { source } => crate::io::repo::load_desired_state_from_path(
+                &source.repo_path,
+                &source.requested_repository,
+                &source.requested_ref,
+            )
+            // Per `contracts/cli-flag.md` Error semantics: a path that
+            // exists as a directory but is not a spec/016-conformant
+            // source-repo (missing services/, legacy artifacts, etc.)
+            // exits 65 (`EX_DATAERR`).
+            .map_err(|err| CoreError::with_exit_code(FailureClass::Plan, err.to_string(), 65)),
+        }
+    }
+
+    /// Pick the run-display state for header rendering. Init'd mode
+    /// uses the three-way `last_applied + observed` heuristic; stateless
+    /// mode uses the dedicated `Stateless` variant when the host has
+    /// observed objects (the controller cannot distinguish a successful
+    /// prior apply from a failed one without `/var/lib/core-ops/`),
+    /// falling back to `FirstRun` for an empty host.
+    fn classify_run_display(
+        &self,
+        last_applied: Option<&str>,
+        observed: &crate::core::types::NormalizedSnapshot,
+    ) -> ApplyRunDisplayState {
+        if self.is_stateless() {
+            if observed.objects.is_empty() {
+                ApplyRunDisplayState::FirstRun
+            } else {
+                ApplyRunDisplayState::Stateless
+            }
+        } else {
+            classify_apply_run_display_state(last_applied, observed)
+        }
+    }
+}
+
 pub fn apply_with_report(
-    repo_source: &str,
-    revision: &str,
+    target: &ApplyTarget,
     quadlet_dir: &Path,
     reload_systemd: bool,
-    state_path: Option<std::path::PathBuf>,
 ) -> Result<ApplyReportBundle, CoreError> {
-    let repo_source = repo_source.to_string();
     let deps = ReconcileDependencies {
-        load_desired: &|| load_desired_state(&repo_source, revision).map_err(map_plan_error),
+        load_desired: &|| target.load_desired(),
         read_observed: &|desired| {
             read_observed_state(quadlet_dir, Some(desired), None).map_err(map_plan_error)
         },
@@ -96,10 +209,11 @@ pub fn apply_with_report(
     let desired_snapshot = build_desired_snapshot_from_state(&plan_result.desired, &scope_id);
     let observed_snapshot =
         build_observed_snapshot(&observed_before, Some(&plan_result.desired), &scope_id);
-    let last_applied_revision = last_applied_revision_from_state(state_path.as_deref())?;
-    let last_applied_snapshot = last_applied_snapshot_for_scope(state_path.as_deref(), &scope_id)?;
+    let state_path = target.state_path();
+    let last_applied_revision = last_applied_revision_from_state(state_path)?;
+    let last_applied_snapshot = last_applied_snapshot_for_scope(state_path, &scope_id)?;
     let run_display_state =
-        classify_apply_run_display_state(last_applied_revision.as_deref(), &observed_snapshot);
+        target.classify_run_display(last_applied_revision.as_deref(), &observed_snapshot);
     let verification_results_before = normalize_verification_results_for_desired(
         &plan_result.desired,
         verify_state(&plan_result.desired, &observed_before),
@@ -125,12 +239,12 @@ pub fn apply_with_report(
     deterministic.last_applied_requested_ref = last_applied_snapshot
         .as_ref()
         .and_then(|snapshot| snapshot.requested_ref.clone());
-    let attempt = match state_path.as_ref() {
+    let attempt = match state_path {
         Some(path) => Some(
             persist_in_progress_state(
                 path,
-                &repo_source,
-                revision,
+                target.repo_source_for_record(),
+                target.revision_for_record(),
                 &plan_result.desired.revision_id,
                 None,
             )
@@ -174,7 +288,7 @@ pub fn apply_with_report(
     let result_report = format_result_output_report(&result_view);
     let result_machine_report = format_result_output_json(&result_view);
 
-    if let Some(status_path) = state_path.as_ref() {
+    if let Some(status_path) = state_path {
         let deterministic_state_path = deterministic_state_path(status_path);
         let mut deterministic_state =
             load_or_init_deterministic_state(&deterministic_state_path).map_err(map_apply_error)?;
@@ -200,15 +314,15 @@ pub fn apply_with_report(
                 .map_err(map_apply_error)?;
         }
     }
-    if let (Some(path), Some(attempt)) = (state_path.as_ref(), attempt.as_ref()) {
+    if let (Some(path), Some(attempt)) = (state_path, attempt.as_ref()) {
         let status = match result.run.status {
             RunStatus::Success => ReconciliationStatus::Success,
             RunStatus::Failure => ReconciliationStatus::Failed,
         };
         persist_finished_state(
             path,
-            &repo_source,
-            revision,
+            target.repo_source_for_record(),
+            target.revision_for_record(),
             &result.desired.revision_id,
             None,
             attempt,
@@ -228,21 +342,17 @@ pub fn apply_with_report(
 }
 
 pub fn apply_with_report_streaming<F>(
-    repo_source: &str,
-    revision: &str,
+    target: &ApplyTarget,
     quadlet_dir: &Path,
     reload_systemd: bool,
-    state_path: Option<std::path::PathBuf>,
     mode: ApplyHumanMode,
     emit: F,
 ) -> Result<ApplyReportBundle, CoreError>
 where
     F: FnMut(&str),
 {
-    let repo_source = repo_source.to_string();
-
     let plan_deps = ReconcileDependencies {
-        load_desired: &|| load_desired_state(&repo_source, revision).map_err(map_plan_error),
+        load_desired: &|| target.load_desired(),
         read_observed: &|desired| {
             read_observed_state(quadlet_dir, Some(desired), None).map_err(map_plan_error)
         },
@@ -254,10 +364,11 @@ where
     let desired_snapshot = build_desired_snapshot_from_state(&plan_result.desired, &scope_id);
     let observed_snapshot =
         build_observed_snapshot(&observed_before, Some(&plan_result.desired), &scope_id);
-    let last_applied_revision = last_applied_revision_from_state(state_path.as_deref())?;
-    let last_applied_snapshot = last_applied_snapshot_for_scope(state_path.as_deref(), &scope_id)?;
+    let state_path = target.state_path();
+    let last_applied_revision = last_applied_revision_from_state(state_path)?;
+    let last_applied_snapshot = last_applied_snapshot_for_scope(state_path, &scope_id)?;
     let run_display_state =
-        classify_apply_run_display_state(last_applied_revision.as_deref(), &observed_snapshot);
+        target.classify_run_display(last_applied_revision.as_deref(), &observed_snapshot);
     let verification_results_before = normalize_verification_results_for_desired(
         &plan_result.desired,
         verify_state(&plan_result.desired, &observed_before),
@@ -291,11 +402,9 @@ where
     let emit = RefCell::new(emit);
     emit.borrow_mut()(&renderer.borrow().begin());
 
-    let stream_state_path = state_path.clone();
     let stream_quadlet_dir = quadlet_dir.to_path_buf();
-    let stream_repo_source = repo_source.clone();
     let deps = ReconcileDependencies {
-        load_desired: &|| load_desired_state(&stream_repo_source, revision).map_err(map_plan_error),
+        load_desired: &|| target.load_desired(),
         read_observed: &|desired| {
             read_observed_state(&stream_quadlet_dir, Some(desired), None).map_err(map_plan_error)
         },
@@ -328,12 +437,12 @@ where
         },
     };
 
-    let attempt = match stream_state_path.as_ref() {
+    let attempt = match state_path {
         Some(path) => Some(
             persist_in_progress_state(
                 path,
-                &repo_source,
-                revision,
+                target.repo_source_for_record(),
+                target.revision_for_record(),
                 &plan_result.desired.revision_id,
                 None,
             )
@@ -383,7 +492,7 @@ where
     let result_report = format_result_output_report(&result_view);
     let result_machine_report = format_result_output_json(&result_view);
 
-    if let Some(status_path) = stream_state_path.as_ref() {
+    if let Some(status_path) = state_path {
         let deterministic_state_path = deterministic_state_path(status_path);
         let mut deterministic_state =
             load_or_init_deterministic_state(&deterministic_state_path).map_err(map_apply_error)?;
@@ -409,15 +518,15 @@ where
                 .map_err(map_apply_error)?;
         }
     }
-    if let (Some(path), Some(attempt)) = (stream_state_path.as_ref(), attempt.as_ref()) {
+    if let (Some(path), Some(attempt)) = (state_path, attempt.as_ref()) {
         let status = match result.run.status {
             RunStatus::Success => ReconciliationStatus::Success,
             RunStatus::Failure => ReconciliationStatus::Failed,
         };
         persist_finished_state(
             path,
-            &repo_source,
-            revision,
+            target.repo_source_for_record(),
+            target.revision_for_record(),
             &result.desired.revision_id,
             None,
             attempt,
@@ -438,21 +547,17 @@ where
 }
 
 pub fn apply_with_report_streaming_interactive<F>(
-    repo_source: &str,
-    revision: &str,
+    target: &ApplyTarget,
     quadlet_dir: &Path,
     reload_systemd: bool,
-    state_path: Option<std::path::PathBuf>,
     mode: ApplyHumanMode,
     emit: F,
 ) -> Result<ApplyReportBundle, CoreError>
 where
     F: FnMut(ApplyInteractiveEvent),
 {
-    let repo_source = repo_source.to_string();
-
     let plan_deps = ReconcileDependencies {
-        load_desired: &|| load_desired_state(&repo_source, revision).map_err(map_plan_error),
+        load_desired: &|| target.load_desired(),
         read_observed: &|desired| {
             read_observed_state(quadlet_dir, Some(desired), None).map_err(map_plan_error)
         },
@@ -464,10 +569,11 @@ where
     let desired_snapshot = build_desired_snapshot_from_state(&plan_result.desired, &scope_id);
     let observed_snapshot =
         build_observed_snapshot(&observed_before, Some(&plan_result.desired), &scope_id);
-    let last_applied_revision = last_applied_revision_from_state(state_path.as_deref())?;
-    let last_applied_snapshot = last_applied_snapshot_for_scope(state_path.as_deref(), &scope_id)?;
+    let state_path = target.state_path();
+    let last_applied_revision = last_applied_revision_from_state(state_path)?;
+    let last_applied_snapshot = last_applied_snapshot_for_scope(state_path, &scope_id)?;
     let run_display_state =
-        classify_apply_run_display_state(last_applied_revision.as_deref(), &observed_snapshot);
+        target.classify_run_display(last_applied_revision.as_deref(), &observed_snapshot);
     let verification_results_before = normalize_verification_results_for_desired(
         &plan_result.desired,
         verify_state(&plan_result.desired, &observed_before),
@@ -501,11 +607,9 @@ where
     let emit = RefCell::new(emit);
     emit.borrow_mut()(renderer.borrow().begin_interactive());
 
-    let stream_state_path = state_path.clone();
     let stream_quadlet_dir = quadlet_dir.to_path_buf();
-    let stream_repo_source = repo_source.clone();
     let deps = ReconcileDependencies {
-        load_desired: &|| load_desired_state(&stream_repo_source, revision).map_err(map_plan_error),
+        load_desired: &|| target.load_desired(),
         read_observed: &|desired| {
             read_observed_state(&stream_quadlet_dir, Some(desired), None).map_err(map_plan_error)
         },
@@ -545,12 +649,12 @@ where
         },
     };
 
-    let attempt = match stream_state_path.as_ref() {
+    let attempt = match state_path {
         Some(path) => Some(
             persist_in_progress_state(
                 path,
-                &repo_source,
-                revision,
+                target.repo_source_for_record(),
+                target.revision_for_record(),
                 &plan_result.desired.revision_id,
                 None,
             )
@@ -600,7 +704,7 @@ where
     let result_report = format_result_output_report(&result_view);
     let result_machine_report = format_result_output_json(&result_view);
 
-    if let Some(status_path) = stream_state_path.as_ref() {
+    if let Some(status_path) = state_path {
         let deterministic_state_path = deterministic_state_path(status_path);
         let mut deterministic_state =
             load_or_init_deterministic_state(&deterministic_state_path).map_err(map_apply_error)?;
@@ -626,15 +730,15 @@ where
                 .map_err(map_apply_error)?;
         }
     }
-    if let (Some(path), Some(attempt)) = (stream_state_path.as_ref(), attempt.as_ref()) {
+    if let (Some(path), Some(attempt)) = (state_path, attempt.as_ref()) {
         let status = match result.run.status {
             RunStatus::Success => ReconciliationStatus::Success,
             RunStatus::Failure => ReconciliationStatus::Failed,
         };
         persist_finished_state(
             path,
-            &repo_source,
-            revision,
+            target.repo_source_for_record(),
+            target.revision_for_record(),
             &result.desired.revision_id,
             None,
             attempt,
@@ -762,11 +866,9 @@ pub fn execute_rollback_with_report(
     }
 
     let output = apply_with_report(
-        repo_source,
-        target_revision_id,
+        &ApplyTarget::initd(repo_source, target_revision_id, Some(state_path.clone())),
         quadlet_dir,
         reload_systemd,
-        Some(state_path.clone()),
     )?;
 
     // After a successful rollback, mark controller as Detached.
@@ -824,134 +926,6 @@ pub fn execute_rollback_with_report(
         human_report: format!("{preview}\n{}", output.human_report),
         verbose_report: format!("{preview}\n{}", output.verbose_report),
         ..output
-    })
-}
-
-/// Stateless apply entry point (spec/017): converges host state from a
-/// filesystem-resident source-repo without consulting or mutating the
-/// persisted controller state at `/var/lib/core-ops/status.json`.
-///
-/// Per FR-013 and SC-009, stateless apply MUST NOT mutate the
-/// init'd-mode persisted `desired_state.repository` /
-/// `desired_state.requested_ref`. This function achieves that by
-/// performing zero state-file I/O — no `persist_in_progress_state`,
-/// no `persist_finished_state`, no deterministic-state writes. The
-/// audit chain (emitted by the caller) is the persisted record.
-///
-/// `source` carries the canonical path plus path-based provenance
-/// strings produced by [`crate::io::source_ref::detect_provenance`].
-pub fn apply_with_report_stateless(
-    source: &crate::io::source_ref::StatelessSource,
-    quadlet_dir: &Path,
-    reload_systemd: bool,
-) -> Result<ApplyReportBundle, CoreError> {
-    let repo_path = source.repo_path.clone();
-    let requested_repository = source.requested_repository.clone();
-    let requested_ref = source.requested_ref.clone();
-    let deps = ReconcileDependencies {
-        load_desired: &|| {
-            crate::io::repo::load_desired_state_from_path(
-                &repo_path,
-                &requested_repository,
-                &requested_ref,
-            )
-            // Per `contracts/cli-flag.md` Error semantics: a path that
-            // exists as a directory but is not a spec/016-conformant
-            // source-repo (missing services/, legacy artifacts, etc.)
-            // exits 65 (`EX_DATAERR`). Thread the documented exit code
-            // through `CoreError.exit_code` so automation can classify
-            // by status alone.
-            .map_err(|err| {
-                CoreError::with_exit_code(FailureClass::Plan, err.to_string(), 65)
-            })
-        },
-        read_observed: &|desired| {
-            read_observed_state(quadlet_dir, Some(desired), None).map_err(map_plan_error)
-        },
-        apply_plan: &|plan, desired| {
-            apply_plan_with_desired(plan, desired, quadlet_dir, reload_systemd)
-                .map(|_| ())
-                .map_err(map_apply_error)
-        },
-    };
-
-    let plan_result = reconcile_plan(&deps)?;
-    let observed_before = (deps.read_observed)(&plan_result.desired)?;
-    let scope_id = scope_id_for_observed(&observed_before);
-    let desired_snapshot = build_desired_snapshot_from_state(&plan_result.desired, &scope_id);
-    let observed_snapshot =
-        build_observed_snapshot(&observed_before, Some(&plan_result.desired), &scope_id);
-    let verification_results_before = normalize_verification_results_for_desired(
-        &plan_result.desired,
-        verify_state(&plan_result.desired, &observed_before),
-    );
-    // Stateless mode has no last_applied baseline (init'd state is
-    // intentionally not consulted). Treat as FirstRun semantically.
-    let mut deterministic = reconcile_deterministic_plan_with_runtime(
-        &desired_snapshot,
-        None,
-        &observed_snapshot,
-        &verification_results_before,
-    )?
-    .plan;
-    deterministic.requested_repository = plan_result.desired.requested_repository.clone();
-    deterministic.requested_ref = plan_result.desired.requested_ref.clone();
-
-    let result = reconcile_apply_with_retry(&deps, DEFAULT_RETRY_BUDGET)?;
-    if result
-        .desired
-        .mount_declarations
-        .iter()
-        .any(|mount| mount.automount)
-    {
-        deterministic.scope_id = scope_id.clone();
-    }
-    // Stateless mode: empty host → FirstRun (informative for an actual
-    // initial apply); non-empty host → Stateless (suppress the
-    // misleading "recovery from failed initial apply" suffix — the
-    // controller cannot distinguish a successful prior apply from a
-    // failed one in stateless mode). The `(stateless)` path-based
-    // provenance prefix carries the operationally relevant signal.
-    let run_display_state = if observed_snapshot.objects.is_empty() {
-        ApplyRunDisplayState::FirstRun
-    } else {
-        ApplyRunDisplayState::Stateless
-    };
-    let human_report = format_apply_output_report(
-        &deterministic,
-        &result.verification_results,
-        result.convergence.as_ref(),
-        ApplyHumanMode::Default,
-        run_display_state,
-    );
-    let verbose_report = format_apply_output_report(
-        &deterministic,
-        &result.verification_results,
-        result.convergence.as_ref(),
-        ApplyHumanMode::Verbose,
-        run_display_state,
-    );
-    let machine_report = format_apply_output_json(
-        &deterministic,
-        &result.verification_results,
-        result.convergence.as_ref(),
-    );
-    let result_view = build_result_output(
-        &deterministic,
-        &result.verification_results,
-        result.convergence.as_ref(),
-    );
-    let result_report = format_result_output_report(&result_view);
-    let result_machine_report = format_result_output_json(&result_view);
-
-    Ok(ApplyReportBundle {
-        result,
-        human_report,
-        verbose_report,
-        machine_report,
-        result_report,
-        result_machine_report,
-        plan: plan_result.plan,
     })
 }
 
