@@ -906,10 +906,16 @@ pub fn apply_with_report_stateless(
     {
         deterministic.scope_id = scope_id.clone();
     }
+    // Stateless mode: empty host → FirstRun (informative for an actual
+    // initial apply); non-empty host → Stateless (suppress the
+    // misleading "recovery from failed initial apply" suffix — the
+    // controller cannot distinguish a successful prior apply from a
+    // failed one in stateless mode). The `(stateless)` path-based
+    // provenance prefix carries the operationally relevant signal.
     let run_display_state = if observed_snapshot.objects.is_empty() {
         ApplyRunDisplayState::FirstRun
     } else {
-        ApplyRunDisplayState::Recovery
+        ApplyRunDisplayState::Stateless
     };
     let human_report = format_apply_output_report(
         &deterministic,

@@ -295,6 +295,58 @@ fn apply_report_surfaces_verification_failures_for_unchanged_objects() {
 }
 
 #[test]
+fn stateless_run_display_state_omits_first_run_and_recovery_suffixes() {
+    // Stateless mode: regardless of whether the host has observed
+    // objects, the rendered header MUST NOT carry "(first run)" or
+    // "(recovery from failed initial apply)" suffixes — neither is
+    // distinguishable in stateless mode (no /var/lib/core-ops/
+    // baseline is read or written). The path-based provenance prefix
+    // (e.g. `(stateless)` in the source-path identifier rendered by
+    // the caller) is the operationally relevant signal.
+    let plan_first = DeterministicReconciliationPlan {
+        desired_revision_id: Some("rev-2".to_string()),
+        baseline_revision_id: None,
+        requested_repository: None,
+        requested_ref: None,
+        last_applied_requested_repository: None,
+        last_applied_requested_ref: None,
+        scope_id: "host:alpha".to_string(),
+        actions: vec![DeterministicPlannedAction {
+            object_id: "frontend.container".to_string(),
+            classification: DeterministicActionClass::Update,
+            reason: "actual state diverged from desired snapshot".to_string(),
+            dependency_context: Vec::new(),
+            semantic_diff: Default::default(),
+        }],
+        drift_records: Vec::new(),
+        graph: SemanticDependencyGraph {
+            nodes: vec![SemanticDependencyNode {
+                object_id: "frontend.container".to_string(),
+                object_kind: ManagedObjectKind::QuadletResource,
+                ordering_key: "frontend.container".to_string(),
+            }],
+            edges: Vec::new(),
+        },
+    };
+
+    let stateless_apply = format_apply_output_report(
+        &plan_first,
+        &[],
+        None,
+        ApplyHumanMode::Default,
+        ApplyRunDisplayState::Stateless,
+    );
+    assert!(
+        !stateless_apply.contains("(first run)"),
+        "stateless apply header must not carry (first run): {stateless_apply}"
+    );
+    assert!(
+        !stateless_apply.contains("(recovery from failed initial apply)"),
+        "stateless apply header must not carry (recovery from failed initial apply): {stateless_apply}"
+    );
+}
+
+#[test]
 fn apply_streaming_report_emits_progress_then_terminal_lines() {
     let _lock = path_lock().lock().unwrap_or_else(|err| err.into_inner());
     let _host_guard = HostGuard::capture();
