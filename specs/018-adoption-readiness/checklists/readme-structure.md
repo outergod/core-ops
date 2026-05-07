@@ -156,6 +156,17 @@ head -n 1 docs/onboarding.cast | jq '.duration'
 
 Expected: file exists; `.version` is `2`; `.duration` is a number ≤ `90`. If `.duration` is `null`, asciinema 2.4.0 omitted it on completion — re-run the post-processing block from C-006 above (it computes duration from the last event timestamp).
 
+### C-011a — GIF sidecar exists and is embedded inline (FR-007 / FR-013 / SC-005b)
+
+```sh
+test -f docs/assets/core-ops-demo.gif
+head -c 6 docs/assets/core-ops-demo.gif | grep -E '^GIF8[79]a'
+wc -c < docs/assets/core-ops-demo.gif
+grep -E 'docs/assets/core-ops-demo\.gif' README.md
+```
+
+Expected: file exists; first 6 bytes are `GIF87a` or `GIF89a`; size ≤ 1 048 576 bytes (≤ 1 MB soft cap); the README references the file via image syntax inside the `## What using CoreOps feels like` section.
+
 ### C-011 — Onboarding regeneration script invariants (FR-009 / SC-006)
 
 ```sh

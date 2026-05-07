@@ -62,6 +62,13 @@
           # `docs/onboarding-script.sh`. Version is pinned by nixpkgs
           # and asserted in the script header per spec/018 R1+FR-009.
           asciinema
+          # `asciinema-agg` (binary `agg`) renders `docs/onboarding.cast`
+          # to the inline-embeddable GIF sidecar at
+          # `docs/assets/core-ops-demo.gif` that the README links from
+          # the walkthrough section. Same regeneration entry point
+          # (`docs/onboarding-script.sh`) drives both. Note: `pkgs.agg`
+          # is the unrelated Anti-Grain Geometry C++ library.
+          asciinema-agg
         ] ++ [
           rustToolchain
           rustAnalyzer

@@ -24,6 +24,8 @@ Single Rust crate at repository root. This iteration touches:
 - `README.md` (modified)
 - `Cargo.toml`, `Cargo.lock` (patch bump 2.2.0 → 2.2.1, governance-driven; per FR-017 carve-out)
 - `docs/onboarding.cast`, `docs/onboarding-script.sh` (new)
+- `docs/assets/core-ops-demo.gif` — GIF sidecar rendered from the cast by `agg`; embedded inline in the README walkthrough (FR-007 / SC-005b / FR-013).
+- `flake.nix` — adds `asciinema-agg` (binary `agg`) to the dev shell alongside the existing `asciinema` pin.
 - `specs/018-adoption-readiness/checklists/readme-structure.md`, `specs/018-adoption-readiness/synthesis.md` (new)
 - `tests/integration/test_distribution_*.rs`, `tests/fixtures/distribution/entrypoint-snapshot.md`, `tests/fixtures/provenance_state/valid-success.json` — mechanical maintenance updates only (FR-001 section renames + Cargo.toml version bump; per FR-017 carve-out)
 - `CHANGELOG.md` (auto-rendered by `core-ops-release changelog --write`)

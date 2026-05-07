@@ -10,6 +10,10 @@
 # ── Versions (asserted at re-record time) ────────────────────────────
 #   asciinema 2.4.0    (nix devshell pin; see flake.nix)
 #   asciicast format   v2 (FR-008 / SC-005)
+#   agg 1.7.0          (asciinema-agg; nix devshell pin) — renders the
+#                      cast to docs/assets/core-ops-demo.gif (FR-007 /
+#                      SC-005b). The GIF is the inline-renderable
+#                      sidecar the README embeds.
 #
 # ── Operator prerequisites ───────────────────────────────────────────
 #   * `nix develop` shell (provides asciinema 2.4.0).
@@ -60,10 +64,17 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 OUTPUT="docs/onboarding.cast"
+GIF_OUTPUT="docs/assets/core-ops-demo.gif"
 ASCIINEMA_PINNED_VERSION="2.4.0"
+AGG_PINNED_VERSION="1.7.0"
 
 if ! command -v asciinema >/dev/null 2>&1; then
   echo "error: asciinema not on PATH; run inside 'nix develop' shell" >&2
+  exit 1
+fi
+
+if ! command -v agg >/dev/null 2>&1; then
+  echo "error: agg not on PATH; run inside 'nix develop' shell" >&2
   exit 1
 fi
 
@@ -71,6 +82,13 @@ actual_version="$(asciinema --version 2>/dev/null | awk '{print $2}')"
 if [[ "$actual_version" != "$ASCIINEMA_PINNED_VERSION" ]]; then
   echo "warning: asciinema $actual_version detected; spec/018 pin is $ASCIINEMA_PINNED_VERSION" >&2
 fi
+
+actual_agg_version="$(agg --version 2>/dev/null | awk '{print $2}')"
+if [[ "$actual_agg_version" != "$AGG_PINNED_VERSION" ]]; then
+  echo "warning: agg $actual_agg_version detected; spec/018 pin is $AGG_PINNED_VERSION" >&2
+fi
+
+mkdir -p "$(dirname "$GIF_OUTPUT")"
 
 # Recorded command sequence — written to a temp file so we avoid the
 # nested-quoting trap when passing it through `asciinema --command` and
@@ -112,6 +130,14 @@ echo
 echo "Recorded: $OUTPUT"
 echo "Duration (must be ≤ 90):"
 head -n 1 "$OUTPUT" | jq '.duration'
+
+# Render the GIF sidecar that the README embeds inline (FR-007 / SC-005b).
+# `--idle-time-limit 2` mirrors the recording-side compression so the
+# rendered animation matches the cast's playback cadence.
+agg --idle-time-limit 2 --quiet "$OUTPUT" "$GIF_OUTPUT"
+echo "Rendered: $GIF_OUTPUT"
+echo "Size: $(wc -c < "$GIF_OUTPUT") bytes (SC-005b soft cap: 1 MB)"
+
 echo
 echo "Next: run the SC-006a sanitization stop-list grep from"
 echo "  specs/018-adoption-readiness/checklists/readme-structure.md"

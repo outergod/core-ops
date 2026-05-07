@@ -112,7 +112,15 @@ Summary
 10 unchanged
 ```
 
-**Recording**: [docs/onboarding.cast](docs/onboarding.cast) — play locally with `asciinema play docs/onboarding.cast`. End-to-end plan → apply → idempotent re-plan against `examples/03-immich`, recorded under sanitized prompts and project-relative paths.
+<p align="center">
+  <a href="https://asciinema.org/a/CAST_ID">
+    <img src="docs/assets/core-ops-demo.gif" alt="CoreOps terminal demo: plan, diff, explain, and apply" width="820">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://asciinema.org/a/CAST_ID">Watch the full terminal session on asciinema</a>
+</p>
 
 ---
 
