@@ -112,6 +112,8 @@ Summary
 10 unchanged
 ```
 
+**Recording**: [docs/onboarding.cast](docs/onboarding.cast) — play locally with `asciinema play docs/onboarding.cast`. End-to-end plan → apply → idempotent re-plan against `examples/03-immich`, recorded under sanitized prompts and project-relative paths.
+
 ---
 
 ## Real-world examples
