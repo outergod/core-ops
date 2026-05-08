@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>Host-native convergence for systemd-based systems</strong>
+  <strong>GitOps-style service management for systemd hosts</strong>
 </p>
 
 <p align="center">
@@ -14,6 +14,20 @@
 <a href="https://github.com/outergod/core-ops/releases/latest"><img src="https://img.shields.io/github/v/release/outergod/core-ops" alt="Latest Release"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License: AGPL-3.0-or-later"></a>
 </p>
+
+CoreOps takes a Git repository containing [Quadlet] units, systemd drop-ins, and config files,
+shows what would change on the host, and can then apply those changes safely.
+
+It is for people who already run services with systemd and Podman/Quadlet, but want:
+
+- `plan`: see exactly what would be created, changed, or removed
+- `apply`: make the host match the repository
+- `status`: see what Git revision produced the current host state
+
+CoreOps does not replace systemd. It writes the systemd/Quadlet artifacts you would otherwise
+manage by hand, then lets systemd run the services.
+
+[Quadlet]: https://www.redhat.com/en/blog/quadlet-podman
 
 <p align="center">
   <a href="https://asciinema.org/a/HaqIw05gehGk2YpH">
@@ -27,75 +41,118 @@
 
 ---
 
-## 30-second mental model
+## Why CoreOps exists
 
-CoreOps is a convergence engine for systemd-based hosts. You declare desired
-state in a Git repository — services and host overlays expressed as Quadlet
-units, systemd drop-ins, and config files — and CoreOps converges the host
-to match.
+Running services directly on a systemd host works well, especially on Fedora CoreOS:
+systemd starts services, Podman runs containers, and Quadlet describes containers as units.
 
-It treats systemd and Quadlet as the source of truth. It does not replace
-them with a custom orchestrator and does not require image rebuilds for
-every change. Reconciliation is declarative, idempotent, and inspectable:
+The hard part is keeping the host in sync over time.
 
-* `core-ops plan` shows the diff between desired and observed state.
-* `core-ops apply` makes the host match.
-* `core-ops status` reports applied state with provenance back to the
-  Git revision that produced it.
+After a while you have container units, networks, volumes, drop-ins, config files,
+host-specific changes, and manual edits. You want to know:
 
-Each step is dry-runnable, audit-trail-producing, and re-runnable.
-Re-running against a converged host is a no-op.
+- What should be on this host?
+- What is actually on this host?
+- What would change if I apply the repository?
+- Which Git revision produced the current state?
 
-CoreOps is host-native: it runs on the target host (typically Fedora CoreOS),
-not in a container, and operates directly on systemd state. Workloads are
-container workloads (Podman/Quadlet), but the controller is not.
+CoreOps answers those questions and applies the required changes.
 
 ---
 
-## What using CoreOps feels like
+## Real-world examples
 
-You declare desired state in a Git repository and ask `core-ops` what
-it will do before doing anything. Plan output for the canonical Immich
-walkthrough on a clean host:
+These examples show CoreOps repositories for common self-hosted and small-infra services.
+You can run `plan` against each example directly, without initializing CoreOps first.
 
-```text
-Plan for host example @ (stateless) (first run)
-───────────────────────────────────────────────
-[+] Create • 10
+* [`examples/01-caddy-whoami`](examples/01-caddy-whoami) — Caddy reverse proxy fronting whoami (single-container baseline).
+* [`examples/02-nextcloud`](examples/02-nextcloud) — Nextcloud + Postgres + Redis + Traefik (multi-container, intra-service network, persistent storage).
+* [`examples/03-immich`](examples/03-immich) — Immich photo server with ML worker (GPU device, multi-network).
+* [`examples/04-traefik-authelia`](examples/04-traefik-authelia) — Traefik + Authelia + protected backend (cross-service ForwardAuth composition).
+* [`examples/05-observability`](examples/05-observability) — Prometheus + Grafana + node-exporter + cadvisor (host-scope sidecars).
 
-[+] container/immich-database.container			missing
-    requires
-      ├─ [+] network/immich-internal.network	missing
-      └─ [+] volume/immich-db-data.volume		missing
-    Δ content (21 additions)
-      + [Unit]
-      + Description=Immich Postgres + pgvecto.rs database
-      ...
-...
+Try one without committing to anything:
 
-Summary
-───────
-10 creates
+```sh
+core-ops plan --source-repo examples/01-caddy-whoami --host example
 ```
 
-After `core-ops apply` converges the host, re-running the same
-invocation produces no changes — the host is already where the
-declaration says it should be:
+---
 
-```text
-Plan for host example @ (stateless)
-───────────────────────────────────
-[·] Unchanged • 10
+## Quick start
 
-[·] container/immich-database.container			unchanged
-[·] container/immich-server.container			unchanged
-[·] container/traefik-edge.container			unchanged
-...
+Download the [latest release] from the GitHub Releases page.
 
-Summary
-───────
-10 unchanged
+[latest release]: https://github.com/outergod/core-ops/releases/latest
+
+CoreOps is distributed as release bundles for `x86_64` (`amd64`) and `aarch64` (`arm64`).
+No external runtime dependencies are required beyond a supported host.
+
+Each bundle includes:
+
+- `core-ops-linux-<arch>`
+- `core-ops.service`
+- `core-ops.timer`
+- `LICENSE`
+- `CHANGELOG.md`
+- `README.md`
+
+Install the binary and systemd units:
+
+```bash
+tar -xzf core-ops-linux-<arch>.tar.gz
+install -m 0755 core-ops-linux-<arch> /usr/local/bin/core-ops
+install -m 0644 core-ops.service /etc/systemd/system/core-ops.service
+install -m 0644 core-ops.timer /etc/systemd/system/core-ops.timer
+systemctl daemon-reload
 ```
+
+Check the installation:
+
+```bash
+core-ops --version
+core-ops status
+```
+
+A valid installation should:
+
+* report a build identity
+* expose current system state
+* produce stable, inspectable output
+
+To run CoreOps automatically, initialize a repository once and enable the timer:
+
+```bash
+# One-time setup: persist repository and tracking ref
+core-ops init <repository-url> <ref>
+
+# Enable the timer
+systemctl enable --now core-ops.timer
+```
+
+To override the quadlet directory or other defaults, use a systemd drop-in:
+
+```bash
+systemctl edit core-ops.service
+```
+
+### Supported systems
+
+- **Supported:** Fedora CoreOS  
+- **Expected to work:** other systemd-based hosts (untested)  
+- **Unsupported:** non-systemd environments  
+
+CoreOps must run on the host. Running CoreOps itself inside a container is not supported.
+
+---
+
+## Trust model
+
+CoreOps changes host-level systemd and Quadlet files, so it is intentionally conservative.
+
+You can inspect changes before applying them with `core-ops plan`.
+After applying, `core-ops status` records what was applied and which Git revision it came from.
+If something is wrong, fix or revert the repository, then run `core-ops apply` again.
 
 ---
 
@@ -119,158 +176,7 @@ flowchart LR
 **Read left-to-right.** A Git repository (`services/` + `hosts/`)
 feeds `core-ops` (`plan` / `apply` / `explain`), which generates
 systemd + Quadlet units that the host runs under systemd. Audit and
-status are JSON side outputs of both `core-ops` and the host — the
-same architecture the diagram above shows when GitHub renders it.
-
----
-
-## Real-world examples
-
-Five real-world homelab setups translated into the source-repository
-layout. Each is runnable via stateless `--source-repo` invocation
-without `core-ops init`. See `examples/<NN-slug>/README.md` for setup
-intent, sources, and known limitations.
-
-* [`examples/01-caddy-whoami`](examples/01-caddy-whoami) — Caddy reverse proxy fronting whoami (single-Container baseline).
-* [`examples/02-nextcloud`](examples/02-nextcloud) — Nextcloud + Postgres + Redis + Traefik (multi-Container, intra-service network, persistent storage).
-* [`examples/03-immich`](examples/03-immich) — Immich photo server with ML worker (GPU device, multi-network).
-* [`examples/04-traefik-authelia`](examples/04-traefik-authelia) — Traefik + Authelia + protected backend (cross-service ForwardAuth composition).
-* [`examples/05-observability`](examples/05-observability) — Prometheus + Grafana + node-exporter + cadvisor (host-scope sidecars).
-
-Try one without committing to anything:
-
-```sh
-core-ops plan --source-repo examples/01-caddy-whoami --host example
-```
-
-No prior `core-ops init` required; nothing is written under
-`/var/lib/core-ops/`. To switch into long-lived tracking mode after
-copying an example to your own setup directory, run
-`git init && core-ops init <path> <ref>` once.
-
----
-
-## Quick start
-
-After installing the binary:
-
-```bash
-core-ops --version
-core-ops status
-```
-
-A valid installation should:
-
-* report a build identity
-* expose current system state
-* produce stable, inspectable output
-
-CoreOps is currently distributed as direct binaries for `x86_64` (`amd64`)
-and `aarch64` (`arm64`).
-
-Download the published release bundle for your target architecture. A supported
-bundle includes:
-
-- `core-ops-linux-<arch>`
-- `core-ops.service`
-- `core-ops.timer`
-- `LICENSE`
-- `CHANGELOG.md`
-- `README.md`
-
-```bash
-tar -xzf core-ops-linux-<arch>.tar.gz
-install -m 0755 core-ops-linux-<arch> /usr/local/bin/core-ops
-install -m 0644 core-ops.service /etc/systemd/system/core-ops.service
-install -m 0644 core-ops.timer /etc/systemd/system/core-ops.timer
-```
-
-No external runtime dependencies are required beyond a supported host.
-
-For unattended host-native execution, the supported integration path uses the
-published canonical `core-ops.service` and `core-ops.timer` units (also
-available in `systemd/` in this repository). Initialize once, then enable the
-timer:
-
-```bash
-# One-time setup: persist repository and tracking ref
-core-ops init <repository-url> <ref>
-
-# Install and enable the timer
-install -m 0644 core-ops.service /etc/systemd/system/core-ops.service
-install -m 0644 core-ops.timer /etc/systemd/system/core-ops.timer
-systemctl daemon-reload
-systemctl enable --now core-ops.timer
-```
-
-To override the quadlet directory or other defaults, use a systemd drop-in:
-
-```bash
-systemctl edit core-ops.service
-```
-
-### Supported systems
-
-- **Supported:** Fedora CoreOS  
-- **Expected to work:** other systemd-based hosts (untested)  
-- **Unsupported:** non-systemd environments  
-
-CoreOps operates directly on host-level systemd state and running CoreOps from
-a container is not a supported consumption method.
-
----
-
-## Why CoreOps exists
-
-Systemd-based hosts already have a clear operating model: units define
-behavior, and the system converges toward that definition. Most tooling
-around them either replaces the model (Kubernetes, orchestration layers)
-or ignores it (imperative configuration management).
-
-CoreOps stays inside the model. It treats systemd and Quadlet as the source
-of truth and builds a convergence workflow around them instead of replacing
-them.
-
----
-
-## What CoreOps is not
-
-- Kubernetes or general container orchestration  
-- A replacement for systemd  
-- Generic imperative configuration management (e.g. Ansible-style)  
-- A custom templating language or DSL  
-- Fleet orchestration across many hosts (at this stage)  
-
----
-
-## Trust and release model
-
-CoreOps modifies host-level systemd and Quadlet artifacts in explicitly
-configured locations. Operators audit behavior through plan output before
-changes, apply and verification reports during changes, persisted provenance
-and status after changes, and release identity and changelog continuity.
-Recovery happens through explicit reconciliation, not silent mutation.
-
-| Signal | Value |
-|--------|-------|
-| Published artifacts | `x86_64 raw binary`, `aarch64 raw binary`, `x86_64 tar.gz + checksums`, `aarch64 tar.gz + checksums` |
-| Verification environment | `fedora-coreos-self-hosted@2026-04-fcos` |
-
-The badges at the top of this README reflect live CI health and the latest
-published release; they update automatically as the project evolves.
-
-CoreOps defines its public guarantees through a maintained specification,
-executable VM-backed verification scenarios, and a release gate. A build is
-only considered distribution-ready once the release gate passes; the
-verification environment is versioned to detect drift over time.
-
-Releasable changes carry explicit SemVer intent, update the canonical version
-in `Cargo.toml`, add a checked-in release fragment at `changes/<change-id>.md`,
-and keep `CHANGELOG.md` current. Maintainers and CI validate this contract
-through `cargo run --bin core-ops-release -- validate`. Post-merge, the
-release job promotes the rendered `[Unreleased]` block to a tagged section
-and publishes a GitHub Release at the merge commit; `core-ops-release promote`
-owns that transition idempotently.
+status are JSON side outputs of both `core-ops` and the host.
 
 ---
 
@@ -280,7 +186,7 @@ CoreOps is developed with AI assistance.
 
 AI influences how the system is produced, not how it behaves.
 
-Behavioral guarantees come from:
+The project relies on:
 
 * the specification
 * the test corpus
