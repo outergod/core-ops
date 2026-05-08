@@ -1,6 +1,6 @@
 # core-ops Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-05-05
+Auto-generated from all feature plans. Last updated: 2026-05-06
 
 ## Active Technologies
 - Rust 2021 + clap 4, serde / serde_json, miette, thiserror, tempfile (015-controller-state-lifecycle)
@@ -9,6 +9,8 @@ Auto-generated from all feature plans. Last updated: 2026-05-05
 - Source repository on filesystem (input); existing canonical status snapshot at `/var/lib/core-ops/status.json` (output). The status snapshot gains a `layout-version: "1"` field to record which layout produced it. (016-source-repository-layout)
 - Rust 2021 (existing toolchain) + clap 4.5 (derive), serde 1.0, serde_yaml 0.9, serde_json 1.0, miette 7.2 (fancy diagnostics), thiserror 1.0, tempfile 3.10. **No new runtime dependencies.** Git invocation via `std::process::Command::new("git")` following the established pattern at `src/cli/init.rs:52`, `src/io/repo.rs:1312/1343/1372`, `src/io/release_governance.rs:367/440`, `src/cli/verification.rs:2068/2086/2090/2103`. (017-real-world-validation)
 - Existing `/var/lib/core-ops/status.json` for init'd mode (unchanged). Stateless plan writes nothing under `/var/lib/`; stateless apply writes audit + status with path-based provenance (see FR-013); stateless explain writes nothing. Operator-explicit `--audit-dir` honored across both modes (see FR-012 plus 2026-05-05 clarification). (017-real-world-validation)
+- N/A — no source code added or modified. Existing Rust 2021 toolchain in repository remains untouched. + Mermaid (GitHub-native rendering for the in-README diagram); `asciinema` CLI (operator-side, version-pinned in `docs/onboarding-script.sh`) for recording the `.cast` artifact. **No new runtime dependencies.** (018-adoption-readiness)
+- N/A — no persisted state added or read. (018-adoption-readiness)
 
 - Rust 2021 — clap 4, serde, miette, serde_json, serde_yaml
 - GitHub Actions — ubuntu-latest runners, `gh` CLI, `rustup`
@@ -98,9 +100,9 @@ removed or renamed.
 Follow standard Rust conventions. No new abstractions without justification.
 
 ## Recent Changes
+- 018-adoption-readiness: Added N/A — no source code added or modified. Existing Rust 2021 toolchain in repository remains untouched. + Mermaid (GitHub-native rendering for the in-README diagram); `asciinema` CLI (operator-side, version-pinned in `docs/onboarding-script.sh`) for recording the `.cast` artifact. **No new runtime dependencies.**
 - 017-real-world-validation: Added Rust 2021 (existing toolchain) + clap 4.5 (derive), serde 1.0, serde_yaml 0.9, serde_json 1.0, miette 7.2 (fancy diagnostics), thiserror 1.0, tempfile 3.10. **No new runtime dependencies.** Git invocation via `std::process::Command::new("git")` following the established pattern at `src/cli/init.rs:52`, `src/io/repo.rs:1312/1343/1372`, `src/io/release_governance.rs:367/440`, `src/cli/verification.rs:2068/2086/2090/2103`.
 - 016-source-repository-layout: Added Rust 2021 (stable toolchain), as established by the existing `core-ops` crate at v1.0.0; this feature is the trigger for the v2.0.0 major bump. + `clap` 4.5 (derive), `serde` 1.0 (derive), `serde_yaml` 0.9, `serde_json` 1.0, `miette` 7.2 (fancy diagnostics), `thiserror` 1.0, `tempfile` 3.10. No new runtime dependencies are required by this feature.
-- 015-controller-state-lifecycle: Added Rust 2021 + clap 4, serde / serde_json, miette, thiserror, tempfile
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -9,18 +9,19 @@ fn repo_root() -> std::path::PathBuf {
 fn readme_contains_required_entrypoint_sections() {
     let contents = fs::read_to_string(repo_root().join("README.md")).expect("read README");
 
+    // Spec/018 FR-001 12-section ordering (post-restructure).
     for heading in [
         "# CoreOps",
-        "## What is CoreOps?",
-        "## Why CoreOps Exists",
-        "## What CoreOps Is Not",
-        "## Credibility",
-        "## Target Audience",
-        "## Supported Systems",
-        "## AI Authorship",
-        "## Minimal Trust Story",
-        "## Installation (Current Phase)",
-        "## Release & Verification Model",
+        "## 30-second mental model",
+        "## Architecture",
+        "## What using CoreOps feels like",
+        "## Real-world examples",
+        "## Quick start",
+        "## Why CoreOps exists",
+        "## What CoreOps is not",
+        "## Trust and release model",
+        "## AI authorship",
+        "## Target audience · License · Further reading",
     ] {
         assert!(contents.contains(heading), "missing heading: {heading}");
     }
