@@ -69,6 +69,8 @@
           # (`docs/onboarding-script.sh`) drives both. Note: `pkgs.agg`
           # is the unrelated Anti-Grain Geometry C++ library.
           asciinema-agg
+          nodejs_24
+          bun
         ] ++ [
           rustToolchain
           rustAnalyzer
